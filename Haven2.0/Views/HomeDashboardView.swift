@@ -64,37 +64,35 @@ struct HomeDashboardView: View {
                 theme.backgroundGradient
                     .ignoresSafeArea()
                 
-                // Cosmic particles
-                CosmicParticlesView(theme: theme)
-                
                 VStack(spacing: 0) {
-                    // Top Navigation Bar
+                    // Top Navigation Bar - Fixed at top
                     topNavigationView(theme: theme)
-                        .padding(.top, 10)
+                        .padding(.top, 0)
+                        .frame(height: 60)
                     
-                    // Completed Tasks Count
+                    // Completed Tasks Count - Fixed height
                     completedTasksCountView(theme: theme)
-                        .padding(.top, 16)
+                        .frame(height: 50)
                     
-                    // Central Time Display with Portal
+                    // Central Time Display - Fixed height
                     centralTimeView(theme: theme)
-                        .padding(.top, 20)
+                        .frame(height: 120)
                     
-                    // Day Navigation Circles
+                    // Day Navigation Circles - Fixed height
                     dayNavigationView(theme: theme)
-                        .padding(.top, 30)
+                        .frame(height: 80)
                     
-                    // Current Activity
+                    // Current Activity - Fixed height
                     currentActivityView(theme: theme)
-                        .padding(.top, 20)
+                        .frame(height: 50)
                     
-                    // Task Ordering
+                    // Task Ordering - Fixed height, smaller
                     taskOrderingView(theme: theme)
-                        .padding(.top, 16)
+                        .frame(height: 40)
                     
-                    // Tasks Section
+                    // Tasks Section - Flexible but contained
                     tasksSectionView(theme: theme)
-                        .padding(.top, 20)
+                        .frame(maxHeight: .infinity)
                 }
             }
             .navigationBarHidden(true)
@@ -180,54 +178,49 @@ struct HomeDashboardView: View {
     
     // MARK: - Central Time Display
     private func centralTimeView(theme: any AppTheme) -> some View {
-        ZStack {
-            // Magical portal/time ring background
-            CosmicPortalView()
-                .frame(width: 200, height: 200)
-                .opacity(0.8)
-            
-            VStack(spacing: 12) {
-                Text(currentTime, format: .dateTime.hour().minute())
-                    .font(.custom("Georgia-Bold", size: 56))
-                    .foregroundColor(.white)
-                    .shadow(color: .black.opacity(0.3), radius: 2, x: 1, y: 1)
-            }
+        VStack(spacing: 12) {
+            Text(currentTime, format: .dateTime.hour().minute())
+                .font(.custom("Montserrat", size: 48).weight(.bold))
+                .foregroundColor(theme.textPrimary)
         }
     }
     
     // MARK: - Day Navigation
     private func dayNavigationView(theme: any AppTheme) -> some View {
-        HStack(spacing: 0) {
-            ForEach(-2...2, id: \.self) { offset in
-                let date = Calendar.current.date(byAdding: .day, value: offset, to: selectedDate) ?? Date()
-                let dayNumber = Calendar.current.component(.day, from: date)
-                let isSelected = Calendar.current.isDate(date, inSameDayAs: selectedDate)
-                
-                Button(action: {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        selectedDate = date
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(-7...7, id: \.self) { offset in
+                    let date = Calendar.current.date(byAdding: .day, value: offset, to: selectedDate) ?? Date()
+                    let dayNumber = Calendar.current.component(.day, from: date)
+                    let isSelected = Calendar.current.isDate(date, inSameDayAs: selectedDate)
+                    let isToday = Calendar.current.isDateInToday(date)
+                    
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            selectedDate = date
+                        }
+                    }) {
+                        VStack(spacing: 4) {
+                            Text(dayNumber, format: .number)
+                                .font(.custom("Montserrat", size: 14).weight(.medium))
+                                .foregroundColor(isSelected ? .white : theme.textPrimary)
+                                .frame(width: 32, height: 32)
+                                .background(
+                                    Circle()
+                                        .fill(isSelected ? theme.primaryColor : (isToday ? theme.accentColor.opacity(0.3) : theme.cardBackground))
+                                        .shadow(color: theme.primaryColor.opacity(0.3), radius: isSelected ? 6 : 2)
+                                )
+                            
+                            Text(date.formatted(.dateTime.weekday(.abbreviated)))
+                                .font(.caption2)
+                                .foregroundColor(theme.textSecondary)
+                        }
                     }
-                }) {
-                    VStack(spacing: 4) {
-                        Text(dayNumber, format: .number)
-                            .font(.custom("Montserrat", size: 16).weight(.medium))
-                            .foregroundColor(isSelected ? .white : theme.textPrimary)
-                            .frame(width: 40, height: 40)
-                            .background(
-                                Circle()
-                                    .fill(isSelected ? theme.primaryColor : theme.cardBackground)
-                                    .shadow(color: theme.primaryColor.opacity(0.3), radius: isSelected ? 8 : 4)
-                            )
-                        
-                        Text(date.formatted(.dateTime.weekday(.abbreviated)))
-                            .font(.caption)
-                            .foregroundColor(theme.textSecondary)
-                    }
+                    .frame(width: 44)
                 }
-                .frame(width: 50)
             }
+            .padding(.horizontal, 20)
         }
-        .padding(.horizontal, 20)
     }
     
     // MARK: - Current Activity
@@ -258,7 +251,7 @@ struct HomeDashboardView: View {
     private func taskOrderingView(theme: any AppTheme) -> some View {
         HStack {
             Text("Tasks")
-                .font(theme.titleFont)
+                .font(.custom("Montserrat", size: 16).weight(.medium))
                 .foregroundColor(theme.textPrimary)
             
             Spacer()
@@ -270,19 +263,19 @@ struct HomeDashboardView: View {
                     }
                 }
             } label: {
-                HStack(spacing: 4) {
-                    Text("Order by: \(taskSortOrder.rawValue)")
-                        .font(theme.bodyFont)
+                HStack(spacing: 2) {
+                    Text("\(taskSortOrder.rawValue)")
+                        .font(.custom("Montserrat", size: 12).weight(.regular))
                         .foregroundColor(theme.textSecondary)
                     Image(systemName: "chevron.down")
-                        .font(.caption)
+                        .font(.caption2)
                         .foregroundColor(theme.textSecondary)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
                 .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(theme.cardBackground.opacity(0.8))
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(theme.cardBackground.opacity(0.6))
                 )
             }
         }
@@ -303,8 +296,23 @@ struct HomeDashboardView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 12) {
-                        ForEach(selectedDateTasks, id: \.id) { task in
-                            TaskCardView(task: task, theme: theme)
+                        // Group tasks by blocks
+                        let groupedTasks = Dictionary(grouping: selectedDateTasks) { task in
+                            task.taskBlockID ?? "individual"
+                        }
+                        
+                        ForEach(Array(groupedTasks.keys.sorted()), id: \.self) { blockID in
+                            if blockID == "individual" {
+                                // Individual tasks
+                                ForEach(groupedTasks[blockID] ?? [], id: \.id) { task in
+                                    TaskCardView(task: task, theme: theme)
+                                }
+                            } else {
+                                // Task block
+                                if let blockTasks = groupedTasks[blockID], !blockTasks.isEmpty {
+                                    TaskBlockCardView(tasks: blockTasks, theme: theme)
+                                }
+                            }
                         }
                     }
                     .padding(.horizontal, 20)
@@ -316,24 +324,16 @@ struct HomeDashboardView: View {
     
     // MARK: - Empty Tasks View
     private func emptyTasksView(theme: any AppTheme) -> some View {
-        VStack(spacing: 20) {
-            VStack(spacing: 16) {
-                Image(systemName: "star.circle.fill")
-                    .font(.system(size: 50))
-                    .foregroundColor(theme.accentColor)
-                
-                Text("Ready to make today amazing?")
-                    .font(theme.titleFont)
-                    .foregroundColor(theme.textPrimary)
-                
-                Text("Add your first task to get started!")
-                    .font(theme.bodyFont)
-                    .foregroundColor(theme.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 20)
-            }
-            .padding(.vertical, 40)
+        VStack(spacing: 16) {
+            Text("No tasks for today")
+                .font(.custom("Montserrat", size: 16).weight(.medium))
+                .foregroundColor(theme.textSecondary)
+            
+            Text("Tap + to add a task")
+                .font(.custom("Montserrat", size: 14).weight(.regular))
+                .foregroundColor(theme.textSecondary.opacity(0.7))
         }
+        .padding(.vertical, 40)
     }
     
     // MARK: - Calendar Modal View
@@ -375,6 +375,11 @@ struct TaskCardView: View {
     
     var body: some View {
         HStack(spacing: 12) {
+            // Priority indicator
+            Circle()
+                .fill(priorityColor)
+                .frame(width: 8, height: 8)
+            
             // Category icon
             Image(systemName: task.category.icon)
                 .font(.title3)
@@ -420,33 +425,16 @@ struct TaskCardView: View {
         .opacity(task.isComplete ? 0.7 : 1.0)
         .animation(.easeInOut(duration: 0.3), value: task.isComplete)
     }
-}
-
-// MARK: - Cosmic Particles View
-struct CosmicParticlesView: View {
-    let theme: any AppTheme
-    @State private var animationOffset: CGFloat = 0
     
-    var body: some View {
-        ZStack {
-            ForEach(0..<20, id: \.self) { index in
-                Circle()
-                    .fill(theme.particleColors[index % theme.particleColors.count])
-                    .frame(width: CGFloat.random(in: 2...6))
-                    .position(
-                        x: CGFloat.random(in: 0...UIScreen.main.bounds.width),
-                        y: CGFloat.random(in: 0...UIScreen.main.bounds.height) + animationOffset
-                    )
-                    .opacity(0.6)
-            }
-        }
-        .onAppear {
-            withAnimation(.linear(duration: 20).repeatForever(autoreverses: false)) {
-                animationOffset = -UIScreen.main.bounds.height
-            }
+    private var priorityColor: Color {
+        switch task.priority {
+        case .urgent: return .red
+        case .high: return .orange
+        case .normal: return .green
         }
     }
 }
+
 
 #Preview {
     HomeDashboardView()
