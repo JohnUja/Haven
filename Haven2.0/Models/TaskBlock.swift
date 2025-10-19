@@ -1,0 +1,37 @@
+//
+//  TaskBlock.swift
+//  TimeFlow
+//
+//  Created by John Uja on 2025-10-18.
+//
+
+import Foundation
+import SwiftData
+
+@Model
+final class TaskBlock {
+    var id: String
+    var userID: String
+    var title: String
+    var blockDescription: String?
+    var color: String
+    var isComplete: Bool
+    var createdDate: Date
+    var isLocked: Bool = false // New: For routine blocks that can't be moved
+    
+    init(id: String = UUID().uuidString,
+         userID: String,
+         title: String,
+         blockDescription: String? = nil,
+         color: String = "blue",
+         isComplete: Bool = false) {
+        self.id = id
+        self.userID = userID
+        self.title = title
+        self.blockDescription = blockDescription
+        self.color = color
+        self.isComplete = isComplete
+        self.createdDate = Date()
+    }
+    
+}
