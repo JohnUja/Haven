@@ -7,12 +7,15 @@
 
 import SwiftUI
 import SwiftData
+import AudioToolbox
 
 struct TaskBlockCardView: View {
     let tasks: [Task]
     let theme: any AppTheme
     
     @State private var isExpanded = false
+    @State private var showCompletionAnimation = false
+    @State private var ringProgress: CGFloat = 0
     
     private var blockTitle: String {
         "Task Block (\(tasks.count) tasks)"
@@ -24,6 +27,31 @@ struct TaskBlockCardView: View {
     
     private var isBlockComplete: Bool {
         completedCount == tasks.count && !tasks.isEmpty
+    }
+    
+    private var blockPriorityColor: Color {
+        // Use the highest priority in the block
+        let priorities = tasks.map { $0.priority }
+        if priorities.contains(.urgent) { return .red }
+        if priorities.contains(.high) { return .orange }
+        return .green
+    }
+    
+    private var timeRangeText: String {
+        guard !tasks.isEmpty else { return "" }
+        
+        let sortedTasks = tasks.sorted { $0.startTime < $1.startTime }
+        let startTime = sortedTasks.first?.startTime ?? Date()
+        let endTime = sortedTasks.last?.endTime ?? Date()
+        
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        
+        if Calendar.current.isDate(startTime, inSameDayAs: endTime) {
+            return "\(formatter.string(from: startTime)) - \(formatter.string(from: endTime))"
+        } else {
+            return "Multi-day"
+        }
     }
     
     var body: some View {
@@ -42,6 +70,11 @@ struct TaskBlockCardView: View {
                     
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
+                            // Priority indicator for the block
+                            Circle()
+                                .fill(blockPriorityColor)
+                                .frame(width: 8, height: 8)
+                            
                             Text(blockTitle)
                                 .font(theme.bodyFont)
                                 .fontWeight(.semibold)
@@ -58,6 +91,14 @@ struct TaskBlockCardView: View {
                         ProgressView(value: Double(completedCount), total: Double(tasks.count))
                             .progressViewStyle(LinearProgressViewStyle(tint: .blue))
                             .scaleEffect(y: 0.5)
+                        
+                        // Time range for the block
+                        HStack {
+                            Text(timeRangeText)
+                                .font(.caption2)
+                                .foregroundColor(theme.textSecondary)
+                            Spacer()
+                        }
                     }
                     
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
@@ -66,11 +107,33 @@ struct TaskBlockCardView: View {
                 }
                 .padding(16)
                 .background(
-                    RoundedRectangle(cornerRadius: theme.cardCornerRadius)
-                        .fill(isBlockComplete ? theme.cardBackground.opacity(0.5) : theme.cardBackground)
-                        .shadow(color: theme.primaryColor.opacity(0.1), radius: theme.shadowRadius)
+                    ZStack {
+                        RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                            .fill(isBlockComplete ? theme.cardBackground.opacity(0.5) : theme.cardBackground)
+                            .shadow(color: theme.primaryColor.opacity(0.1), radius: theme.shadowRadius)
+                        
+                        // Completion ring animation
+                        if showCompletionAnimation {
+                            RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [.green, .blue, .purple],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 3
+                                )
+                                .opacity(ringProgress)
+                                .animation(.easeInOut(duration: 1.5), value: ringProgress)
+                        }
+                    }
                 )
                 .opacity(isBlockComplete ? 0.7 : 1.0)
+                .onChange(of: isBlockComplete) { _, newValue in
+                    if newValue && !showCompletionAnimation {
+                        triggerCompletionAnimation()
+                    }
+                }
             }
             .buttonStyle(PlainButtonStyle())
             
@@ -129,6 +192,28 @@ struct TaskBlockCardView: View {
                 .padding(.top, 8)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
+            }
+        }
+    }
+    
+    private func triggerCompletionAnimation() {
+        showCompletionAnimation = true
+        
+        // Ring animation
+        withAnimation(.easeInOut(duration: 1.5)) {
+            ringProgress = 1.0
+        }
+        
+        // Play completion sound (system sound)
+        AudioServicesPlaySystemSound(1057) // Success sound
+        
+        // Hide animation after completion
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            withAnimation(.easeOut(duration: 0.5)) {
+                ringProgress = 0
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                showCompletionAnimation = false
             }
         }
     }

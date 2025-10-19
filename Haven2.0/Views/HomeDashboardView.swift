@@ -19,6 +19,7 @@ struct HomeDashboardView: View {
     @State private var currentTime = Date()
     @State private var showingAddBlock = false
     @State private var taskSortOrder: TaskSortOrder = .priority
+    @State private var recentlyCompletedTasks: Set<String> = []
     
     private var currentUser: User? {
         users.first
@@ -29,30 +30,62 @@ struct HomeDashboardView: View {
             Calendar.current.isDate(task.startTime, inSameDayAs: selectedDate)
         }
         
+        // Separate completed and incomplete tasks
+        let incompleteTasks = filteredTasks.filter { !$0.isComplete }
+        let completedTasks = filteredTasks.filter { $0.isComplete }
+        
+        // Further separate recently completed tasks
+        let recentlyCompleted = completedTasks.filter { recentlyCompletedTasks.contains($0.id) }
+        let oldCompleted = completedTasks.filter { !recentlyCompletedTasks.contains($0.id) }
+        
+        let sortedIncomplete: [Task]
+        let sortedCompleted: [Task]
+        
         switch taskSortOrder {
         case .priority:
-            return filteredTasks.sorted { task1, task2 in
-                let priorityOrder: [PriorityType] = [.urgent, .high, .normal]
+            let priorityOrder: [PriorityType] = [.urgent, .high, .normal]
+            sortedIncomplete = incompleteTasks.sorted { task1, task2 in
+                let task1Index = priorityOrder.firstIndex(of: task1.priority) ?? 2
+                let task2Index = priorityOrder.firstIndex(of: task2.priority) ?? 2
+                return task1Index < task2Index
+            }
+            sortedCompleted = (recentlyCompleted + oldCompleted).sorted { task1, task2 in
                 let task1Index = priorityOrder.firstIndex(of: task1.priority) ?? 2
                 let task2Index = priorityOrder.firstIndex(of: task2.priority) ?? 2
                 return task1Index < task2Index
             }
         case .mostRecent:
-            return filteredTasks.sorted { $0.startTime > $1.startTime }
+            sortedIncomplete = incompleteTasks.sorted { $0.startTime > $1.startTime }
+            sortedCompleted = (recentlyCompleted + oldCompleted).sorted { $0.startTime > $1.startTime }
         case .timeSensitive:
-            return filteredTasks.sorted { task1, task2 in
-                let now = Date()
+            let now = Date()
+            sortedIncomplete = incompleteTasks.sorted { task1, task2 in
                 let task1TimeUntil = task1.startTime.timeIntervalSince(now)
                 let task2TimeUntil = task2.startTime.timeIntervalSince(now)
                 return abs(task1TimeUntil) < abs(task2TimeUntil)
             }
+            sortedCompleted = (recentlyCompleted + oldCompleted).sorted { task1, task2 in
+                let task1TimeUntil = task1.startTime.timeIntervalSince(now)
+                let task2TimeUntil = task2.startTime.timeIntervalSince(now)
+                return abs(task1TimeUntil) < abs(task2TimeUntil)
+            }
+        case .category:
+            sortedIncomplete = incompleteTasks.sorted { task1, task2 in
+                task1.category.rawValue < task2.category.rawValue
+            }
+            sortedCompleted = (recentlyCompleted + oldCompleted).sorted { task1, task2 in
+                task1.category.rawValue < task2.category.rawValue
+            }
         }
+        
+        return sortedIncomplete + sortedCompleted
     }
     
     enum TaskSortOrder: String, CaseIterable {
         case priority = "Priority"
         case mostRecent = "Most Recent"
         case timeSensitive = "Time Sensitive"
+        case category = "Category"
     }
     
     var body: some View {
@@ -305,7 +338,7 @@ struct HomeDashboardView: View {
                             if blockID == "individual" {
                                 // Individual tasks
                                 ForEach(groupedTasks[blockID] ?? [], id: \.id) { task in
-                                    TaskCardView(task: task, theme: theme)
+                                    TaskCardView(task: task, theme: theme, onTaskCompleted: handleTaskCompleted)
                                 }
                             } else {
                                 // Task block
@@ -365,13 +398,29 @@ struct HomeDashboardView: View {
             currentTime = Date()
         }
     }
+    
+    private func handleTaskCompleted(_ taskId: String) {
+        recentlyCompletedTasks.insert(taskId)
+        
+        // Remove from recently completed after 5 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            recentlyCompletedTasks.remove(taskId)
+        }
+    }
 }
 
 // MARK: - Task Card View
 struct TaskCardView: View {
     let task: Task
     let theme: any AppTheme
+    let onTaskCompleted: ((String) -> Void)?
     @Environment(\.modelContext) private var modelContext
+    
+    init(task: Task, theme: any AppTheme, onTaskCompleted: ((String) -> Void)? = nil) {
+        self.task = task
+        self.theme = theme
+        self.onTaskCompleted = onTaskCompleted
+    }
     
     var body: some View {
         HStack(spacing: 12) {
@@ -409,6 +458,11 @@ struct TaskCardView: View {
                 withAnimation(.easeInOut(duration: 0.3)) {
                     task.isComplete.toggle()
                     task.completionAnimation = true
+                    
+                    // Add to recently completed if just completed
+                    if task.isComplete {
+                        onTaskCompleted?(task.id)
+                    }
                 }
             }) {
                 Image(systemName: task.isComplete ? "checkmark.circle.fill" : "circle")
