@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import AudioToolbox
 
 struct HomeDashboardView: View {
     @Environment(\.modelContext) private var modelContext
@@ -334,16 +335,38 @@ struct HomeDashboardView: View {
                             task.taskBlockID ?? "individual"
                         }
                         
+                        // Show incomplete tasks first
                         ForEach(Array(groupedTasks.keys.sorted()), id: \.self) { blockID in
                             if blockID == "individual" {
                                 // Individual tasks
-                                ForEach(groupedTasks[blockID] ?? [], id: \.id) { task in
+                                ForEach(groupedTasks[blockID]?.filter { !$0.isComplete } ?? [], id: \.id) { task in
                                     TaskCardView(task: task, theme: theme, onTaskCompleted: handleTaskCompleted)
                                 }
                             } else {
                                 // Task block
                                 if let blockTasks = groupedTasks[blockID], !blockTasks.isEmpty {
-                                    TaskBlockCardView(tasks: blockTasks, theme: theme)
+                                    let incompleteTasks = blockTasks.filter { !$0.isComplete }
+                                    if !incompleteTasks.isEmpty {
+                                        TaskBlockCardView(tasks: blockTasks, theme: theme)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Show completed tasks at bottom
+                        ForEach(Array(groupedTasks.keys.sorted()), id: \.self) { blockID in
+                            if blockID == "individual" {
+                                // Individual completed tasks
+                                ForEach(groupedTasks[blockID]?.filter { $0.isComplete } ?? [], id: \.id) { task in
+                                    TaskCardView(task: task, theme: theme, onTaskCompleted: handleTaskCompleted)
+                                }
+                            } else {
+                                // Completed task blocks
+                                if let blockTasks = groupedTasks[blockID], !blockTasks.isEmpty {
+                                    let allComplete = blockTasks.allSatisfy { $0.isComplete }
+                                    if allComplete {
+                                        TaskBlockCardView(tasks: blockTasks, theme: theme)
+                                    }
                                 }
                             }
                         }
@@ -448,32 +471,44 @@ struct TaskCardView: View {
                         .font(.caption)
                         .foregroundColor(theme.textSecondary)
                         .lineLimit(2)
+                        .opacity(task.isComplete ? 0.6 : 1.0)
                 }
             }
             
             Spacer()
             
-            // Completion button
-            Button(action: {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    task.isComplete.toggle()
-                    task.completionAnimation = true
-                    
-                    // Add to recently completed if just completed
-                    if task.isComplete {
-                        onTaskCompleted?(task.id)
-                    }
+            // Right side with completion button and time
+            VStack(alignment: .trailing, spacing: 4) {
+                // Completion button
+                Button(action: {
+                    handleTaskCompletion()
+                }) {
+                    Image(systemName: completionIcon)
+                        .font(.title3)
+                        .foregroundColor(completionColor)
                 }
-            }) {
-                Image(systemName: task.isComplete ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundColor(task.isComplete ? .green : theme.textSecondary)
+                
+                // Time display under tick icon
+                Text(timeRangeText)
+                    .font(.caption2)
+                    .foregroundColor(theme.textSecondary)
+                    .opacity(task.isComplete ? 0.6 : 1.0)
             }
         }
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: theme.cardCornerRadius)
                 .fill(theme.cardBackground)
+                .overlay(
+                    // Category ring + current task highlighting
+                    RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                        .stroke(
+                            isCurrentTask ? Color.green : task.category.color(),
+                            lineWidth: isCurrentTask ? 4 : 1.5
+                        )
+                        .opacity(isCurrentTask ? 1.0 : 0.6)
+                        .animation(.easeInOut(duration: 0.3), value: isCurrentTask)
+                )
                 .shadow(color: theme.primaryColor.opacity(0.1), radius: theme.shadowRadius)
         )
         .opacity(task.isComplete ? 0.7 : 1.0)
@@ -486,6 +521,85 @@ struct TaskCardView: View {
         case .high: return .orange
         case .normal: return .green
         }
+    }
+    
+    private var timeRangeText: String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        
+        if Calendar.current.isDate(task.startTime, inSameDayAs: task.endTime) {
+            return "\(formatter.string(from: task.startTime)) - \(formatter.string(from: task.endTime))"
+        } else {
+            return "Multi-day"
+        }
+    }
+    
+    private var completionIcon: String {
+        if task.isComplete {
+            return "checkmark.circle.fill"
+        } else if isOverdue {
+            return "minus.circle.fill"
+        } else {
+            return "circle"
+        }
+    }
+    
+    private var completionColor: Color {
+        if task.isComplete {
+            return .green
+        } else if isOverdue {
+            return .gray
+        } else {
+            return theme.textSecondary
+        }
+    }
+    
+    private var isOverdue: Bool {
+        let now = Date()
+        let endOfDay = Calendar.current.startOfDay(for: now).addingTimeInterval(24 * 60 * 60)
+        return now > endOfDay && !task.isComplete
+    }
+    
+    private var isCurrentTask: Bool {
+        let now = Date()
+        return now >= task.startTime && now <= task.endTime && !task.isComplete
+    }
+    
+    private func handleTaskCompletion() {
+        // Check if task can be completed (time validation)
+        if !canCompleteTask() {
+            // Shake animation for invalid completion
+            withAnimation(.easeInOut(duration: 0.1).repeatCount(3, autoreverses: true)) {
+                // This will be handled by the parent view
+            }
+            return
+        }
+        
+        withAnimation(.easeInOut(duration: 0.3)) {
+            task.isComplete.toggle()
+            task.completionAnimation = true
+            
+            // Add to recently completed if just completed
+            if task.isComplete {
+                onTaskCompleted?(task.id)
+                
+                // Play completion sound and vibration
+                AudioServicesPlaySystemSound(1104) // Tink sound (more satisfying)
+                AudioServicesPlaySystemSound(1520) // Haptic feedback
+            }
+        }
+    }
+    
+    private func canCompleteTask() -> Bool {
+        let now = Date()
+        
+        // For time-sensitive tasks, check if we're within the time window
+        if task.priority == .urgent || task.priority == .high {
+            return now >= task.startTime
+        }
+        
+        // For normal tasks, allow completion anytime after start time
+        return now >= task.startTime
     }
 }
 

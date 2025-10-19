@@ -112,19 +112,12 @@ struct TaskBlockCardView: View {
                             .fill(isBlockComplete ? theme.cardBackground.opacity(0.5) : theme.cardBackground)
                             .shadow(color: theme.primaryColor.opacity(0.1), radius: theme.shadowRadius)
                         
-                        // Completion ring animation
+                        // Simple completion highlight
                         if showCompletionAnimation {
                             RoundedRectangle(cornerRadius: theme.cardCornerRadius)
-                                .stroke(
-                                    LinearGradient(
-                                        colors: [.green, .blue, .purple],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 3
-                                )
+                                .stroke(Color.green, lineWidth: 2)
                                 .opacity(ringProgress)
-                                .animation(.easeInOut(duration: 1.5), value: ringProgress)
+                                .animation(.easeInOut(duration: 0.5), value: ringProgress)
                         }
                     }
                 )
@@ -204,8 +197,9 @@ struct TaskBlockCardView: View {
             ringProgress = 1.0
         }
         
-        // Play completion sound (system sound)
-        AudioServicesPlaySystemSound(1057) // Success sound
+        // Play completion sound and vibration
+        AudioServicesPlaySystemSound(1104) // Tink sound (more satisfying)
+        AudioServicesPlaySystemSound(1520) // Haptic feedback
         
         // Hide animation after completion
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {

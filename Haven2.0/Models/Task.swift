@@ -68,6 +68,22 @@ enum PriorityType: String, CaseIterable, Codable {
     }
 }
 
+enum RecurrenceType: String, CaseIterable, Codable {
+    case daily = "daily"
+    case weekdays = "weekdays"
+    case weekly = "weekly"
+    case custom = "custom"
+    
+    var displayName: String {
+        switch self {
+        case .daily: return "Daily"
+        case .weekdays: return "Weekdays Only"
+        case .weekly: return "Weekly"
+        case .custom: return "Custom"
+        }
+    }
+}
+
 enum TaskCategory: String, CaseIterable, Codable {
     case work = "work"
     case personal = "personal"

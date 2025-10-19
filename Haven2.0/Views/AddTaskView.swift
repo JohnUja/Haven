@@ -29,6 +29,10 @@ struct AddTaskView: View {
     @State private var category = TaskCategory.personal
     @State private var hasEndTime = true
     @State private var isLocked = false
+    @State private var isRecurring = false
+    @State private var recurrenceType: RecurrenceType = .daily
+    @State private var recurrenceEndDate = Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date()
+    @State private var isFlexibleTask = false
     
     private var currentUser: User? {
         users.first
@@ -44,13 +48,34 @@ struct AddTaskView: View {
                         .lineLimit(3...6)
                 }
                 
+                Section("Task Type") {
+                    Toggle("Flexible task (no specific time)", isOn: $isFlexibleTask)
+                        .onChange(of: isFlexibleTask) { _, newValue in
+                            if newValue {
+                                hasEndTime = false
+                            }
+                        }
+                }
+                
                 Section("Time") {
-                    DatePicker("Start time", selection: $startTime, displayedComponents: [.date, .hourAndMinute])
-                    
-                    Toggle("Has end time", isOn: $hasEndTime)
-                    
-                    if hasEndTime {
-                        DatePicker("End time", selection: $endTime, displayedComponents: [.date, .hourAndMinute])
+                    if !isFlexibleTask {
+                        DatePicker("Start time", selection: $startTime, displayedComponents: [.date, .hourAndMinute])
+                            .onChange(of: startTime) { _, newValue in
+                                // Prevent past times for today
+                                if Calendar.current.isDateInToday(newValue) && newValue < Date() {
+                                    startTime = Date()
+                                }
+                            }
+                        
+                        Toggle("Has end time", isOn: $hasEndTime)
+                        
+                        if hasEndTime {
+                            DatePicker("End time", selection: $endTime, displayedComponents: [.date, .hourAndMinute])
+                        }
+                    } else {
+                        Text("This task can be done anytime today")
+                            .foregroundColor(.secondary)
+                            .italic()
                     }
                 }
                 
@@ -100,6 +125,22 @@ struct AddTaskView: View {
                     }
                 }
                 
+                Section("Recurrence") {
+                    Toggle("Make this a recurring task", isOn: $isRecurring)
+                    
+                    if isRecurring {
+                        Picker("Repeat", selection: $recurrenceType) {
+                            ForEach(RecurrenceType.allCases, id: \.self) { type in
+                                Text(type.displayName).tag(type)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        
+                        DatePicker("End date", selection: $recurrenceEndDate, displayedComponents: [.date])
+                            .datePickerStyle(.compact)
+                    }
+                }
+                
                 Section("Settings") {
                     Toggle("Lock task (prevents moving on timeline)", isOn: $isLocked)
                 }
@@ -138,27 +179,90 @@ struct AddTaskView: View {
     private func saveTask() {
         guard let user = currentUser else { return }
         
-        let task = Task(
-            userID: user.id,
-            title: title,
-            taskDescription: taskDescription.isEmpty ? nil : taskDescription,
-            startTime: startTime,
-            endTime: hasEndTime ? endTime : startTime,
-            priority: priority,
-            category: category,
-            taskBlockID: taskBlockID
-        )
-        
-        // Set lock status
-        task.isLocked = isLocked
-        
-        modelContext.insert(task)
+        if isRecurring {
+            createRecurringTasks(user: user)
+        } else {
+            createSingleTask(user: user)
+        }
         
         do {
             try modelContext.save()
             dismiss()
         } catch {
             print("Error saving task: \(error)")
+        }
+    }
+    
+    private func createSingleTask(user: User) {
+        let task = Task(
+            userID: user.id,
+            title: title,
+            taskDescription: taskDescription.isEmpty ? nil : taskDescription,
+            startTime: isFlexibleTask ? selectedDate : startTime,
+            endTime: isFlexibleTask ? selectedDate : (hasEndTime ? endTime : startTime),
+            priority: priority,
+            category: category,
+            taskBlockID: taskBlockID
+        )
+        
+        task.isLocked = isLocked
+        modelContext.insert(task)
+    }
+    
+    private func createRecurringTasks(user: User) {
+        let calendar = Calendar.current
+        var currentDate = startTime
+        let endDate = recurrenceEndDate
+        
+        while currentDate <= endDate {
+            // Check if we should create a task for this date based on recurrence type
+            if shouldCreateTaskForDate(currentDate) {
+                let task = Task(
+                    userID: user.id,
+                    title: title,
+                    taskDescription: taskDescription.isEmpty ? nil : taskDescription,
+                    startTime: isFlexibleTask ? currentDate : currentDate,
+                    endTime: isFlexibleTask ? currentDate : (hasEndTime ? calendar.date(byAdding: .hour, value: 1, to: currentDate) ?? currentDate : currentDate),
+                    priority: priority,
+                    category: category,
+                    taskBlockID: taskBlockID
+                )
+                
+                task.isLocked = isLocked
+                modelContext.insert(task)
+            }
+            
+            // Move to next occurrence
+            switch recurrenceType {
+            case .daily:
+                currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate
+            case .weekdays:
+                currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate
+                // Skip weekends
+                while calendar.isDateInWeekend(currentDate) {
+                    currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate
+                }
+            case .weekly:
+                currentDate = calendar.date(byAdding: .weekOfYear, value: 1, to: currentDate) ?? currentDate
+            case .custom:
+                // For custom, just do daily for now
+                currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate
+            }
+        }
+    }
+    
+    private func shouldCreateTaskForDate(_ date: Date) -> Bool {
+        let calendar = Calendar.current
+        
+        switch recurrenceType {
+        case .daily:
+            return true
+        case .weekdays:
+            return !calendar.isDateInWeekend(date)
+        case .weekly:
+            return calendar.component(.weekday, from: date) == calendar.component(.weekday, from: startTime)
+        case .custom:
+            return true // For now, treat custom as daily
         }
     }
 }
