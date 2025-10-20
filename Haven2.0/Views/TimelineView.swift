@@ -326,13 +326,16 @@ struct TimelineHourView: View {
                         
                         if isCurrentHour {
                             // Calculate if we're scrolled to the center of the screen
-                            let isAtCenter = abs(scrollOffset) < 60 // Within 60 points of center
+                            let isAtCenter = abs(scrollOffset) < 30 // More precise center detection
+                            
+                            // Debug output
+                            let _ = print("Scroll offset: \(scrollOffset), isAtCenter: \(isAtCenter)")
                             
                             // Time text in rectangular box - transparent background with white border
                             Text("\(currentHour):\(String(format: "%02d", currentMinute))")
                                 .font(.caption2)
                                 .fontWeight(.semibold)
-                                .foregroundColor(isAtCenter ? .black : .white) // Black text when filled, white when transparent
+                                .foregroundColor(isAtCenter ? .clear : .white) // Transparent text when filled, white when transparent
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(
@@ -447,7 +450,10 @@ struct WeatherBackgroundView: View {
         // Each hour is 120 points high
         let hourOffset = Int(abs(scrollOffset) / 120)
         let baseHour = Calendar.current.component(.hour, from: selectedDate)
-        return (baseHour + hourOffset) % 24
+        let targetHour = (baseHour + hourOffset) % 24
+        
+        print("Weather - Scroll offset: \(scrollOffset), Hour offset: \(hourOffset), Target hour: \(targetHour)")
+        return targetHour
     }
     
     var body: some View {
