@@ -55,6 +55,30 @@ struct TimelineView: View {
         return totalHeight * progress
     }
     
+    private var totalTimelineHeight: CGFloat {
+        // Total height for 24 hours
+        return 24 * 120 // 2880 points
+    }
+    
+    private var knotSpacing: CGFloat {
+        // Distance between each knot (hour marker)
+        return totalTimelineHeight / 24 // 120 points
+    }
+    
+    private func knotPosition(for hour: Int) -> CGFloat {
+        // Calculate position of knot for a specific hour
+        return CGFloat(hour) * knotSpacing
+    }
+    
+    private func isKnotActive(for hour: Int) -> Bool {
+        // Check if a knot should be "lit up" based on current time
+        if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
+            return hour <= currentHour
+        } else {
+            return false // For other days, no knots are active
+        }
+    }
+    
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -277,8 +301,9 @@ struct TimelineHourView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             
-            // Central Timeline with Current Time Indicator
+            // Central Timeline with Rope and Knots
             VStack {
+                // Top circle (start of rope)
                 Circle()
                     .fill(Color.white)
                     .frame(width: 8, height: 8)
@@ -290,11 +315,11 @@ struct TimelineHourView: View {
                     .padding(.vertical, 4)
                 
                 ZStack(alignment: .top) {
-                    // Background timeline
+                    // Background timeline line
                     Rectangle()
                         .fill(Color.white.opacity(0.3))
                         .frame(width: 2)
-                        .frame(maxHeight: .infinity)
+                        .frame(height: totalTimelineHeight)
                     
                     // Current time progress "rope"
                     if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
@@ -309,6 +334,19 @@ struct TimelineHourView: View {
                             .frame(width: 4)
                             .frame(height: currentTimeProgressHeight)
                             .animation(.easeInOut(duration: 0.5), value: currentTimeProgressHeight)
+                    }
+                    
+                    // Hour knots (circles) along the timeline
+                    ForEach(0..<24, id: \.self) { hour in
+                        Circle()
+                            .fill(isKnotActive(for: hour) ? Color.yellow : Color.white.opacity(0.6))
+                            .frame(width: 6, height: 6)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.black.opacity(0.3), lineWidth: 1)
+                            )
+                            .position(x: 30, y: knotPosition(for: hour) + 3) // +3 to center on line
+                            .animation(.easeInOut(duration: 0.3), value: isKnotActive(for: hour))
                     }
                 }
             }
