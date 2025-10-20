@@ -21,6 +21,17 @@ struct HomeDashboardView: View {
     @State private var showingAddBlock = false
     @State private var taskSortOrder: TaskSortOrder = .priority
     @State private var recentlyCompletedTasks: Set<String> = []
+    @State private var showingEditTask: Task? = nil
+    @State private var showingProgressDetails = false
+    @State private var showingFloatingMenu: Task? = nil
+    @State private var showingFloatingMenuForBlock: [Task]? = nil
+    @State private var showingMoveToDay: Task? = nil
+    @State private var showingMoveToDayBlock: [Task]? = nil
+    @State private var showingUndoMove: Task? = nil
+    @State private var showingUndoMoveBlock: [Task]? = nil
+    @State private var undoMoveTimer: Timer? = nil
+    @State private var originalTaskDates: [String: Date] = [:]
+    @State private var originalBlockDates: [String: [Date]] = [:]
     
     private var currentUser: User? {
         users.first
@@ -143,9 +154,290 @@ struct HomeDashboardView: View {
             AddBlockView(selectedDate: selectedDate)
                 .presentationDetents([.medium])
         }
+        .sheet(item: $showingEditTask) { task in
+            EditTaskView(task: task)
+        }
+        .overlay(
+            // Floating Action Menu
+            Group {
+                if let task = showingFloatingMenu {
+                    ZStack {
+                        // Background overlay
+                        Color.black.opacity(0.3)
+                            .ignoresSafeArea()
+                            .onTapGesture {
+                                showingFloatingMenu = nil
+                            }
+                        
+                        // Floating menu for task
+                        FloatingActionMenu(
+                            task: task,
+                            theme: themeManager.currentTheme,
+                            onEdit: {
+                                showingFloatingMenu = nil
+                                showingEditTask = task
+                            },
+                            onChangeCategory: {
+                                showingFloatingMenu = nil
+                                // TODO: Implement category change
+                            },
+                            onAddToGoal: {
+                                showingFloatingMenu = nil
+                                // TODO: Implement add to goal
+                            },
+                            onMove: {
+                                showingFloatingMenu = nil
+                                showingMoveToDay = task
+                            },
+                            onDelete: {
+                                showingFloatingMenu = nil
+                                // TODO: Implement delete task
+                            },
+                            onDismiss: {
+                                showingFloatingMenu = nil
+                            }
+                        )
+                        .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                
+                if let taskBlock = showingFloatingMenuForBlock {
+                    ZStack {
+                        // Background overlay
+                        Color.black.opacity(0.3)
+                            .ignoresSafeArea()
+                            .onTapGesture {
+                                showingFloatingMenuForBlock = nil
+                            }
+                        
+                        // Floating menu for task block
+                        FloatingActionMenu(
+                            taskBlock: taskBlock,
+                            theme: themeManager.currentTheme,
+                            onEdit: {
+                                showingFloatingMenuForBlock = nil
+                                // TODO: Implement edit task block
+                            },
+                            onChangeCategory: {
+                                showingFloatingMenuForBlock = nil
+                                // TODO: Implement category change
+                            },
+                            onAddToGoal: {
+                                showingFloatingMenuForBlock = nil
+                                // TODO: Implement add to goal
+                            },
+                            onMove: {
+                                showingFloatingMenuForBlock = nil
+                                showingMoveToDayBlock = taskBlock
+                            },
+                            onDelete: {
+                                showingFloatingMenuForBlock = nil
+                                // TODO: Implement delete task block
+                            },
+                            onDismiss: {
+                                showingFloatingMenuForBlock = nil
+                            }
+                        )
+                        .transition(.scale.combined(with: .opacity))
+                    }
+                }
+            }
+        )
         .onAppear {
             startTimeTimer()
         }
+        .overlay(
+            // Move to Day Selection
+            Group {
+                if let task = showingMoveToDay {
+                    ZStack {
+                        Color.black.opacity(0.3)
+                            .ignoresSafeArea()
+                            .onTapGesture {
+                                showingMoveToDay = nil
+                            }
+                        
+                        VStack(spacing: 16) {
+                            Text("Move Task to Day")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            
+                            Text("Select a day to move this task to:")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.8))
+                            
+                            // Day selection (simplified - just show next 7 days)
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
+                                ForEach(0..<7, id: \.self) { dayOffset in
+                                    let targetDate = Calendar.current.date(byAdding: .day, value: dayOffset, to: selectedDate) ?? selectedDate
+                                    let isToday = Calendar.current.isDate(targetDate, inSameDayAs: selectedDate)
+                                    
+                                    Button(action: {
+                                        moveTaskToDay(task, to: targetDate)
+                                        showingMoveToDay = nil
+                                    }) {
+                                        VStack(spacing: 4) {
+                                            Text(dayOffset == 0 ? "Today" : "\(dayOffset)")
+                                                .font(.caption)
+                                                .fontWeight(isToday ? .bold : .regular)
+                                            
+                                            Text(targetDate, format: .dateTime.weekday(.abbreviated))
+                                                .font(.caption2)
+                                        }
+                                        .foregroundColor(.white)
+                                        .padding(8)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(isToday ? Color.blue : Color.white.opacity(0.2))
+                                        )
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                            
+                            Button("Cancel") {
+                                showingMoveToDay = nil
+                            }
+                            .foregroundColor(.white)
+                            .padding(.top, 8)
+                        }
+                        .padding(20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(Color.black.opacity(0.8))
+                        )
+                        .padding(.horizontal, 40)
+                    }
+                }
+                
+                if let taskBlock = showingMoveToDayBlock {
+                    ZStack {
+                        Color.black.opacity(0.3)
+                            .ignoresSafeArea()
+                            .onTapGesture {
+                                showingMoveToDayBlock = nil
+                            }
+                        
+                        VStack(spacing: 16) {
+                            Text("Move Task Block to Day")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            
+                            Text("Select a day to move this task block to:")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.8))
+                            
+                            // Day selection (simplified - just show next 7 days)
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
+                                ForEach(0..<7, id: \.self) { dayOffset in
+                                    let targetDate = Calendar.current.date(byAdding: .day, value: dayOffset, to: selectedDate) ?? selectedDate
+                                    let isToday = Calendar.current.isDate(targetDate, inSameDayAs: selectedDate)
+                                    
+                                    Button(action: {
+                                        moveTaskBlockToDay(taskBlock, to: targetDate)
+                                        showingMoveToDayBlock = nil
+                                    }) {
+                                        VStack(spacing: 4) {
+                                            Text(dayOffset == 0 ? "Today" : "\(dayOffset)")
+                                                .font(.caption)
+                                                .fontWeight(isToday ? .bold : .regular)
+                                            
+                                            Text(targetDate, format: .dateTime.weekday(.abbreviated))
+                                                .font(.caption2)
+                                        }
+                                        .foregroundColor(.white)
+                                        .padding(8)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(isToday ? Color.blue : Color.white.opacity(0.2))
+                                        )
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                            
+                            Button("Cancel") {
+                                showingMoveToDayBlock = nil
+                            }
+                            .foregroundColor(.white)
+                            .padding(.top, 8)
+                        }
+                        .padding(20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(Color.black.opacity(0.8))
+                        )
+                        .padding(.horizontal, 40)
+                    }
+                }
+            }
+        )
+        .overlay(
+            // Undo Move Notification
+            Group {
+                if let task = showingUndoMove {
+                    VStack {
+                        Spacer()
+                        
+                        HStack {
+                            Text("Task moved to another day")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                            
+                            Spacer()
+                            
+                            Button("Undo") {
+                                undoMoveTask(task)
+                                showingUndoMove = nil
+                                undoMoveTimer?.invalidate()
+                                undoMoveTimer = nil
+                            }
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.black.opacity(0.8))
+                        )
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 100)
+                    }
+                }
+                
+                if let taskBlock = showingUndoMoveBlock {
+                    VStack {
+                        Spacer()
+                        
+                        HStack {
+                            Text("Task block moved to another day")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                            
+                            Spacer()
+                            
+                            Button("Undo") {
+                                undoMoveTaskBlock(taskBlock)
+                                showingUndoMoveBlock = nil
+                                undoMoveTimer?.invalidate()
+                                undoMoveTimer = nil
+                            }
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.black.opacity(0.8))
+                        )
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 100)
+                    }
+                }
+            }
+        )
     }
     
     // MARK: - Top Navigation Bar
@@ -161,6 +453,24 @@ struct HomeDashboardView: View {
                         .font(.caption)
                         .foregroundColor(theme.textSecondary)
                 }
+            }
+            
+            // Time Crystals Display (Center)
+            if let user = currentUser {
+                HStack(spacing: 4) {
+                    Image(systemName: "diamond.fill")
+                        .font(.caption)
+                        .foregroundColor(.cyan)
+                    Text("\(user.gamificationCurrency)")
+                        .font(theme.bodyFont)
+                        .foregroundColor(theme.textPrimary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(theme.cardBackground.opacity(0.8))
+                )
             }
             
             Spacer()
@@ -193,19 +503,66 @@ struct HomeDashboardView: View {
     private func completedTasksCountView(theme: any AppTheme) -> some View {
         let completedCount = selectedDateTasks.filter { $0.isComplete }.count
         let totalCount = selectedDateTasks.count
+        let progress = totalCount > 0 ? Double(completedCount) / Double(totalCount) : 0.0
         
-        return HStack {
-            Text("\(completedCount)/\(totalCount) tasks completed")
-                .font(theme.bodyFont)
-                .foregroundColor(theme.textSecondary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 20)
+        return VStack(spacing: 8) {
+            // Completion counter with fill-up bar background (smaller)
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    showingProgressDetails.toggle()
+                }
+            }) {
+                ZStack(alignment: .leading) {
+                    // Background fill-up bar
+                    RoundedRectangle(cornerRadius: 16)
                         .fill(theme.cardBackground.opacity(0.8))
-                )
+                        .overlay(
+                            // Green fill-up bar
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [.green.opacity(0.3), .green.opacity(0.6)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .scaleEffect(x: progress, y: 1.0, anchor: .leading)
+                                .animation(.easeInOut(duration: 0.5), value: progress)
+                        )
+                    
+                    // Text content
+                    HStack {
+                        Text("\(completedCount)/\(totalCount) tasks completed")
+                            .font(.caption)
+                            .foregroundColor(theme.textSecondary)
+                            .zIndex(1)
+                        
+                        Spacer()
+                        
+                        Image(systemName: showingProgressDetails ? "chevron.up" : "chevron.down")
+                            .font(.caption2)
+                            .foregroundColor(theme.textSecondary)
+                            .zIndex(1)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                }
+            }
+            .buttonStyle(PlainButtonStyle())
             
-            Spacer()
+            // Expandable progress details (only when clicked)
+            if showingProgressDetails && totalCount > 0 {
+                VStack(spacing: 8) {
+                    HStack {
+                        Text("\(Int(progress * 100))% Complete")
+                            .font(.caption)
+                            .foregroundColor(theme.textSecondary)
+                        Spacer()
+                    }
+                }
+                .padding(.horizontal, 20)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
         .padding(.horizontal, 20)
     }
@@ -340,14 +697,22 @@ struct HomeDashboardView: View {
                             if blockID == "individual" {
                                 // Individual tasks
                                 ForEach(groupedTasks[blockID]?.filter { !$0.isComplete } ?? [], id: \.id) { task in
-                                    TaskCardView(task: task, theme: theme, onTaskCompleted: handleTaskCompleted)
+                                    TaskCardView(task: task, theme: theme, onTaskCompleted: handleTaskCompleted, onEditTask: { task in
+                                        showingFloatingMenu = task
+                                    })
                                 }
                             } else {
                                 // Task block
                                 if let blockTasks = groupedTasks[blockID], !blockTasks.isEmpty {
                                     let incompleteTasks = blockTasks.filter { !$0.isComplete }
                                     if !incompleteTasks.isEmpty {
-                                        TaskBlockCardView(tasks: blockTasks, theme: theme)
+                                        TaskBlockCardView(tasks: blockTasks, theme: theme, onEditBlock: { tasks in
+                                            showingFloatingMenuForBlock = tasks
+                                        }, onAddSubtask: {
+                                            // TODO: Implement add subtask
+                                        }, onRemoveSubtask: { task in
+                                            // TODO: Implement remove subtask
+                                        })
                                     }
                                 }
                             }
@@ -358,14 +723,22 @@ struct HomeDashboardView: View {
                             if blockID == "individual" {
                                 // Individual completed tasks
                                 ForEach(groupedTasks[blockID]?.filter { $0.isComplete } ?? [], id: \.id) { task in
-                                    TaskCardView(task: task, theme: theme, onTaskCompleted: handleTaskCompleted)
+                                    TaskCardView(task: task, theme: theme, onTaskCompleted: handleTaskCompleted, onEditTask: { task in
+                                        showingFloatingMenu = task
+                                    })
                                 }
                             } else {
                                 // Completed task blocks
                                 if let blockTasks = groupedTasks[blockID], !blockTasks.isEmpty {
                                     let allComplete = blockTasks.allSatisfy { $0.isComplete }
                                     if allComplete {
-                                        TaskBlockCardView(tasks: blockTasks, theme: theme)
+                                        TaskBlockCardView(tasks: blockTasks, theme: theme, onEditBlock: { tasks in
+                                            showingFloatingMenuForBlock = tasks
+                                        }, onAddSubtask: {
+                                            // TODO: Implement add subtask
+                                        }, onRemoveSubtask: { task in
+                                            // TODO: Implement remove subtask
+                                        })
                                     }
                                 }
                             }
@@ -425,10 +798,228 @@ struct HomeDashboardView: View {
     private func handleTaskCompleted(_ taskId: String) {
         recentlyCompletedTasks.insert(taskId)
         
-        // Remove from recently completed after 5 seconds
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+        // Remove from recently completed after 4 seconds (3-5 second range)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
             recentlyCompletedTasks.remove(taskId)
         }
+    }
+    
+    private func moveTaskToDay(_ task: Task, to targetDate: Date) {
+        // Store original date for undo
+        originalTaskDates[task.id] = task.startTime
+        
+        // Update task date
+        let calendar = Calendar.current
+        let targetStartOfDay = calendar.startOfDay(for: targetDate)
+        let timeComponents = calendar.dateComponents([.hour, .minute], from: task.startTime)
+        let newStartTime = calendar.date(bySettingHour: timeComponents.hour ?? 0, minute: timeComponents.minute ?? 0, second: 0, of: targetStartOfDay) ?? targetDate
+        
+        let duration = task.endTime.timeIntervalSince(task.startTime)
+        let newEndTime = newStartTime.addingTimeInterval(duration)
+        
+        task.startTime = newStartTime
+        task.endTime = newEndTime
+        
+        // Show undo notification
+        showingUndoMove = task
+        
+        // Auto-hide undo after 10 seconds
+        undoMoveTimer?.invalidate()
+        undoMoveTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { _ in
+            showingUndoMove = nil
+            originalTaskDates.removeValue(forKey: task.id)
+        }
+    }
+    
+    private func moveTaskBlockToDay(_ taskBlock: [Task], to targetDate: Date) {
+        // Store original dates for undo
+        let originalDates = taskBlock.map { $0.startTime }
+        let blockId = taskBlock.first?.id ?? UUID().uuidString
+        originalBlockDates[blockId] = originalDates
+        
+        // Update all tasks in the block
+        let calendar = Calendar.current
+        let targetStartOfDay = calendar.startOfDay(for: targetDate)
+        
+        for task in taskBlock {
+            let timeComponents = calendar.dateComponents([.hour, .minute], from: task.startTime)
+            let newStartTime = calendar.date(bySettingHour: timeComponents.hour ?? 0, minute: timeComponents.minute ?? 0, second: 0, of: targetStartOfDay) ?? targetDate
+            
+            let duration = task.endTime.timeIntervalSince(task.startTime)
+            let newEndTime = newStartTime.addingTimeInterval(duration)
+            
+            task.startTime = newStartTime
+            task.endTime = newEndTime
+        }
+        
+        // Show undo notification
+        showingUndoMoveBlock = taskBlock
+        
+        // Auto-hide undo after 10 seconds
+        undoMoveTimer?.invalidate()
+        undoMoveTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { _ in
+            showingUndoMoveBlock = nil
+            originalBlockDates.removeValue(forKey: blockId)
+        }
+    }
+    
+    private func undoMoveTask(_ task: Task) {
+        guard let originalDate = originalTaskDates[task.id] else { return }
+        
+        // Restore original date
+        let calendar = Calendar.current
+        let originalStartOfDay = calendar.startOfDay(for: originalDate)
+        let timeComponents = calendar.dateComponents([.hour, .minute], from: originalDate)
+        let restoredStartTime = calendar.date(bySettingHour: timeComponents.hour ?? 0, minute: timeComponents.minute ?? 0, second: 0, of: originalStartOfDay) ?? originalDate
+        
+        let duration = task.endTime.timeIntervalSince(task.startTime)
+        let restoredEndTime = restoredStartTime.addingTimeInterval(duration)
+        
+        task.startTime = restoredStartTime
+        task.endTime = restoredEndTime
+        
+        // Clean up
+        originalTaskDates.removeValue(forKey: task.id)
+    }
+    
+    private func undoMoveTaskBlock(_ taskBlock: [Task]) {
+        let blockId = taskBlock.first?.id ?? UUID().uuidString
+        guard let originalDates = originalBlockDates[blockId] else { return }
+        
+        // Restore original dates for all tasks in the block
+        let calendar = Calendar.current
+        
+        for (index, task) in taskBlock.enumerated() {
+            if index < originalDates.count {
+                let originalDate = originalDates[index]
+                let originalStartOfDay = calendar.startOfDay(for: originalDate)
+                let timeComponents = calendar.dateComponents([.hour, .minute], from: originalDate)
+                let restoredStartTime = calendar.date(bySettingHour: timeComponents.hour ?? 0, minute: timeComponents.minute ?? 0, second: 0, of: originalStartOfDay) ?? originalDate
+                
+                let duration = task.endTime.timeIntervalSince(task.startTime)
+                let restoredEndTime = restoredStartTime.addingTimeInterval(duration)
+                
+                task.startTime = restoredStartTime
+                task.endTime = restoredEndTime
+            }
+        }
+        
+        // Clean up
+        originalBlockDates.removeValue(forKey: blockId)
+    }
+}
+
+// MARK: - Floating Action Menu
+struct FloatingActionMenu: View {
+    let task: Task?
+    let taskBlock: [Task]?
+    let theme: any AppTheme
+    let onEdit: () -> Void
+    let onChangeCategory: () -> Void
+    let onAddToGoal: () -> Void
+    let onMove: () -> Void
+    let onDelete: () -> Void
+    let onDismiss: () -> Void
+    
+    init(task: Task? = nil, taskBlock: [Task]? = nil, theme: any AppTheme, onEdit: @escaping () -> Void, onChangeCategory: @escaping () -> Void, onAddToGoal: @escaping () -> Void, onMove: @escaping () -> Void, onDelete: @escaping () -> Void, onDismiss: @escaping () -> Void) {
+        self.task = task
+        self.taskBlock = taskBlock
+        self.theme = theme
+        self.onEdit = onEdit
+        self.onChangeCategory = onChangeCategory
+        self.onAddToGoal = onAddToGoal
+        self.onMove = onMove
+        self.onDelete = onDelete
+        self.onDismiss = onDismiss
+    }
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            // Edit
+            Button(action: onEdit) {
+                VStack(spacing: 4) {
+                    Image(systemName: "pencil")
+                        .font(.title2)
+                    Text("Edit")
+                        .font(.caption)
+                }
+                .foregroundColor(theme.textPrimary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(theme.cardBackground)
+                .cornerRadius(12)
+            }
+            
+            // Change Category
+            Button(action: onChangeCategory) {
+                VStack(spacing: 4) {
+                    Image(systemName: "tag")
+                        .font(.title2)
+                    Text("Category")
+                        .font(.caption)
+                }
+                .foregroundColor(theme.textPrimary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(theme.cardBackground)
+                .cornerRadius(12)
+            }
+            
+            // Add to Goal
+            Button(action: onAddToGoal) {
+                VStack(spacing: 4) {
+                    Image(systemName: "target")
+                        .font(.title2)
+                    Text("Goal")
+                        .font(.caption)
+                }
+                .foregroundColor(theme.textPrimary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(theme.cardBackground)
+                .cornerRadius(12)
+            }
+            
+            // Move
+            Button(action: onMove) {
+                VStack(spacing: 4) {
+                    Image(systemName: "arrow.up.arrow.down")
+                        .font(.title2)
+                    Text("Move")
+                        .font(.caption)
+                }
+                .foregroundColor(theme.textPrimary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(theme.cardBackground)
+                .cornerRadius(12)
+            }
+            
+            // Delete
+            Button(action: onDelete) {
+                VStack(spacing: 4) {
+                    Image(systemName: "trash")
+                        .font(.title2)
+                    Text("Delete")
+                        .font(.caption)
+                }
+                .foregroundColor(.red)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(theme.cardBackground)
+                .cornerRadius(12)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(theme.cardBackground)
+                .shadow(color: theme.primaryColor.opacity(0.3), radius: 15, x: 0, y: 5)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(theme.primaryColor.opacity(0.4), lineWidth: 1)
+        )
     }
 }
 
@@ -437,12 +1028,16 @@ struct TaskCardView: View {
     let task: Task
     let theme: any AppTheme
     let onTaskCompleted: ((String) -> Void)?
+    let onEditTask: ((Task) -> Void)?
     @Environment(\.modelContext) private var modelContext
+    @State private var showCompletionAnimation = false
+    @State private var ringProgress: CGFloat = 0
     
-    init(task: Task, theme: any AppTheme, onTaskCompleted: ((String) -> Void)? = nil) {
+    init(task: Task, theme: any AppTheme, onTaskCompleted: ((String) -> Void)? = nil, onEditTask: ((Task) -> Void)? = nil) {
         self.task = task
         self.theme = theme
         self.onTaskCompleted = onTaskCompleted
+        self.onEditTask = onEditTask
     }
     
     var body: some View {
@@ -458,22 +1053,28 @@ struct TaskCardView: View {
                 .foregroundColor(task.category.color())
                 .frame(width: 24, height: 24)
             
-            // Task content
-            VStack(alignment: .leading, spacing: 4) {
-                Text(task.title)
-                    .font(theme.bodyFont)
-                    .foregroundColor(theme.textPrimary)
-                    .strikethrough(task.isComplete)
-                    .opacity(task.isComplete ? 0.6 : 1.0)
-                
-                if let description = task.taskDescription {
-                    Text(description)
-                        .font(.caption)
-                        .foregroundColor(theme.textSecondary)
-                        .lineLimit(2)
+                // Task content
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(task.title)
+                        .font(theme.bodyFont)
+                        .foregroundColor(theme.textPrimary)
+                        .strikethrough(task.isComplete)
                         .opacity(task.isComplete ? 0.6 : 1.0)
+                    
+                    // Priority text
+                    Text("Priority: \(task.priority.rawValue.capitalized)")
+                        .font(.caption2)
+                        .foregroundColor(priorityColor)
+                        .opacity(task.isComplete ? 0.6 : 1.0)
+                    
+                    if let description = task.taskDescription {
+                        Text(description)
+                            .font(.caption)
+                            .foregroundColor(theme.textSecondary)
+                            .lineLimit(2)
+                            .opacity(task.isComplete ? 0.6 : 1.0)
+                    }
                 }
-            }
             
             Spacer()
             
@@ -497,22 +1098,63 @@ struct TaskCardView: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: theme.cardCornerRadius)
-                .fill(theme.cardBackground)
-                .overlay(
-                    // Category ring + current task highlighting
+            ZStack {
+                RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                    .fill(theme.cardBackground)
+                    .overlay(
+                        // Category ring + current task highlighting
+                        RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                            .stroke(
+                                task.category.color(),
+                                lineWidth: 1.5
+                            )
+                            .opacity(0.6)
+                    )
+                    .overlay(
+                        // Current task indicator - subtle pulsing dot
+                        VStack {
+                            HStack {
+                                Spacer()
+                                if isCurrentTask {
+                                    Circle()
+                                        .fill(Color.green)
+                                        .frame(width: 8, height: 8)
+                                        .scaleEffect(isCurrentTask ? 1.2 : 1.0)
+                                        .opacity(isCurrentTask ? 0.8 : 0.0)
+                                        .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: isCurrentTask)
+                                        .padding(.top, 8)
+                                        .padding(.trailing, 8)
+                                }
+                            }
+                            Spacer()
+                        }
+                    )
+                    .shadow(color: theme.primaryColor.opacity(0.1), radius: theme.shadowRadius)
+                
+                // Completion ring animation
+                if showCompletionAnimation {
                     RoundedRectangle(cornerRadius: theme.cardCornerRadius)
                         .stroke(
-                            isCurrentTask ? Color.green : task.category.color(),
-                            lineWidth: isCurrentTask ? 4 : 1.5
+                            AngularGradient(
+                                colors: [.green, .blue, .purple, .pink, .green],
+                                center: .center,
+                                startAngle: .degrees(0),
+                                endAngle: .degrees(360)
+                            ),
+                            lineWidth: 3
                         )
-                        .opacity(isCurrentTask ? 1.0 : 0.6)
-                        .animation(.easeInOut(duration: 0.3), value: isCurrentTask)
-                )
-                .shadow(color: theme.primaryColor.opacity(0.1), radius: theme.shadowRadius)
+                        .opacity(ringProgress)
+                        .scaleEffect(1.05)
+                        .animation(.easeInOut(duration: 1.5), value: ringProgress)
+                }
+            }
         )
         .opacity(task.isComplete ? 0.7 : 1.0)
         .animation(.easeInOut(duration: 0.3), value: task.isComplete)
+        .onLongPressGesture {
+            // Long press to show floating menu
+            onEditTask?(task)
+        }
     }
     
     private var priorityColor: Color {
@@ -520,6 +1162,7 @@ struct TaskCardView: View {
         case .urgent: return .red
         case .high: return .orange
         case .normal: return .green
+        case .low: return .blue
         }
     }
     
@@ -565,30 +1208,33 @@ struct TaskCardView: View {
         return now >= task.startTime && now <= task.endTime && !task.isComplete
     }
     
-    private func handleTaskCompletion() {
-        // Check if task can be completed (time validation)
-        if !canCompleteTask() {
-            // Shake animation for invalid completion
-            withAnimation(.easeInOut(duration: 0.1).repeatCount(3, autoreverses: true)) {
-                // This will be handled by the parent view
+        private func handleTaskCompletion() {
+            // Check if task can be completed (time validation)
+            if !canCompleteTask() {
+                // Shake animation for invalid completion
+                withAnimation(.easeInOut(duration: 0.1).repeatCount(3, autoreverses: true)) {
+                    // This will be handled by the parent view
+                }
+                return
             }
-            return
-        }
-        
-        withAnimation(.easeInOut(duration: 0.3)) {
-            task.isComplete.toggle()
-            task.completionAnimation = true
             
-            // Add to recently completed if just completed
-            if task.isComplete {
-                onTaskCompleted?(task.id)
+            withAnimation(.easeInOut(duration: 0.3)) {
+                task.isComplete.toggle()
+                task.completionAnimation = true
                 
-                // Play completion sound and vibration
-                AudioServicesPlaySystemSound(1104) // Tink sound (more satisfying)
-                AudioServicesPlaySystemSound(1520) // Haptic feedback
+                // Add to recently completed if just completed
+                if task.isComplete {
+                    onTaskCompleted?(task.id)
+                    
+                    // Trigger completion animation
+                    triggerCompletionAnimation()
+                    
+                    // Play completion sound and vibration - better "dinggg" sound
+                    AudioServicesPlaySystemSound(1057) // Glass sound (more satisfying "dinggg")
+                    AudioServicesPlaySystemSound(1520) // Haptic feedback
+                }
             }
         }
-    }
     
     private func canCompleteTask() -> Bool {
         let now = Date()
@@ -601,6 +1247,25 @@ struct TaskCardView: View {
         // For normal tasks, allow completion anytime after start time
         return now >= task.startTime
     }
+    
+        private func triggerCompletionAnimation() {
+            showCompletionAnimation = true
+            
+            // Ring animation that traverses the circumference
+            withAnimation(.easeInOut(duration: 2.0)) {
+                ringProgress = 1.0
+            }
+            
+            // Hide animation after completion
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                withAnimation(.easeOut(duration: 0.5)) {
+                    ringProgress = 0
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    showCompletionAnimation = false
+                }
+            }
+        }
 }
 
 

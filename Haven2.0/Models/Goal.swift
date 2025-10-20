@@ -9,6 +9,20 @@ import Foundation
 import SwiftData
 import SwiftUI
 
+struct GoalMilestone: Codable {
+    let id: String
+    let title: String
+    let targetValue: Int
+    let isComplete: Bool
+    
+    init(id: String = UUID().uuidString, title: String, targetValue: Int, isComplete: Bool = false) {
+        self.id = id
+        self.title = title
+        self.targetValue = targetValue
+        self.isComplete = isComplete
+    }
+}
+
 @Model
 final class Goal {
     var id: String
@@ -19,6 +33,10 @@ final class Goal {
     var currentValue: Int
     var isComplete: Bool
     var createdAt: Date
+    var deadline: Date?
+    var milestones: [GoalMilestone]
+    var timeCrystalsReward: Int
+    var themeReward: String?
     
     init(id: String = UUID().uuidString,
          userID: String,
@@ -27,7 +45,11 @@ final class Goal {
          targetValue: Int,
          currentValue: Int = 0,
          isComplete: Bool = false,
-         createdAt: Date = Date()) {
+         createdAt: Date = Date(),
+         deadline: Date? = nil,
+         milestones: [GoalMilestone] = [],
+         timeCrystalsReward: Int = 10,
+         themeReward: String? = nil) {
         self.id = id
         self.userID = userID
         self.title = title
@@ -36,6 +58,10 @@ final class Goal {
         self.currentValue = currentValue
         self.isComplete = isComplete
         self.createdAt = createdAt
+        self.deadline = deadline
+        self.milestones = milestones
+        self.timeCrystalsReward = timeCrystalsReward
+        self.themeReward = themeReward
     }
     
     func progressPercentage() -> Double {
@@ -49,6 +75,12 @@ enum GoalCategory: String, CaseIterable, Codable {
     case work = "work"
     case learning = "learning"
     case personal = "personal"
+    case financial = "financial"
+    case fitness = "fitness"
+    case creative = "creative"
+    case social = "social"
+    case spiritual = "spiritual"
+    case productivity = "productivity"
     
     var displayName: String {
         switch self {
@@ -56,6 +88,27 @@ enum GoalCategory: String, CaseIterable, Codable {
         case .work: return "Work"
         case .learning: return "Learning"
         case .personal: return "Personal"
+        case .financial: return "Financial"
+        case .fitness: return "Fitness"
+        case .creative: return "Creative"
+        case .social: return "Social"
+        case .spiritual: return "Spiritual"
+        case .productivity: return "Productivity"
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .health: return "heart.fill"
+        case .work: return "briefcase.fill"
+        case .learning: return "book.fill"
+        case .personal: return "person.fill"
+        case .financial: return "dollarsign.circle.fill"
+        case .fitness: return "figure.run"
+        case .creative: return "paintbrush.fill"
+        case .social: return "person.2.fill"
+        case .spiritual: return "leaf.fill"
+        case .productivity: return "chart.line.uptrend.xyaxis"
         }
     }
     
@@ -65,6 +118,12 @@ enum GoalCategory: String, CaseIterable, Codable {
         case .work: return "blue"
         case .learning: return "purple"
         case .personal: return "orange"
+        case .financial: return "yellow"
+        case .fitness: return "red"
+        case .creative: return "pink"
+        case .social: return "cyan"
+        case .spiritual: return "mint"
+        case .productivity: return "indigo"
         }
     }
     
@@ -74,6 +133,12 @@ enum GoalCategory: String, CaseIterable, Codable {
         case .work: return .blue
         case .learning: return .purple
         case .personal: return .orange
+        case .financial: return .yellow
+        case .fitness: return .red
+        case .creative: return .pink
+        case .social: return .cyan
+        case .spiritual: return .mint
+        case .productivity: return .indigo
         }
     }
 }

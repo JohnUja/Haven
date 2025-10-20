@@ -15,6 +15,7 @@ final class TaskBlock {
     var title: String
     var blockDescription: String?
     var color: String
+    var priority: PriorityType
     var isComplete: Bool
     var createdDate: Date
     var isLocked: Bool = false // New: For routine blocks that can't be moved
@@ -24,12 +25,14 @@ final class TaskBlock {
          title: String,
          blockDescription: String? = nil,
          color: String = "blue",
+         priority: PriorityType = .normal,
          isComplete: Bool = false) {
         self.id = id
         self.userID = userID
         self.title = title
         self.blockDescription = blockDescription
         self.color = color
+        self.priority = priority
         self.isComplete = isComplete
         self.createdDate = Date()
     }

@@ -142,7 +142,7 @@ struct AddTaskView: View {
                 }
                 
                 Section("Settings") {
-                    Toggle("Lock task (prevents moving on timeline)", isOn: $isLocked)
+                    Toggle("Lock task", isOn: $isLocked)
                 }
             }
             .navigationTitle("Add Task")

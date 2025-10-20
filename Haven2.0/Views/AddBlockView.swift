@@ -59,7 +59,30 @@ struct AddBlockView: View {
                 
                 Section("Subtasks") {
                     ForEach(0..<subtasks.count, id: \.self) { index in
-                        TextField("Subtask \(index + 1)", text: $subtasks[index])
+                        HStack {
+                            TextField("Subtask \(index + 1)", text: $subtasks[index])
+                            
+                            Button(action: {
+                                removeSubtask(at: index)
+                            }) {
+                                Image(systemName: "minus.circle.fill")
+                                    .font(.title3)
+                                    .foregroundColor(.red)
+                            }
+                            .disabled(subtasks.count <= 1)
+                        }
+                    }
+                    
+                    Button(action: {
+                        addSubtask()
+                    }) {
+                        HStack {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title3)
+                                .foregroundColor(.green)
+                            Text("Add Subtask")
+                                .foregroundColor(.green)
+                        }
                     }
                 }
             }
@@ -80,6 +103,15 @@ struct AddBlockView: View {
                 }
             }
         }
+    }
+    
+    private func addSubtask() {
+        subtasks.append("New Task")
+    }
+    
+    private func removeSubtask(at index: Int) {
+        guard subtasks.count > 1 else { return }
+        subtasks.remove(at: index)
     }
     
     private func colorFromString(_ colorString: String) -> Color {

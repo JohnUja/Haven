@@ -12,13 +12,24 @@ import AudioToolbox
 struct TaskBlockCardView: View {
     let tasks: [Task]
     let theme: any AppTheme
+    let onEditBlock: (([Task]) -> Void)?
+    let onAddSubtask: (() -> Void)?
+    let onRemoveSubtask: ((Task) -> Void)?
     
     @State private var isExpanded = false
     @State private var showCompletionAnimation = false
     @State private var ringProgress: CGFloat = 0
     
+    init(tasks: [Task], theme: any AppTheme, onEditBlock: (([Task]) -> Void)? = nil, onAddSubtask: (() -> Void)? = nil, onRemoveSubtask: ((Task) -> Void)? = nil) {
+        self.tasks = tasks
+        self.theme = theme
+        self.onEditBlock = onEditBlock
+        self.onAddSubtask = onAddSubtask
+        self.onRemoveSubtask = onRemoveSubtask
+    }
+    
     private var blockTitle: String {
-        "Task Block (\(tasks.count) tasks)"
+        "Task Block"
     }
     
     private var completedCount: Int {
@@ -34,7 +45,24 @@ struct TaskBlockCardView: View {
         let priorities = tasks.map { $0.priority }
         if priorities.contains(.urgent) { return .red }
         if priorities.contains(.high) { return .orange }
-        return .green
+        if priorities.contains(.normal) { return .green }
+        return .blue
+    }
+    
+    private var blockPriorityText: String {
+        let priorities = tasks.map { $0.priority }
+        if priorities.contains(.urgent) { return "Urgent" }
+        if priorities.contains(.high) { return "High" }
+        if priorities.contains(.normal) { return "Normal" }
+        return "Low"
+    }
+    
+    private var blockCategoryColor: Color {
+        // Use the category color of the first task, or default to blue
+        if let firstTask = tasks.first {
+            return firstTask.category.color()
+        }
+        return .blue
     }
     
     private var timeRangeText: String {
@@ -87,6 +115,14 @@ struct TaskBlockCardView: View {
                                 .foregroundColor(theme.textSecondary)
                         }
                         
+                            // Priority text for the block
+                            HStack {
+                                Text("Priority: \(blockPriorityText)")
+                                    .font(.caption2)
+                                    .foregroundColor(blockPriorityColor)
+                                Spacer()
+                            }
+                        
                         // Progress bar
                         ProgressView(value: Double(completedCount), total: Double(tasks.count))
                             .progressViewStyle(LinearProgressViewStyle(tint: .blue))
@@ -110,14 +146,32 @@ struct TaskBlockCardView: View {
                     ZStack {
                         RoundedRectangle(cornerRadius: theme.cardCornerRadius)
                             .fill(isBlockComplete ? theme.cardBackground.opacity(0.5) : theme.cardBackground)
+                            .overlay(
+                                // Category color ring
+                                RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                                    .stroke(
+                                        blockCategoryColor,
+                                        lineWidth: 1.5
+                                    )
+                                    .opacity(0.6)
+                            )
                             .shadow(color: theme.primaryColor.opacity(0.1), radius: theme.shadowRadius)
                         
-                        // Simple completion highlight
+                        // Completion ring animation
                         if showCompletionAnimation {
                             RoundedRectangle(cornerRadius: theme.cardCornerRadius)
-                                .stroke(Color.green, lineWidth: 2)
+                                .stroke(
+                                    AngularGradient(
+                                        colors: [.green, .blue, .purple, .pink, .green],
+                                        center: .center,
+                                        startAngle: .degrees(0),
+                                        endAngle: .degrees(360)
+                                    ),
+                                    lineWidth: 3
+                                )
                                 .opacity(ringProgress)
-                                .animation(.easeInOut(duration: 0.5), value: ringProgress)
+                                .scaleEffect(1.05)
+                                .animation(.easeInOut(duration: 2.0), value: ringProgress)
                         }
                     }
                 )
@@ -129,6 +183,9 @@ struct TaskBlockCardView: View {
                 }
             }
             .buttonStyle(PlainButtonStyle())
+            .onLongPressGesture {
+                onEditBlock?(tasks)
+            }
             
             // Expanded subtasks
             if isExpanded {
@@ -161,11 +218,16 @@ struct TaskBlockCardView: View {
                             Spacer()
                             
                             // Completion checkbox
-                            Button(action: {
-                                withAnimation(.easeInOut(duration: 0.3)) {
-                                    task.isComplete.toggle()
-                                }
-                            }) {
+                                Button(action: {
+                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                        task.isComplete.toggle()
+                                        
+                                        // Trigger completion animation if all tasks are now complete
+                                        if task.isComplete && isBlockComplete && !showCompletionAnimation {
+                                            triggerCompletionAnimation()
+                                        }
+                                    }
+                                }) {
                                 Image(systemName: task.isComplete ? "checkmark.circle.fill" : "circle")
                                     .font(.title3)
                                     .foregroundColor(task.isComplete ? .green : theme.textSecondary)
@@ -186,6 +248,10 @@ struct TaskBlockCardView: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
             }
+        }
+        .onLongPressGesture {
+            // Long press to edit task block
+            onEditBlock?(tasks)
         }
     }
     

@@ -58,12 +58,14 @@ enum PriorityType: String, CaseIterable, Codable {
     case urgent = "urgent"
     case high = "high"
     case normal = "normal"
+    case low = "low"
     
     var color: String {
         switch self {
         case .urgent: return "red"
         case .high: return "orange"
         case .normal: return "green"
+        case .low: return "blue"
         }
     }
 }
