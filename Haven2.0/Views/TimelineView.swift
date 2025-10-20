@@ -233,9 +233,8 @@ struct TimelineView: View {
                     .padding(.vertical, 4)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
-                            .fill(isCurrentTimeInView ? Color.white.opacity(0.8) : Color.white.opacity(0.2))
+                            .fill(Color.white.opacity(0.2))
                     )
-                    .animation(.easeInOut(duration: 0.3), value: isCurrentTimeInView)
         }
         .padding()
         .background(
@@ -339,28 +338,21 @@ struct TimelineHourView: View {
                         let isCurrentHour = hour == currentHour
                         
                         if isCurrentHour {
-                            // Check if this hour is in screen view (visible on screen)
-                            let isInScreenView = abs(scrollOffset) < 200 // Within 200 points means it's visible
-                            
-                            // Debug output
-                            let _ = print("Scroll offset: \(scrollOffset), isInScreenView: \(isInScreenView)")
-                            
-                            // Time text in rectangular box - transparent background with white border
+                            // Simple static time indicator - transparent background with white border
                             Text("\(currentHour):\(String(format: "%02d", currentMinute))")
                                 .font(.caption2)
                                 .fontWeight(.semibold)
-                                .foregroundColor(isInScreenView ? .clear : .white) // Transparent text when in view, white when not
+                                .foregroundColor(.white) // Always white text
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(
                                     RoundedRectangle(cornerRadius: 4)
-                                        .fill(isInScreenView ? Color.white : Color.clear) // Fill when in view
+                                        .fill(Color.clear) // Always transparent background
                                         .overlay(
                                             RoundedRectangle(cornerRadius: 4)
                                                 .stroke(Color.white, lineWidth: 1) // Always show border
                                         )
                                 )
-                                .animation(.easeInOut(duration: 0.3), value: isInScreenView)
                                 .offset(y: 20) // Position it below the hour text
                         }
                     }
