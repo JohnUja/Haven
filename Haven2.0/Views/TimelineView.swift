@@ -278,31 +278,6 @@ struct TimelineHourView: View {
     let currentTime: Date
     let currentTimeProgressHeight: CGFloat
     
-    private var totalTimelineHeight: CGFloat {
-        // Total height for 24 hours
-        return 24 * 120 // 2880 points
-    }
-    
-    private var knotSpacing: CGFloat {
-        // Distance between each knot (hour marker)
-        return totalTimelineHeight / 24 // 120 points
-    }
-    
-    private func knotPosition(for hour: Int) -> CGFloat {
-        // Calculate position of knot for a specific hour
-        return CGFloat(hour) * knotSpacing
-    }
-    
-    private func isKnotActive(for hour: Int) -> Bool {
-        // Check if a knot should be "lit up" based on current time
-        if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
-            let currentHour = Calendar.current.component(.hour, from: currentTime)
-            return hour <= currentHour
-        } else {
-            return false // For other days, no knots are active
-        }
-    }
-    
     private var hourText: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "h a"
@@ -340,11 +315,11 @@ struct TimelineHourView: View {
                     .padding(.vertical, 4)
                 
                 ZStack(alignment: .top) {
-                    // Background timeline line
+                    // Background timeline
                     Rectangle()
                         .fill(Color.white.opacity(0.3))
                         .frame(width: 2)
-                        .frame(height: totalTimelineHeight)
+                        .frame(maxHeight: .infinity)
                     
                     // Current time progress "rope"
                     if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
@@ -359,19 +334,6 @@ struct TimelineHourView: View {
                             .frame(width: 4)
                             .frame(height: currentTimeProgressHeight)
                             .animation(.easeInOut(duration: 0.5), value: currentTimeProgressHeight)
-                    }
-                    
-                    // Hour knots (circles) along the timeline
-                    ForEach(0..<24, id: \.self) { hour in
-                        Circle()
-                            .fill(isKnotActive(for: hour) ? Color.yellow : Color.white.opacity(0.6))
-                            .frame(width: 6, height: 6)
-                            .overlay(
-                                Circle()
-                                    .stroke(Color.black.opacity(0.3), lineWidth: 1)
-                            )
-                            .position(x: 30, y: knotPosition(for: hour) + 3) // +3 to center on line
-                            .animation(.easeInOut(duration: 0.3), value: isKnotActive(for: hour))
                     }
                 }
             }
