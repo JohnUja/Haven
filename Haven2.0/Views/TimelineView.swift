@@ -99,7 +99,8 @@ struct TimelineView: View {
                                     tasks: tasksForHour(hour),
                                     selectedDate: selectedDate,
                                     currentTime: currentTime,
-                                    currentTimeProgressHeight: currentTimeProgressHeight
+                                    scrollBasedTime: scrollBasedTime,
+                                    showTimePopup: $showTimePopup
                                 )
                                 .frame(height: 120)
                             }
@@ -300,7 +301,8 @@ struct TimelineHourView: View {
     let tasks: [Task]
     let selectedDate: Date
     let currentTime: Date
-    let currentTimeProgressHeight: CGFloat
+    let scrollBasedTime: String
+    @Binding var showTimePopup: Bool
     
     private var hourText: String {
         let formatter = DateFormatter()
