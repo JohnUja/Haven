@@ -11,6 +11,7 @@ import AudioToolbox
 
 struct TaskBlockCardView: View {
     let tasks: [Task]
+    let taskBlock: TaskBlock?
     let theme: any AppTheme
     let onEditBlock: (([Task]) -> Void)?
     let onAddSubtask: (() -> Void)?
@@ -20,8 +21,9 @@ struct TaskBlockCardView: View {
     @State private var showCompletionAnimation = false
     @State private var ringProgress: CGFloat = 0
     
-    init(tasks: [Task], theme: any AppTheme, onEditBlock: (([Task]) -> Void)? = nil, onAddSubtask: (() -> Void)? = nil, onRemoveSubtask: ((Task) -> Void)? = nil) {
+    init(tasks: [Task], taskBlock: TaskBlock? = nil, theme: any AppTheme, onEditBlock: (([Task]) -> Void)? = nil, onAddSubtask: (() -> Void)? = nil, onRemoveSubtask: ((Task) -> Void)? = nil) {
         self.tasks = tasks
+        self.taskBlock = taskBlock
         self.theme = theme
         self.onEditBlock = onEditBlock
         self.onAddSubtask = onAddSubtask
@@ -29,18 +31,22 @@ struct TaskBlockCardView: View {
     }
     
     private var blockTitle: String {
-        "Task Block"
+        // Use the actual TaskBlock title if available, otherwise fallback to "Task Block"
+        return taskBlock?.title ?? "Task Block"
     }
     
     private var completedCount: Int {
-        tasks.filter { $0.isComplete }.count
+        guard !tasks.isEmpty else { return 0 }
+        return tasks.filter { $0.isComplete }.count
     }
     
     private var isBlockComplete: Bool {
-        completedCount == tasks.count && !tasks.isEmpty
+        guard !tasks.isEmpty else { return false }
+        return completedCount == tasks.count
     }
     
     private var blockPriorityColor: Color {
+        guard !tasks.isEmpty else { return .blue }
         // Use the highest priority in the block
         let priorities = tasks.map { $0.priority }
         if priorities.contains(.urgent) { return .red }
@@ -50,6 +56,7 @@ struct TaskBlockCardView: View {
     }
     
     private var blockPriorityText: String {
+        guard !tasks.isEmpty else { return "Low" }
         let priorities = tasks.map { $0.priority }
         if priorities.contains(.urgent) { return "Urgent" }
         if priorities.contains(.high) { return "High" }
@@ -188,7 +195,7 @@ struct TaskBlockCardView: View {
             }
             
             // Expanded subtasks
-            if isExpanded {
+            if isExpanded && !tasks.isEmpty {
                 VStack(spacing: 8) {
                     ForEach(tasks, id: \.id) { task in
                         HStack(spacing: 12) {

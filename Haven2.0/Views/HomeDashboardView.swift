@@ -14,6 +14,7 @@ struct HomeDashboardView: View {
     @Environment(ThemeManager.self) private var themeManager
     @Query private var users: [User]
     @Query private var tasks: [Task]
+    @Query private var taskBlocks: [TaskBlock]
     @State private var selectedDate = Date()
     @State private var showingAddTask = false
     @State private var showingCalendar = false
@@ -91,6 +92,10 @@ struct HomeDashboardView: View {
         }
         
         return sortedIncomplete + sortedCompleted
+    }
+    
+    private func getTaskBlock(for blockID: String) -> TaskBlock? {
+        return taskBlocks.first { $0.id == blockID }
     }
     
     enum TaskSortOrder: String, CaseIterable {
@@ -706,7 +711,7 @@ struct HomeDashboardView: View {
                                 if let blockTasks = groupedTasks[blockID], !blockTasks.isEmpty {
                                     let incompleteTasks = blockTasks.filter { !$0.isComplete }
                                     if !incompleteTasks.isEmpty {
-                                        TaskBlockCardView(tasks: blockTasks, theme: theme, onEditBlock: { tasks in
+                                        TaskBlockCardView(tasks: blockTasks, taskBlock: getTaskBlock(for: blockID), theme: theme, onEditBlock: { tasks in
                                             showingFloatingMenuForBlock = tasks
                                         }, onAddSubtask: {
                                             // TODO: Implement add subtask
@@ -732,7 +737,7 @@ struct HomeDashboardView: View {
                                 if let blockTasks = groupedTasks[blockID], !blockTasks.isEmpty {
                                     let allComplete = blockTasks.allSatisfy { $0.isComplete }
                                     if allComplete {
-                                        TaskBlockCardView(tasks: blockTasks, theme: theme, onEditBlock: { tasks in
+                                        TaskBlockCardView(tasks: blockTasks, taskBlock: getTaskBlock(for: blockID), theme: theme, onEditBlock: { tasks in
                                             showingFloatingMenuForBlock = tasks
                                         }, onAddSubtask: {
                                             // TODO: Implement add subtask
