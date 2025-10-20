@@ -22,18 +22,12 @@ struct TimeFlowApp: App {
                 GoalMilestone.self,
                 Theme.self,
             ])
-            let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+            // Use in-memory storage temporarily to avoid migration issues
+            let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
         } catch {
             print("SwiftData Error: \(error)")
-            // Fallback to in-memory storage for debugging
-            let schema = Schema([User.self, Task.self, TaskBlock.self, Goal.self, GoalMilestone.self, Theme.self])
-            let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-            do {
-                return try ModelContainer(for: schema, configurations: [modelConfiguration])
-            } catch {
-                fatalError("Could not create ModelContainer even with in-memory storage: \(error)")
-            }
+            fatalError("Could not create ModelContainer: \(error)")
         }
     }()
 

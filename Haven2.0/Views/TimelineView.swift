@@ -199,29 +199,6 @@ struct TimelineView: View {
         }
     }
     
-    private var currentTime: Date {
-        Date()
-    }
-    
-    private var currentHour: Int {
-        Calendar.current.component(.hour, from: currentTime)
-    }
-    
-    private var currentMinute: Int {
-        Calendar.current.component(.minute, from: currentTime)
-    }
-    
-    private var currentTimeProgressHeight: CGFloat {
-        // Calculate how much of the day has passed
-        let totalMinutesInDay: CGFloat = 24 * 60 // 1440 minutes
-        let currentMinutes: CGFloat = CGFloat(currentHour * 60 + currentMinute)
-        let progress = currentMinutes / totalMinutesInDay
-        
-        // Each hour is 120 points high, so total height is 24 * 120 = 2880
-        let totalHeight: CGFloat = 24 * 120
-        return totalHeight * progress
-    }
-    
     private var hourRange: [Int] {
         Array(0...23)
     }
