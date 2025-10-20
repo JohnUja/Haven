@@ -278,6 +278,31 @@ struct TimelineHourView: View {
     let currentTime: Date
     let currentTimeProgressHeight: CGFloat
     
+    private var totalTimelineHeight: CGFloat {
+        // Total height for 24 hours
+        return 24 * 120 // 2880 points
+    }
+    
+    private var knotSpacing: CGFloat {
+        // Distance between each knot (hour marker)
+        return totalTimelineHeight / 24 // 120 points
+    }
+    
+    private func knotPosition(for hour: Int) -> CGFloat {
+        // Calculate position of knot for a specific hour
+        return CGFloat(hour) * knotSpacing
+    }
+    
+    private func isKnotActive(for hour: Int) -> Bool {
+        // Check if a knot should be "lit up" based on current time
+        if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
+            let currentHour = Calendar.current.component(.hour, from: currentTime)
+            return hour <= currentHour
+        } else {
+            return false // For other days, no knots are active
+        }
+    }
+    
     private var hourText: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "h a"
