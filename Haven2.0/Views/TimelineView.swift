@@ -303,13 +303,8 @@ struct TimelineHourView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             
-            // Central Timeline with Rope and Knots
+            // Central Timeline
             VStack {
-                // Top circle (start of rope)
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 8, height: 8)
-                
                 Text(hourText)
                     .font(.caption)
                     .fontWeight(.medium)
@@ -333,32 +328,23 @@ struct TimelineHourView: View {
                             // Calculate if we're scrolled to the center of the screen
                             let isAtCenter = abs(scrollOffset) < 60 // Within 60 points of center
                             
-                            VStack(spacing: 4) {
-                                // Time indicator dot with fill animation
-                                Circle()
-                                    .fill(Color.white)
-                                    .frame(width: 8, height: 8)
-                                    .scaleEffect(isCurrentHour ? 1.2 : 1.0)
-                                    .animation(.easeInOut(duration: 0.3), value: isCurrentHour)
-                                
-                                // Time text in rectangular box - transparent background with white border
-                                Text("\(currentHour):\(String(format: "%02d", currentMinute))")
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(isAtCenter ? .black : .white) // Black text when filled, white when transparent
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 4)
-                                            .fill(isAtCenter ? Color.white : Color.clear) // Fill when at center
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 4)
-                                                    .stroke(Color.white, lineWidth: 1) // Always show border
-                                            )
-                                    )
-                                    .animation(.easeInOut(duration: 0.3), value: isAtCenter)
-                            }
-                            .offset(y: 20) // Position it below the hour text
+                            // Time text in rectangular box - transparent background with white border
+                            Text("\(currentHour):\(String(format: "%02d", currentMinute))")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(isAtCenter ? .clear : .white) // Transparent text when filled, white when transparent
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(isAtCenter ? Color.white : Color.clear) // Fill when at center
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 4)
+                                                .stroke(Color.white, lineWidth: 1) // Always show border
+                                        )
+                                )
+                                .animation(.easeInOut(duration: 0.3), value: isAtCenter)
+                                .offset(y: 20) // Position it below the hour text
                         }
                     }
                 }
