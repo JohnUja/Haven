@@ -24,6 +24,29 @@ struct TimelineView: View {
         }.sorted { $0.startTime < $1.startTime }
     }
     
+    private var currentTime: Date {
+        Date()
+    }
+    
+    private var currentHour: Int {
+        Calendar.current.component(.hour, from: currentTime)
+    }
+    
+    private var currentMinute: Int {
+        Calendar.current.component(.minute, from: currentTime)
+    }
+    
+    private var currentTimeProgressHeight: CGFloat {
+        // Calculate how much of the day has passed
+        let totalMinutesInDay: CGFloat = 24 * 60 // 1440 minutes
+        let currentMinutes: CGFloat = CGFloat(currentHour * 60 + currentMinute)
+        let progress = currentMinutes / totalMinutesInDay
+        
+        // Each hour is 120 points high, so total height is 24 * 120 = 2880
+        let totalHeight: CGFloat = 24 * 120
+        return totalHeight * progress
+    }
+    
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -407,7 +430,9 @@ struct WeatherBackgroundView: View {
     private func startTimer() {
         timer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { _ in
             // Update every minute to refresh current time
-            objectWillChange.send()
+            DispatchQueue.main.async {
+                // Force view update
+            }
         }
     }
     

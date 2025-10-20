@@ -9,11 +9,12 @@ import Foundation
 import SwiftData
 import SwiftUI
 
-struct GoalMilestone: Codable {
-    let id: String
-    let title: String
-    let targetValue: Int
-    let isComplete: Bool
+@Model
+final class GoalMilestone {
+    var id: String
+    var title: String
+    var targetValue: Int
+    var isComplete: Bool
     
     init(id: String = UUID().uuidString, title: String, targetValue: Int, isComplete: Bool = false) {
         self.id = id

@@ -19,6 +19,7 @@ struct TimeFlowApp: App {
                 Task.self,
                 TaskBlock.self,
                 Goal.self,
+                GoalMilestone.self,
                 Theme.self,
             ])
             let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
@@ -26,7 +27,7 @@ struct TimeFlowApp: App {
         } catch {
             print("SwiftData Error: \(error)")
             // Fallback to in-memory storage for debugging
-            let schema = Schema([User.self, Task.self, TaskBlock.self, Goal.self, Theme.self])
+            let schema = Schema([User.self, Task.self, TaskBlock.self, Goal.self, GoalMilestone.self, Theme.self])
             let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
             do {
                 return try ModelContainer(for: schema, configurations: [modelConfiguration])
