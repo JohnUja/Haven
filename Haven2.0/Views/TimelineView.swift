@@ -48,9 +48,13 @@ struct TimelineView: View {
             let currentHourFloat = currentMinutes / minutesPerHour
             let ropeHeight = currentHourFloat * pointsPerHour
             
-            print("Time: \(currentHour):\(currentMinute), Minutes: \(currentMinutes), HourFloat: \(currentHourFloat), RopeHeight: \(ropeHeight)")
+            // Cap the rope height to reasonable limits
+            let maxHeight: CGFloat = 24 * 120 // 2880 points max
+            let cappedHeight = min(ropeHeight, maxHeight)
             
-            return ropeHeight
+            print("Time: \(currentHour):\(currentMinute), Minutes: \(currentMinutes), HourFloat: \(currentHourFloat), RopeHeight: \(ropeHeight), Capped: \(cappedHeight)")
+            
+            return cappedHeight
         } else {
             // For other days, show no progress (start of day)
             return 0
@@ -95,7 +99,6 @@ struct TimelineView: View {
                 // Main Content
                 VStack(spacing: 0) {
                     // Header
-             
                     headerView
                     
                     // Timeline Content
@@ -326,16 +329,10 @@ struct TimelineHourView: View {
                     
                     // Current time progress "rope"
                     Rectangle()
-                        .fill(Color.red) // Make it red so we can see it
+                        .fill(Color.white)
                         .frame(width: 4)
-                        .frame(height: max(currentTimeProgressHeight, 200)) // Minimum 200 points so we can see it
+                        .frame(height: currentTimeProgressHeight)
                         .animation(.easeInOut(duration: 0.5), value: currentTimeProgressHeight)
-                        .onAppear {
-                            print("Rope appeared! Height: \(currentTimeProgressHeight)")
-                            print("Selected date: \(selectedDate)")
-                            print("Current time: \(currentTime)")
-                            print("Is same day: \(Calendar.current.isDate(selectedDate, inSameDayAs: currentTime))")
-                        }
                 }
             }
             .frame(width: 60)
