@@ -98,7 +98,8 @@ struct TimelineView: View {
                                     tasks: tasksForHour(hour),
                                     selectedDate: selectedDate,
                                     currentTime: currentTime,
-                                    scrollBasedTime: scrollBasedTime
+                                    scrollBasedTime: scrollBasedTime,
+                                    scrollOffset: scrollOffset
                                 )
                                 .frame(height: 120)
                             }
@@ -277,6 +278,7 @@ struct TimelineHourView: View {
     let selectedDate: Date
     let currentTime: Date
     let scrollBasedTime: String
+    let scrollOffset: CGFloat
     
     private var hourText: String {
         let formatter = DateFormatter()
@@ -328,6 +330,9 @@ struct TimelineHourView: View {
                         let isCurrentHour = hour == currentHour
                         
                         if isCurrentHour {
+                            // Calculate if we're scrolled to the center of the screen
+                            let isAtCenter = abs(scrollOffset) < 60 // Within 60 points of center
+                            
                             VStack(spacing: 4) {
                                 // Time indicator dot with fill animation
                                 Circle()
@@ -336,17 +341,22 @@ struct TimelineHourView: View {
                                     .scaleEffect(isCurrentHour ? 1.2 : 1.0)
                                     .animation(.easeInOut(duration: 0.3), value: isCurrentHour)
                                 
-                                // Time text in rectangular box
+                                // Time text in rectangular box - transparent initially, filled when at center
                                 Text("\(currentHour):\(String(format: "%02d", currentMinute))")
                                     .font(.caption2)
                                     .fontWeight(.semibold)
-                                    .foregroundColor(.black)
+                                    .foregroundColor(isAtCenter ? .clear : .white) // Transparent when filled
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
                                     .background(
                                         RoundedRectangle(cornerRadius: 4)
-                                            .fill(Color.white)
+                                            .fill(isAtCenter ? Color.white : Color.clear) // Fill when at center
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 4)
+                                                    .stroke(Color.white, lineWidth: 1) // Always show border
+                                            )
                                     )
+                                    .animation(.easeInOut(duration: 0.3), value: isAtCenter)
                             }
                         }
                     }
