@@ -37,10 +37,18 @@ struct TimelineView: View {
     }
     
     private var currentTimeProgressHeight: CGFloat {
-        // Calculate how much of the day has passed
+        // Calculate how much of the day has passed for the selected date
         let totalMinutesInDay: CGFloat = 24 * 60 // 1440 minutes
-        let currentMinutes: CGFloat = CGFloat(currentHour * 60 + currentMinute)
-        let progress = currentMinutes / totalMinutesInDay
+        
+        // If selected date is today, use current time; otherwise use 0 (start of day)
+        let progress: CGFloat
+        if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
+            let currentMinutes: CGFloat = CGFloat(currentHour * 60 + currentMinute)
+            progress = currentMinutes / totalMinutesInDay
+        } else {
+            // For other days, show no progress (start of day)
+            progress = 0
+        }
         
         // Each hour is 120 points high, so total height is 24 * 120 = 2880
         let totalHeight: CGFloat = 24 * 120
@@ -107,34 +115,41 @@ struct TimelineView: View {
             HStack(spacing: 12) {
                 ForEach(weekDays, id: \.self) { day in
                     Button(action: { selectedDate = day }) {
-                        Text(dayOfWeek(for: day))
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(Calendar.current.isDate(day, inSameDayAs: selectedDate) ? .white : .white.opacity(0.7))
-                            .frame(width: 40, height: 40)
-                            .background(
-                                Circle()
-                                    .fill(Calendar.current.isDate(day, inSameDayAs: selectedDate) ? 
-                                          Color.white.opacity(0.3) : Color.clear)
-                            )
+                        VStack(spacing: 2) {
+                            Text(dayOfWeek(for: day))
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .foregroundColor(Calendar.current.isDate(day, inSameDayAs: selectedDate) ? .white : .white.opacity(0.7))
+                            
+                            Text("\(Calendar.current.component(.day, from: day))")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(Calendar.current.isDate(day, inSameDayAs: selectedDate) ? .white : .white.opacity(0.7))
+                        }
+                        .frame(width: 40, height: 40)
+                        .background(
+                            Circle()
+                                .fill(Calendar.current.isDate(day, inSameDayAs: selectedDate) ? 
+                                      Color.white.opacity(0.3) : Color.clear)
+                        )
                     }
                 }
             }
             
-            // Weather Info - Always shows current time weather
+            // Weather Info - Shows weather for selected date
             HStack {
-                let currentTimeWeather = weatherManager.getWeatherForTime(currentTime)
+                let selectedDateWeather = weatherManager.getWeatherForTime(selectedDate)
                 
-                Image(systemName: currentTimeWeather.icon)
+                Image(systemName: selectedDateWeather.icon)
                     .font(.title2)
                     .foregroundColor(.white)
                 
-                Text(weatherManager.getTemperatureString(currentTimeWeather.temperature))
+                Text(weatherManager.getTemperatureString(selectedDateWeather.temperature))
                     .font(.title2)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
                 
-                Text(currentTimeWeather.description)
+                Text(selectedDateWeather.description)
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.8))
                 
