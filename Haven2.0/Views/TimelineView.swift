@@ -99,6 +99,7 @@ struct TimelineView: View {
                 stopTimer()
             }
         }
+    }
     
     private var headerView: some View {
         VStack(spacing: 16) {
@@ -337,30 +338,6 @@ struct WeatherBackgroundView: View {
     let weatherManager: WeatherManager
     let selectedDate: Date
     
-    var body: some View {
-        ZStack {
-            // Base gradient based on time of day and weather
-            LinearGradient(
-                colors: timeAndWeatherBasedColors,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            
-            // Weather effects based on current scroll position
-            if weatherManager.isWeatherEnabled {
-                let currentWeather = weatherManager.getWeatherForScrollPosition(scrollOffset, selectedDate: selectedDate)
-                
-                if currentWeather.condition == .rainy {
-                    RainEffectView()
-                } else if currentWeather.condition == .cloudy {
-                    CloudEffectView()
-                } else if currentWeather.condition == .stormy {
-                    StormEffectView()
-                }
-            }
-        }
-    }
-    
     private var timeAndWeatherBasedColors: [Color] {
         guard weatherManager.isWeatherEnabled else {
             // Return theme-based colors when weather is disabled
@@ -405,6 +382,30 @@ struct WeatherBackgroundView: View {
         let hourOffset = Int(abs(scrollOffset) / 120)
         let baseHour = Calendar.current.component(.hour, from: selectedDate)
         return (baseHour + hourOffset) % 24
+    }
+    
+    var body: some View {
+        ZStack {
+            // Base gradient based on time of day and weather
+            LinearGradient(
+                colors: timeAndWeatherBasedColors,
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            
+            // Weather effects based on current scroll position
+            if weatherManager.isWeatherEnabled {
+                let currentWeather = weatherManager.getWeatherForScrollPosition(scrollOffset, selectedDate: selectedDate)
+                
+                if currentWeather.condition == .rainy {
+                    RainEffectView()
+                } else if currentWeather.condition == .cloudy {
+                    CloudEffectView()
+                } else if currentWeather.condition == .stormy {
+                    StormEffectView()
+                }
+            }
+        }
     }
     
     private func startTimer() {
