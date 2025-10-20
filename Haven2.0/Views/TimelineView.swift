@@ -13,6 +13,7 @@ import SwiftData
 struct TimelineView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var tasks: [Task]
+    @Query private var taskBlocks: [TaskBlock]
     @State private var selectedDate = Date()
     @State private var scrollOffset: CGFloat = 0
     @StateObject private var weatherManager = WeatherManager()
@@ -120,10 +121,13 @@ struct TimelineView: View {
                                 TimelineHourView(
                                     hour: hour,
                                     tasks: tasksForHour(hour),
+                                    taskBlocks: taskBlocksForHour(hour),
                                     selectedDate: selectedDate,
                                     currentTime: currentTime,
                                     scrollBasedTime: scrollBasedTime,
-                                    scrollOffset: scrollOffset
+                                    scrollOffset: scrollOffset,
+                                    getTasksForBlock: getTasksForBlock,
+                                    getOverlappingTasks: getOverlappingTasks
                                 )
                                 .frame(height: 120)
                             }
@@ -181,6 +185,24 @@ struct TimelineView: View {
             
             // Weather Info - Shows weather for selected date
             HStack {
+                // Work label on the left
+                Text("Work")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.blue.opacity(0.3))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.blue, lineWidth: 1)
+                            )
+                    )
+                
+                Spacer()
+                
                 let selectedDateWeather = weatherManager.getWeatherForTime(selectedDate)
                 
                 Image(systemName: selectedDateWeather.icon)
@@ -196,6 +218,28 @@ struct TimelineView: View {
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.8))
                 
+                Spacer()
+                
+                // Personal label on the right
+                Text("Personal")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.green.opacity(0.3))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.green, lineWidth: 1)
+                            )
+                    )
+            }
+            .padding(.horizontal)
+            
+            // Weather controls row
+            HStack {
                 Spacer()
                 
                 // Temperature Unit Toggle
@@ -223,8 +267,9 @@ struct TimelineView: View {
                         .background(Color.white.opacity(0.2))
                         .cornerRadius(8)
                 }
+                
+                Spacer()
             }
-            .padding(.horizontal)
             
                 // Dynamic time based on scroll position (smaller)
                 Text(headerTimeDisplay)
@@ -272,6 +317,53 @@ struct TimelineView: View {
         }
     }
     
+    private func taskBlocksForHour(_ hour: Int) -> [TaskBlock] {
+        taskBlocks.filter { taskBlock in
+            // Check if any task in this block falls within this hour
+            let blockTasks = selectedDateTasks.filter { $0.taskBlockID == taskBlock.id }
+            return blockTasks.contains { task in
+                Calendar.current.component(.hour, from: task.startTime) == hour
+            }
+        }
+    }
+    
+    private func getTasksForBlock(_ taskBlock: TaskBlock, hour: Int) -> [Task] {
+        selectedDateTasks.filter { task in
+            task.taskBlockID == taskBlock.id && 
+            Calendar.current.component(.hour, from: task.startTime) == hour
+        }
+    }
+    
+    private func getOverlappingTasks(_ tasks: [Task]) -> [[Task]] {
+        var groups: [[Task]] = []
+        var processed: Set<String> = []
+        
+        for task in tasks {
+            if processed.contains(task.id) { continue }
+            
+            var group = [task]
+            processed.insert(task.id)
+            
+            for otherTask in tasks {
+                if processed.contains(otherTask.id) { continue }
+                
+                // Check if tasks overlap
+                if tasksOverlap(task, otherTask) {
+                    group.append(otherTask)
+                    processed.insert(otherTask.id)
+                }
+            }
+            
+            groups.append(group)
+        }
+        
+        return groups
+    }
+    
+    private func tasksOverlap(_ task1: Task, _ task2: Task) -> Bool {
+        return task1.startTime < task2.endTime && task2.startTime < task1.endTime
+    }
+    
     private func startTimer() {
         timer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { _ in
             // Update every minute to refresh current time
@@ -290,10 +382,13 @@ struct TimelineView: View {
 struct TimelineHourView: View {
     let hour: Int
     let tasks: [Task]
+    let taskBlocks: [TaskBlock]
     let selectedDate: Date
     let currentTime: Date
     let scrollBasedTime: String
     let scrollOffset: CGFloat
+    let getTasksForBlock: (TaskBlock, Int) -> [Task]
+    let getOverlappingTasks: ([Task]) -> [[Task]]
     
     private var hourText: String {
         let formatter = DateFormatter()
@@ -306,14 +401,29 @@ struct TimelineHourView: View {
         HStack(spacing: 0) {
             // Left side (Work tasks)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Work")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.leading, 8)
+                // Individual work tasks (handle overlaps)
+                let workTasks = tasks.filter { $0.category == .work && $0.taskBlockID == nil }
+                let overlappingWorkGroups = getOverlappingTasks(workTasks)
                 
-                ForEach(tasks.filter { $0.category == .work }) { task in
-                    TaskTimelineBlock(task: task, side: .left)
+                ForEach(Array(overlappingWorkGroups.enumerated()), id: \.offset) { index, group in
+                    HStack(spacing: 2) {
+                        ForEach(group, id: \.id) { task in
+                            TaskTimelineBlock(task: task, side: .left)
+                                .frame(maxWidth: group.count > 1 ? 60 : 120)
+                        }
+                    }
+                }
+                
+                // Work task blocks
+                ForEach(taskBlocks.filter { block in
+                    let blockTasks = getTasksForBlock(block, hour: hour)
+                    return blockTasks.contains { $0.category == .work }
+                }, id: \.id) { taskBlock in
+                    TaskBlockTimelineView(
+                        taskBlock: taskBlock,
+                        tasks: getTasksForBlock(taskBlock, hour: hour).filter { $0.category == .work },
+                        side: .left
+                    )
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -364,14 +474,29 @@ struct TimelineHourView: View {
             
             // Right side (Personal tasks)
             VStack(alignment: .trailing, spacing: 4) {
-                Text("Personal")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.trailing, 8)
+                // Individual personal tasks (handle overlaps)
+                let personalTasks = tasks.filter { $0.category == .personal && $0.taskBlockID == nil }
+                let overlappingPersonalGroups = getOverlappingTasks(personalTasks)
                 
-                ForEach(tasks.filter { $0.category == .personal }) { task in
-                    TaskTimelineBlock(task: task, side: .right)
+                ForEach(Array(overlappingPersonalGroups.enumerated()), id: \.offset) { index, group in
+                    HStack(spacing: 2) {
+                        ForEach(group, id: \.id) { task in
+                            TaskTimelineBlock(task: task, side: .right)
+                                .frame(maxWidth: group.count > 1 ? 60 : 120)
+                        }
+                    }
+                }
+                
+                // Personal task blocks
+                ForEach(taskBlocks.filter { block in
+                    let blockTasks = getTasksForBlock(block, hour: hour)
+                    return blockTasks.contains { $0.category == .personal }
+                }, id: \.id) { taskBlock in
+                    TaskBlockTimelineView(
+                        taskBlock: taskBlock,
+                        tasks: getTasksForBlock(taskBlock, hour: hour).filter { $0.category == .personal },
+                        side: .right
+                    )
                 }
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -388,25 +513,149 @@ struct TaskTimelineBlock: View {
         case left, right
     }
     
+    private var taskHeight: CGFloat {
+        let duration = task.endTime.timeIntervalSince(task.startTime)
+        let minutes = duration / 60
+        // Each hour is 120 points, so each minute is 2 points
+        // Minimum height of 20 points, maximum of 100 points per hour
+        return max(20, min(100, CGFloat(minutes) * 2))
+    }
+    
+    private var taskColor: Color {
+        switch task.priority {
+        case .urgent: return .red
+        case .high: return .orange
+        case .normal: return .green
+        case .low: return .blue
+        }
+    }
+    
+    private var categoryColor: Color {
+        task.category.color()
+    }
+    
     var body: some View {
-        VStack(alignment: side == .left ? .leading : .trailing, spacing: 2) {
+        VStack(alignment: side == .left ? .leading : .trailing, spacing: 4) {
+            // Task title
             Text(task.title)
                 .font(.caption)
-                .fontWeight(.medium)
+                .fontWeight(.semibold)
                 .foregroundColor(.white)
-                .lineLimit(1)
+                .lineLimit(2)
+                .multilineTextAlignment(side == .left ? .leading : .trailing)
             
+            // Time range
             Text("\(task.startTime, format: .dateTime.hour().minute()) - \(task.endTime, format: .dateTime.hour().minute())")
                 .font(.caption2)
                 .foregroundColor(.white.opacity(0.8))
+            
+            // Priority indicator
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(taskColor)
+                    .frame(width: 6, height: 6)
+                
+                Text(task.priority.rawValue.capitalized)
+                    .font(.caption2)
+                    .foregroundColor(.white.opacity(0.7))
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.clear)
+                .fill(categoryColor.opacity(0.8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(taskColor, lineWidth: 2)
+                )
         )
-        .frame(maxWidth: 120)
+        .frame(maxWidth: 120, minHeight: taskHeight)
+        .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
+    }
+}
+
+struct TaskBlockTimelineView: View {
+    let taskBlock: TaskBlock
+    let tasks: [Task]
+    let side: TaskTimelineBlock.TimelineSide
+    
+    private var blockHeight: CGFloat {
+        let totalDuration = tasks.reduce(0) { total, task in
+            total + task.endTime.timeIntervalSince(task.startTime)
+        }
+        let minutes = totalDuration / 60
+        // Each hour is 120 points, so each minute is 2 points
+        // Minimum height of 30 points, maximum of 100 points per hour
+        return max(30, min(100, CGFloat(minutes) * 2))
+    }
+    
+    private var blockColor: Color {
+        switch taskBlock.priority {
+        case .urgent: return .red
+        case .high: return .orange
+        case .normal: return .green
+        case .low: return .blue
+        }
+    }
+    
+    private var categoryColor: Color {
+        // Use the category color of the first task, or default to blue
+        if let firstTask = tasks.first {
+            return firstTask.category.color()
+        }
+        return .blue
+    }
+    
+    var body: some View {
+        VStack(alignment: side == .left ? .leading : .trailing, spacing: 4) {
+            // Block title
+            Text(taskBlock.title)
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .multilineTextAlignment(side == .left ? .leading : .trailing)
+            
+            // Task count
+            Text("\(tasks.count) tasks")
+                .font(.caption2)
+                .foregroundColor(.white.opacity(0.8))
+            
+            // Time range
+            if let firstTask = tasks.first, let lastTask = tasks.last {
+                let sortedTasks = tasks.sorted { $0.startTime < $1.startTime }
+                let startTime = sortedTasks.first?.startTime ?? firstTask.startTime
+                let endTime = sortedTasks.last?.endTime ?? lastTask.endTime
+                
+                Text("\(startTime, format: .dateTime.hour().minute()) - \(endTime, format: .dateTime.hour().minute())")
+                    .font(.caption2)
+                    .foregroundColor(.white.opacity(0.8))
+            }
+            
+            // Priority indicator
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(blockColor)
+                    .frame(width: 6, height: 6)
+                
+                Text(taskBlock.priority.rawValue.capitalized)
+                    .font(.caption2)
+                    .foregroundColor(.white.opacity(0.7))
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(categoryColor.opacity(0.9))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(blockColor, lineWidth: 3)
+                )
+        )
+        .frame(maxWidth: 120, minHeight: blockHeight)
+        .shadow(color: .black.opacity(0.4), radius: 3, x: 0, y: 2)
     }
 }
 
