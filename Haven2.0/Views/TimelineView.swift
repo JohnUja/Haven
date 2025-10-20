@@ -49,6 +49,17 @@ struct TimelineView: View {
         return formatter.string(from: targetDate)
     }
     
+    private var headerTimeDisplay: String {
+        // Show current time if viewing today, otherwise show 00:00 for other days
+        if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
+            let formatter = DateFormatter()
+            formatter.timeStyle = .short
+            return formatter.string(from: currentTime)
+        } else {
+            return "00:00"
+        }
+    }
+    
     private var isCurrentTimeInView: Bool {
         // Check if current time hour is in screen view
         if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
@@ -187,15 +198,6 @@ struct TimelineView: View {
                 
                 Spacer()
                 
-                // Current time indicator
-                Text("\(currentHour):\(String(format: "%02d", currentMinute))")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.8))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.white.opacity(0.2))
-                    .cornerRadius(6)
-                
                 // Temperature Unit Toggle
                 Button(action: {
                     weatherManager.toggleTemperatureUnit()
@@ -225,7 +227,7 @@ struct TimelineView: View {
             .padding(.horizontal)
             
                 // Dynamic time based on scroll position (smaller)
-                Text(scrollBasedTime)
+                Text(headerTimeDisplay)
                     .font(.title2)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
