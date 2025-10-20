@@ -61,6 +61,7 @@ struct TimelineView: View {
                     .coordinateSpace(name: "scroll")
                     .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
                         scrollOffset = value
+                        print("Scroll offset changed to: \(value)")
                     }
                 }
             }
@@ -294,7 +295,9 @@ struct WeatherBackgroundView: View {
         
         let currentWeather = weatherManager.getWeatherForScrollPosition(scrollOffset, selectedDate: selectedDate)
         let hour = Calendar.current.component(.hour, from: selectedDate)
-        let adjustedHour = (hour + Int(scrollOffset / 120)) % 24
+        let adjustedHour = (hour + Int(abs(scrollOffset) / 120)) % 24
+        
+        print("Weather: \(currentWeather.condition), Hour: \(adjustedHour), Temp: \(currentWeather.temperature)")
         
         // Base colors for time of day
         var baseColors: [Color]
@@ -312,9 +315,9 @@ struct WeatherBackgroundView: View {
         // Modify colors based on weather condition
         switch currentWeather.condition {
         case .sunny:
-            return baseColors.map { $0.opacity(1.2) } // Brighter
+            return [.yellow.opacity(0.9), .orange.opacity(0.7), .white.opacity(0.5)]
         case .cloudy:
-            return baseColors.map { $0.opacity(0.7) } // Dimmer
+            return [.gray.opacity(0.8), .blue.opacity(0.6), .white.opacity(0.3)]
         case .rainy:
             return [.blue.opacity(0.8), .gray.opacity(0.6), .white.opacity(0.3)]
         case .stormy:

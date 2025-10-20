@@ -44,10 +44,11 @@ class WeatherManager: ObservableObject {
         
         // Calculate which hour we're looking at based on scroll position
         // Each hour is 120 points high, so we can calculate the hour
-        let hourOffset = Int(scrollOffset / 120)
+        let hourOffset = Int(abs(scrollOffset) / 120)
         let baseHour = Calendar.current.component(.hour, from: selectedDate)
         let targetHour = (baseHour + hourOffset) % 24
         
+        print("Scroll offset: \(scrollOffset), Hour offset: \(hourOffset), Target hour: \(targetHour)")
         return getWeatherForHour(targetHour)
     }
     
@@ -72,25 +73,30 @@ class WeatherManager: ObservableObject {
     private func generateTemperatureForHour(_ hour: Int) -> Int {
         // Simulate realistic temperature changes throughout the day
         let baseTemp = 70
-        let variation = Int(sin(Double(hour - 6) * .pi / 12) * 15)
-        return baseTemp + variation
+        let variation = Int(sin(Double(hour - 6) * .pi / 12) * 20)
+        let temp = baseTemp + variation
+        
+        print("Hour \(hour): Temperature \(temp)°F")
+        return temp
     }
     
     private func generateConditionForHour(_ hour: Int) -> WeatherCondition {
-        // Simulate weather patterns
+        // Simulate weather patterns with more variety
         switch hour {
         case 0...5:
             return .cloudy  // Early morning clouds
         case 6...8:
             return .sunny   // Sunrise
-        case 9...15:
-            return .sunny   // Clear day
-        case 16...18:
+        case 9...11:
+            return .sunny   // Clear morning
+        case 12...14:
+            return .sunny   // Clear afternoon
+        case 15...17:
             return .cloudy  // Afternoon clouds
-        case 19...21:
+        case 18...20:
             return .rainy   // Evening rain
-        case 22...23:
-            return .cloudy  // Night clouds
+        case 21...23:
+            return .stormy  // Night storm
         default:
             return .sunny
         }
