@@ -7,13 +7,15 @@
 
 import SwiftUI
 import SwiftData
+import WeatherKit
+import CoreLocation
 
 struct TimelineView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var tasks: [Task]
     @State private var selectedDate = Date()
     @State private var scrollOffset: CGFloat = 0
-    @State private var weatherData: WeatherData = WeatherData.sample
+    @StateObject private var weatherService = WeatherService()
     
     private var selectedDateTasks: [Task] {
         tasks.filter { task in
@@ -27,7 +29,7 @@ struct TimelineView: View {
                 // Dynamic Weather Background
                 WeatherBackgroundView(
                     scrollOffset: scrollOffset,
-                    weatherData: weatherData,
+                    weatherService: weatherService,
                     selectedDate: selectedDate
                 )
                 .ignoresSafeArea()
@@ -88,16 +90,43 @@ struct TimelineView: View {
             
             // Weather Info
             HStack {
-                Image(systemName: weatherData.icon)
-                    .font(.title2)
-                    .foregroundColor(.white)
-                
-                Text("\(weatherData.temperature)°F")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
+                if weatherService.isLoading {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(0.8)
+                } else if let weather = weatherService.currentWeather {
+                    Image(systemName: weatherService.getWeatherForTime(selectedDate).icon)
+                        .font(.title2)
+                        .foregroundColor(.white)
+                    
+                    Text("\(weatherService.getWeatherForTime(selectedDate).temperature)°F")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                } else {
+                    Image(systemName: "location.slash")
+                        .font(.title2)
+                        .foregroundColor(.white.opacity(0.7))
+                    
+                    Text("Location needed")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white.opacity(0.7))
+                }
                 
                 Spacer()
+                
+                if !weatherService.isLocationAuthorized {
+                    Button("Enable Location") {
+                        weatherService.requestLocationPermission()
+                    }
+                    .font(.caption)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.2))
+                    .cornerRadius(8)
+                }
             }
             .padding(.horizontal)
             
@@ -239,7 +268,7 @@ struct TaskTimelineBlock: View {
 
 struct WeatherBackgroundView: View {
     let scrollOffset: CGFloat
-    let weatherData: WeatherData
+    let weatherService: WeatherService
     let selectedDate: Date
     
     var body: some View {
@@ -251,10 +280,11 @@ struct WeatherBackgroundView: View {
                 endPoint: .bottomTrailing
             )
             
-            // Weather effects
-            if weatherData.condition == .rainy {
+            // Weather effects based on real weather data
+            let currentWeather = weatherService.getWeatherForTime(selectedDate)
+            if currentWeather.condition == .rainy {
                 RainEffectView()
-            } else if weatherData.condition == .cloudy {
+            } else if currentWeather.condition == .cloudy {
                 CloudEffectView()
             }
         }
@@ -316,21 +346,6 @@ struct CloudEffectView: View {
     }
 }
 
-struct WeatherData {
-    let temperature: Int
-    let condition: WeatherCondition
-    let icon: String
-    
-    static let sample = WeatherData(
-        temperature: 72,
-        condition: .sunny,
-        icon: "sun.max.fill"
-    )
-}
-
-enum WeatherCondition {
-    case sunny, cloudy, rainy, stormy
-}
 
 struct ScrollOffsetPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
