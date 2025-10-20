@@ -7,15 +7,15 @@
 
 import SwiftUI
 import SwiftData
-import WeatherKit
-import CoreLocation
+// import WeatherKit
+// import CoreLocation
 
 struct TimelineView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var tasks: [Task]
     @State private var selectedDate = Date()
     @State private var scrollOffset: CGFloat = 0
-    @StateObject private var weatherService = WeatherService()
+    @StateObject private var weatherManager = WeatherManager()
     
     private var selectedDateTasks: [Task] {
         tasks.filter { task in
@@ -29,7 +29,7 @@ struct TimelineView: View {
                 // Dynamic Weather Background
                 WeatherBackgroundView(
                     scrollOffset: scrollOffset,
-                    weatherService: weatherService,
+                    weatherManager: weatherManager,
                     selectedDate: selectedDate
                 )
                 .ignoresSafeArea()
@@ -90,42 +90,33 @@ struct TimelineView: View {
             
             // Weather Info
             HStack {
-                if weatherService.isLoading {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .scaleEffect(0.8)
-                } else if let weather = weatherService.currentWeather {
-                    Image(systemName: weatherService.getWeatherForTime(selectedDate).icon)
-                        .font(.title2)
-                        .foregroundColor(.white)
-                    
-                    Text("\(weatherService.getWeatherForTime(selectedDate).temperature)°F")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                } else {
-                    Image(systemName: "location.slash")
-                        .font(.title2)
-                        .foregroundColor(.white.opacity(0.7))
-                    
-                    Text("Location needed")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white.opacity(0.7))
-                }
+                let currentWeather = weatherManager.getWeatherForScrollPosition(scrollOffset, selectedDate: selectedDate)
+                
+                Image(systemName: currentWeather.icon)
+                    .font(.title2)
+                    .foregroundColor(.white)
+                
+                Text("\(currentWeather.temperature)°F")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                
+                Text(currentWeather.description)
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.8))
                 
                 Spacer()
                 
-                if !weatherService.isLocationAuthorized {
-                    Button("Enable Location") {
-                        weatherService.requestLocationPermission()
-                    }
-                    .font(.caption)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.2))
-                    .cornerRadius(8)
+                // Weather Toggle Button
+                Button(action: {
+                    weatherManager.toggleWeather()
+                }) {
+                    Image(systemName: weatherManager.isWeatherEnabled ? "cloud.sun.fill" : "cloud.slash.fill")
+                        .font(.title3)
+                        .foregroundColor(.white)
+                        .padding(8)
+                        .background(Color.white.opacity(0.2))
+                        .cornerRadius(8)
                 }
             }
             .padding(.horizontal)
@@ -268,41 +259,66 @@ struct TaskTimelineBlock: View {
 
 struct WeatherBackgroundView: View {
     let scrollOffset: CGFloat
-    let weatherService: WeatherService
+    let weatherManager: WeatherManager
     let selectedDate: Date
     
     var body: some View {
         ZStack {
-            // Base gradient based on time of day
+            // Base gradient based on time of day and weather
             LinearGradient(
-                colors: timeBasedColors,
+                colors: timeAndWeatherBasedColors,
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
             
-            // Weather effects based on real weather data
-            let currentWeather = weatherService.getWeatherForTime(selectedDate)
-            if currentWeather.condition == .rainy {
-                RainEffectView()
-            } else if currentWeather.condition == .cloudy {
-                CloudEffectView()
+            // Weather effects based on current scroll position
+            if weatherManager.isWeatherEnabled {
+                let currentWeather = weatherManager.getWeatherForScrollPosition(scrollOffset, selectedDate: selectedDate)
+                
+                if currentWeather.condition == .rainy {
+                    RainEffectView()
+                } else if currentWeather.condition == .cloudy {
+                    CloudEffectView()
+                } else if currentWeather.condition == .stormy {
+                    StormEffectView()
+                }
             }
         }
     }
     
-    private var timeBasedColors: [Color] {
-        let hour = Calendar.current.component(.hour, from: selectedDate)
-        let adjustedHour = (hour + Int(scrollOffset / 100)) % 24
+    private var timeAndWeatherBasedColors: [Color] {
+        guard weatherManager.isWeatherEnabled else {
+            // Return theme-based colors when weather is disabled
+            return [.purple.opacity(0.8), .blue.opacity(0.6), .pink.opacity(0.4)]
+        }
         
+        let currentWeather = weatherManager.getWeatherForScrollPosition(scrollOffset, selectedDate: selectedDate)
+        let hour = Calendar.current.component(.hour, from: selectedDate)
+        let adjustedHour = (hour + Int(scrollOffset / 120)) % 24
+        
+        // Base colors for time of day
+        var baseColors: [Color]
         switch adjustedHour {
         case 6...8:
-            return [.orange.opacity(0.8), .yellow.opacity(0.6), .blue.opacity(0.4)]
+            baseColors = [.orange.opacity(0.8), .yellow.opacity(0.6), .blue.opacity(0.4)]
         case 9...17:
-            return [.blue.opacity(0.6), .cyan.opacity(0.4), .white.opacity(0.2)]
+            baseColors = [.blue.opacity(0.6), .cyan.opacity(0.4), .white.opacity(0.2)]
         case 18...20:
-            return [.orange.opacity(0.6), .red.opacity(0.4), .purple.opacity(0.3)]
+            baseColors = [.orange.opacity(0.6), .red.opacity(0.4), .purple.opacity(0.3)]
         default:
-            return [.purple.opacity(0.8), .black.opacity(0.6), .blue.opacity(0.4)]
+            baseColors = [.purple.opacity(0.8), .black.opacity(0.6), .blue.opacity(0.4)]
+        }
+        
+        // Modify colors based on weather condition
+        switch currentWeather.condition {
+        case .sunny:
+            return baseColors.map { $0.opacity(1.2) } // Brighter
+        case .cloudy:
+            return baseColors.map { $0.opacity(0.7) } // Dimmer
+        case .rainy:
+            return [.blue.opacity(0.8), .gray.opacity(0.6), .white.opacity(0.3)]
+        case .stormy:
+            return [.purple.opacity(0.9), .black.opacity(0.8), .blue.opacity(0.5)]
         }
     }
 }
@@ -345,6 +361,48 @@ struct CloudEffectView: View {
         }
     }
 }
+
+struct StormEffectView: View {
+    @State private var lightningFlash: Bool = false
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                // Lightning flash
+                if lightningFlash {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.3))
+                        .ignoresSafeArea()
+                }
+                
+                // Rain drops
+                ForEach(0..<30, id: \.self) { _ in
+                    Rectangle()
+                        .fill(Color.white.opacity(0.8))
+                        .frame(width: 3, height: 25)
+                        .position(
+                            x: CGFloat.random(in: 0...geometry.size.width),
+                            y: CGFloat.random(in: -100...geometry.size.height)
+                        )
+                }
+            }
+        }
+        .onAppear {
+            // Random lightning flashes
+            Timer.scheduledTimer(withTimeInterval: Double.random(in: 2...5), repeats: true) { _ in
+                withAnimation(.easeInOut(duration: 0.1)) {
+                    lightningFlash = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    withAnimation(.easeInOut(duration: 0.1)) {
+                        lightningFlash = false
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 
 struct ScrollOffsetPreferenceKey: PreferenceKey {
