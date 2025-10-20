@@ -216,6 +216,20 @@ struct TimelineView: View {
             Calendar.current.component(.hour, from: task.startTime) == hour
         }
     }
+    
+    private func startTimer() {
+        timer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { _ in
+            // Update every minute to refresh current time
+            DispatchQueue.main.async {
+                // Force view update
+            }
+        }
+    }
+    
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
+    }
 }
 
 struct TimelineHourView: View {
@@ -406,20 +420,6 @@ struct WeatherBackgroundView: View {
                 }
             }
         }
-    }
-    
-    private func startTimer() {
-        timer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { _ in
-            // Update every minute to refresh current time
-            DispatchQueue.main.async {
-                // Force view update
-            }
-        }
-    }
-    
-    private func stopTimer() {
-        timer?.invalidate()
-        timer = nil
     }
 }
 
