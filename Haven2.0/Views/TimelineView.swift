@@ -16,6 +16,7 @@ struct TimelineView: View {
     @State private var selectedDate = Date()
     @State private var scrollOffset: CGFloat = 0
     @StateObject private var weatherManager = WeatherManager()
+    @State private var timer: Timer?
     
     private var selectedDateTasks: [Task] {
         tasks.filter { task in
@@ -65,9 +66,15 @@ struct TimelineView: View {
                     }
                 }
             }
+            }
+            .navigationBarHidden(true)
+            .onAppear {
+                startTimer()
+            }
+            .onDisappear {
+                stopTimer()
+            }
         }
-        .navigationBarHidden(true)
-    }
     
     private var headerView: some View {
         VStack(spacing: 16) {
@@ -89,24 +96,47 @@ struct TimelineView: View {
                 }
             }
             
-            // Weather Info
+            // Weather Info - Always shows current time weather
             HStack {
-                let currentWeather = weatherManager.getWeatherForScrollPosition(scrollOffset, selectedDate: selectedDate)
+                let currentTimeWeather = weatherManager.getWeatherForTime(currentTime)
                 
-                Image(systemName: currentWeather.icon)
+                Image(systemName: currentTimeWeather.icon)
                     .font(.title2)
                     .foregroundColor(.white)
                 
-                Text("\(currentWeather.temperature)°F")
+                Text(weatherManager.getTemperatureString(currentTimeWeather.temperature))
                     .font(.title2)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
                 
-                Text(currentWeather.description)
+                Text(currentTimeWeather.description)
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.8))
                 
                 Spacer()
+                
+                // Current time indicator
+                Text("\(currentHour):\(String(format: "%02d", currentMinute))")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.8))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.white.opacity(0.2))
+                    .cornerRadius(6)
+                
+                // Temperature Unit Toggle
+                Button(action: {
+                    weatherManager.toggleTemperatureUnit()
+                }) {
+                    Text(weatherManager.isCelsius ? "°C" : "°F")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.2))
+                        .cornerRadius(6)
+                }
                 
                 // Weather Toggle Button
                 Button(action: {
@@ -144,6 +174,29 @@ struct TimelineView: View {
         return (0..<7).compactMap { dayOffset in
             calendar.date(byAdding: .day, value: dayOffset, to: startOfWeek)
         }
+    }
+    
+    private var currentTime: Date {
+        Date()
+    }
+    
+    private var currentHour: Int {
+        Calendar.current.component(.hour, from: currentTime)
+    }
+    
+    private var currentMinute: Int {
+        Calendar.current.component(.minute, from: currentTime)
+    }
+    
+    private var currentTimeProgressHeight: CGFloat {
+        // Calculate how much of the day has passed
+        let totalMinutesInDay: CGFloat = 24 * 60 // 1440 minutes
+        let currentMinutes: CGFloat = CGFloat(currentHour * 60 + currentMinute)
+        let progress = currentMinutes / totalMinutesInDay
+        
+        // Each hour is 120 points high, so total height is 24 * 120 = 2880
+        let totalHeight: CGFloat = 24 * 120
+        return totalHeight * progress
     }
     
     private var hourRange: [Int] {
@@ -191,7 +244,7 @@ struct TimelineHourView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             
-            // Central Timeline
+            // Central Timeline with Current Time Indicator
             VStack {
                 Circle()
                     .fill(Color.white)
@@ -203,10 +256,28 @@ struct TimelineHourView: View {
                     .foregroundColor(.white)
                     .padding(.vertical, 4)
                 
-                Rectangle()
-                    .fill(Color.white)
-                    .frame(width: 2)
-                    .frame(maxHeight: .infinity)
+                ZStack(alignment: .top) {
+                    // Background timeline
+                    Rectangle()
+                        .fill(Color.white.opacity(0.3))
+                        .frame(width: 2)
+                        .frame(maxHeight: .infinity)
+                    
+                    // Current time progress "rope"
+                    if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
+                        Rectangle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [.red, .orange, .yellow],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .frame(width: 4)
+                            .frame(height: currentTimeProgressHeight)
+                            .animation(.easeInOut(duration: 0.5), value: currentTimeProgressHeight)
+                    }
+                }
             }
             .frame(width: 60)
             
@@ -293,15 +364,15 @@ struct WeatherBackgroundView: View {
             return [.purple.opacity(0.8), .blue.opacity(0.6), .pink.opacity(0.4)]
         }
         
-        let currentWeather = weatherManager.getWeatherForScrollPosition(scrollOffset, selectedDate: selectedDate)
-        let hour = Calendar.current.component(.hour, from: selectedDate)
-        let adjustedHour = (hour + Int(abs(scrollOffset) / 120)) % 24
+        // Calculate which hour is in the middle of the screen based on scroll position
+        let middleOfScreenHour = getMiddleOfScreenHour()
+        let currentWeather = weatherManager.getWeatherForHour(middleOfScreenHour)
         
-        print("Weather: \(currentWeather.condition), Hour: \(adjustedHour), Temp: \(currentWeather.temperature)")
+        print("Middle of screen hour: \(middleOfScreenHour), Weather: \(currentWeather.condition), Temp: \(currentWeather.temperature)")
         
         // Base colors for time of day
         var baseColors: [Color]
-        switch adjustedHour {
+        switch middleOfScreenHour {
         case 6...8:
             baseColors = [.orange.opacity(0.8), .yellow.opacity(0.6), .blue.opacity(0.4)]
         case 9...17:
@@ -323,6 +394,26 @@ struct WeatherBackgroundView: View {
         case .stormy:
             return [.purple.opacity(0.9), .black.opacity(0.8), .blue.opacity(0.5)]
         }
+    }
+    
+    private func getMiddleOfScreenHour() -> Int {
+        // Calculate which hour is in the middle of the screen
+        // Each hour is 120 points high
+        let hourOffset = Int(abs(scrollOffset) / 120)
+        let baseHour = Calendar.current.component(.hour, from: selectedDate)
+        return (baseHour + hourOffset) % 24
+    }
+    
+    private func startTimer() {
+        timer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { _ in
+            // Update every minute to refresh current time
+            objectWillChange.send()
+        }
+    }
+    
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
     }
 }
 

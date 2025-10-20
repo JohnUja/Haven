@@ -11,6 +11,7 @@ import SwiftUI
 @MainActor
 class WeatherManager: ObservableObject {
     @Published var isWeatherEnabled: Bool = true
+    @Published var isCelsius: Bool = false // Temperature unit toggle
     @Published var currentWeather: WeatherData = WeatherData.sample
     @Published var hourlyWeather: [WeatherData] = []
     
@@ -20,6 +21,19 @@ class WeatherManager: ObservableObject {
     
     func toggleWeather() {
         isWeatherEnabled.toggle()
+    }
+    
+    func toggleTemperatureUnit() {
+        isCelsius.toggle()
+    }
+    
+    func getTemperatureString(_ temperature: Int) -> String {
+        if isCelsius {
+            let celsius = Int((Double(temperature) - 32) * 5/9)
+            return "\(celsius)°C"
+        } else {
+            return "\(temperature)°F"
+        }
     }
     
     func getWeatherForTime(_ date: Date) -> WeatherData {
@@ -52,7 +66,7 @@ class WeatherManager: ObservableObject {
         return getWeatherForHour(targetHour)
     }
     
-    private func getWeatherForHour(_ hour: Int) -> WeatherData {
+    func getWeatherForHour(_ hour: Int) -> WeatherData {
         guard hour >= 0 && hour < hourlyWeather.count else {
             return WeatherData.sample
         }
