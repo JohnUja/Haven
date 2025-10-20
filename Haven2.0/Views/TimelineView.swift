@@ -17,6 +17,7 @@ struct TimelineView: View {
     @State private var scrollOffset: CGFloat = 0
     @StateObject private var weatherManager = WeatherManager()
     @State private var timer: Timer?
+    @State private var showTimePopup = false
     
     private var selectedDateTasks: [Task] {
         tasks.filter { task in
@@ -36,29 +37,17 @@ struct TimelineView: View {
         Calendar.current.component(.minute, from: currentTime)
     }
     
-    private var currentTimeProgressHeight: CGFloat {
-        // Calculate rope position based on actual timeline grid (120 points per hour)
-        if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
-            // For today: calculate exact position based on current time
-            let currentMinutes: CGFloat = CGFloat(currentHour * 60 + currentMinute)
-            let minutesPerHour: CGFloat = 60
-            let pointsPerHour: CGFloat = 120
-            
-            // Calculate which hour we're in and how far through that hour
-            let currentHourFloat = currentMinutes / minutesPerHour
-            let ropeHeight = currentHourFloat * pointsPerHour
-            
-            // Cap the rope height to reasonable limits
-            let maxHeight: CGFloat = 24 * 120 // 2880 points max
-            let cappedHeight = min(ropeHeight, maxHeight)
-            
-            print("Time: \(currentHour):\(currentMinute), Minutes: \(currentMinutes), HourFloat: \(currentHourFloat), RopeHeight: \(ropeHeight), Capped: \(cappedHeight)")
-            
-            return cappedHeight
-        } else {
-            // For other days, show no progress (start of day)
-            return 0
-        }
+    private var scrollBasedTime: String {
+        // Calculate time based on scroll position
+        let hourOffset = Int(abs(scrollOffset) / 120)
+        let baseHour = Calendar.current.component(.hour, from: selectedDate)
+        let targetHour = (baseHour + hourOffset) % 24
+        
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        
+        let targetDate = Calendar.current.date(bySettingHour: targetHour, minute: 0, second: 0, of: selectedDate) ?? selectedDate
+        return formatter.string(from: targetDate)
     }
     
     private var totalTimelineHeight: CGFloat {
@@ -133,9 +122,32 @@ struct TimelineView: View {
             .onAppear {
                 startTimer()
             }
-            .onDisappear {
-                stopTimer()
-            }
+                .onDisappear {
+                    stopTimer()
+                }
+                .overlay(
+                    // Time popup
+                    Group {
+                        if showTimePopup {
+                            VStack {
+                                Spacer()
+                                
+                                Text("Current Time: \(scrollBasedTime)")
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.white)
+                                    .padding()
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .fill(Color.black.opacity(0.8))
+                                    )
+                                    .padding(.horizontal)
+                                    .transition(.scale.combined(with: .opacity))
+                                    .animation(.spring(response: 0.5, dampingFraction: 0.8), value: showTimePopup)
+                            }
+                        }
+                    }
+                )
         }
     }
     
@@ -222,11 +234,17 @@ struct TimelineView: View {
             }
             .padding(.horizontal)
             
-            // Title
-            Text("Timeline View")
-                .font(.title)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
+                // Dynamic time based on scroll position
+                Text(scrollBasedTime)
+                    .font(.title)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.white.opacity(0.2))
+                    )
         }
         .padding()
         .background(
@@ -327,12 +345,34 @@ struct TimelineHourView: View {
                         .frame(width: 2)
                         .frame(maxHeight: .infinity)
                     
-                    // Current time progress "rope"
-                    Rectangle()
-                        .fill(Color.white)
-                        .frame(width: 4)
-                        .frame(height: currentTimeProgressHeight)
-                        .animation(.easeInOut(duration: 0.5), value: currentTimeProgressHeight)
+                    // Current time indicator (clickable)
+                    Button(action: {
+                        // Show time popup for 10 seconds
+                        showTimePopup = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                            showTimePopup = false
+                        }
+                    }) {
+                        VStack(spacing: 4) {
+                            // Time indicator dot
+                            Circle()
+                                .fill(Color.white)
+                                .frame(width: 8, height: 8)
+                            
+                            // Time text in rectangular box
+                            Text(scrollBasedTime)
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.white)
+                                )
+                        }
+                    }
+                    .buttonStyle(PlainButtonStyle())
                 }
             }
             .frame(width: 60)
