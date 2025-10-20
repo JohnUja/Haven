@@ -17,7 +17,6 @@ struct TimelineView: View {
     @State private var scrollOffset: CGFloat = 0
     @StateObject private var weatherManager = WeatherManager()
     @State private var timer: Timer?
-    @State private var showTimePopup = false
     
     private var selectedDateTasks: [Task] {
         tasks.filter { task in
@@ -99,8 +98,7 @@ struct TimelineView: View {
                                     tasks: tasksForHour(hour),
                                     selectedDate: selectedDate,
                                     currentTime: currentTime,
-                                    scrollBasedTime: scrollBasedTime,
-                                    showTimePopup: $showTimePopup
+                                    scrollBasedTime: scrollBasedTime
                                 )
                                 .frame(height: 120)
                             }
@@ -126,29 +124,6 @@ struct TimelineView: View {
                 .onDisappear {
                     stopTimer()
                 }
-                .overlay(
-                    // Time popup
-                    Group {
-                        if showTimePopup {
-                            VStack {
-                                Spacer()
-                                
-                                Text("Current Time: \(scrollBasedTime)")
-                                    .font(.title2)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.white)
-                                    .padding()
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .fill(Color.black.opacity(0.8))
-                                    )
-                                    .padding(.horizontal)
-                                    .transition(.scale.combined(with: .opacity))
-                                    .animation(.spring(response: 0.5, dampingFraction: 0.8), value: showTimePopup)
-                            }
-                        }
-                    }
-                )
         }
     }
     
@@ -235,15 +210,15 @@ struct TimelineView: View {
             }
             .padding(.horizontal)
             
-                // Dynamic time based on scroll position
+                // Dynamic time based on scroll position (smaller)
                 Text(scrollBasedTime)
-                    .font(.title)
-                    .fontWeight(.bold)
+                    .font(.title2)
+                    .fontWeight(.semibold)
                     .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
                     .background(
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: 6)
                             .fill(Color.white.opacity(0.2))
                     )
         }
@@ -302,7 +277,6 @@ struct TimelineHourView: View {
     let selectedDate: Date
     let currentTime: Date
     let scrollBasedTime: String
-    @Binding var showTimePopup: Bool
     
     private var hourText: String {
         let formatter = DateFormatter()
@@ -347,34 +321,35 @@ struct TimelineHourView: View {
                         .frame(width: 2)
                         .frame(maxHeight: .infinity)
                     
-                    // Current time indicator (clickable)
-                    Button(action: {
-                        // Show time popup for 10 seconds
-                        showTimePopup = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-                            showTimePopup = false
-                        }
-                    }) {
-                        VStack(spacing: 4) {
-                            // Time indicator dot
-                            Circle()
-                                .fill(Color.white)
-                                .frame(width: 8, height: 8)
-                            
-                            // Time text in rectangular box
-                            Text(scrollBasedTime)
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.black)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(Color.white)
-                                )
+                    // Current time indicator (only for today, positioned at hour intervals)
+                    if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
+                        let currentHour = Calendar.current.component(.hour, from: currentTime)
+                        let currentMinute = Calendar.current.component(.minute, from: currentTime)
+                        let isCurrentHour = hour == currentHour
+                        
+                        if isCurrentHour {
+                            VStack(spacing: 4) {
+                                // Time indicator dot with fill animation
+                                Circle()
+                                    .fill(Color.white)
+                                    .frame(width: 8, height: 8)
+                                    .scaleEffect(isCurrentHour ? 1.2 : 1.0)
+                                    .animation(.easeInOut(duration: 0.3), value: isCurrentHour)
+                                
+                                // Time text in rectangular box
+                                Text("\(currentHour):\(String(format: "%02d", currentMinute))")
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.black)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .fill(Color.white)
+                                    )
+                            }
                         }
                     }
-                    .buttonStyle(PlainButtonStyle())
                 }
             }
             .frame(width: 60)
