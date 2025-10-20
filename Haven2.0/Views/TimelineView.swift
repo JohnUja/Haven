@@ -324,13 +324,7 @@ struct TimelineHourView: View {
                     // Current time progress "rope"
                     if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
                         Rectangle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [.red, .orange, .yellow],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
+                            .fill(Color.white)
                             .frame(width: 4)
                             .frame(height: currentTimeProgressHeight)
                             .animation(.easeInOut(duration: 0.5), value: currentTimeProgressHeight)
@@ -381,7 +375,7 @@ struct TaskTimelineBlock: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color(task.priority.color).opacity(0.8))
+                .fill(Color.clear)
         )
         .frame(maxWidth: 120)
     }
