@@ -332,7 +332,7 @@ struct TimelineHourView: View {
                             Text("\(currentHour):\(String(format: "%02d", currentMinute))")
                                 .font(.caption2)
                                 .fontWeight(.semibold)
-                                .foregroundColor(isAtCenter ? .clear : .white) // Transparent text when filled, white when transparent
+                                .foregroundColor(isAtCenter ? .black : .white) // Black text when filled, white when transparent
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(
