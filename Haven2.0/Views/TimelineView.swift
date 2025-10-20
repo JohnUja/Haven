@@ -37,22 +37,24 @@ struct TimelineView: View {
     }
     
     private var currentTimeProgressHeight: CGFloat {
-        // Calculate how much of the day has passed for the selected date
-        let totalMinutesInDay: CGFloat = 24 * 60 // 1440 minutes
-        
-        // If selected date is today, use current time; otherwise use 0 (start of day)
-        let progress: CGFloat
+        // Calculate rope position based on actual timeline grid (120 points per hour)
         if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
+            // For today: calculate exact position based on current time
             let currentMinutes: CGFloat = CGFloat(currentHour * 60 + currentMinute)
-            progress = currentMinutes / totalMinutesInDay
+            let minutesPerHour: CGFloat = 60
+            let pointsPerHour: CGFloat = 120
+            
+            // Calculate which hour we're in and how far through that hour
+            let currentHourFloat = currentMinutes / minutesPerHour
+            let ropeHeight = currentHourFloat * pointsPerHour
+            
+            print("Time: \(currentHour):\(currentMinute), Minutes: \(currentMinutes), HourFloat: \(currentHourFloat), RopeHeight: \(ropeHeight)")
+            
+            return ropeHeight
         } else {
             // For other days, show no progress (start of day)
-            progress = 0
+            return 0
         }
-        
-        // Each hour is 120 points high, so total height is 24 * 120 = 2880
-        let totalHeight: CGFloat = 24 * 120
-        return totalHeight * progress
     }
     
     private var totalTimelineHeight: CGFloat {
