@@ -95,6 +95,7 @@ struct TimelineView: View {
                 // Main Content
                 VStack(spacing: 0) {
                     // Header
+             
                     headerView
                     
                     // Timeline Content
@@ -324,13 +325,17 @@ struct TimelineHourView: View {
                         .frame(maxHeight: .infinity)
                     
                     // Current time progress "rope"
-                    if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
-                        Rectangle()
-                            .fill(Color.white)
-                            .frame(width: 4)
-                            .frame(height: currentTimeProgressHeight)
-                            .animation(.easeInOut(duration: 0.5), value: currentTimeProgressHeight)
-                    }
+                    Rectangle()
+                        .fill(Color.red) // Make it red so we can see it
+                        .frame(width: 4)
+                        .frame(height: max(currentTimeProgressHeight, 200)) // Minimum 200 points so we can see it
+                        .animation(.easeInOut(duration: 0.5), value: currentTimeProgressHeight)
+                        .onAppear {
+                            print("Rope appeared! Height: \(currentTimeProgressHeight)")
+                            print("Selected date: \(selectedDate)")
+                            print("Current time: \(currentTime)")
+                            print("Is same day: \(Calendar.current.isDate(selectedDate, inSameDayAs: currentTime))")
+                        }
                 }
             }
             .frame(width: 60)
