@@ -70,7 +70,9 @@ struct TimelineView: View {
                                 TimelineHourView(
                                     hour: hour,
                                     tasks: tasksForHour(hour),
-                                    selectedDate: selectedDate
+                                    selectedDate: selectedDate,
+                                    currentTime: currentTime,
+                                    currentTimeProgressHeight: currentTimeProgressHeight
                                 )
                                 .frame(height: 120)
                             }
@@ -88,7 +90,6 @@ struct TimelineView: View {
                         print("Scroll offset changed to: \(value)")
                     }
                 }
-            }
             }
             .navigationBarHidden(true)
             .onAppear {
@@ -220,6 +221,8 @@ struct TimelineHourView: View {
     let hour: Int
     let tasks: [Task]
     let selectedDate: Date
+    let currentTime: Date
+    let currentTimeProgressHeight: CGFloat
     
     private var hourText: String {
         let formatter = DateFormatter()
