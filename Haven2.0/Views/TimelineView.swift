@@ -49,6 +49,19 @@ struct TimelineView: View {
         return formatter.string(from: targetDate)
     }
     
+    private var isCurrentTimeInView: Bool {
+        // Check if current time hour is in screen view
+        if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
+            let currentHour = Calendar.current.component(.hour, from: currentTime)
+            let hourOffset = Int(abs(scrollOffset) / 120)
+            let baseHour = Calendar.current.component(.hour, from: selectedDate)
+            let targetHour = (baseHour + hourOffset) % 24
+            
+            return targetHour == currentHour
+        }
+        return false
+    }
+    
     private var totalTimelineHeight: CGFloat {
         // Total height for 24 hours
         return 24 * 120 // 2880 points
@@ -220,8 +233,9 @@ struct TimelineView: View {
                     .padding(.vertical, 4)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
-                            .fill(Color.white.opacity(0.2))
+                            .fill(isCurrentTimeInView ? Color.white.opacity(0.8) : Color.white.opacity(0.2))
                     )
+                    .animation(.easeInOut(duration: 0.3), value: isCurrentTimeInView)
         }
         .padding()
         .background(
@@ -325,28 +339,28 @@ struct TimelineHourView: View {
                         let isCurrentHour = hour == currentHour
                         
                         if isCurrentHour {
-                            // Calculate if we're scrolled to the center of the screen
-                            let isAtCenter = abs(scrollOffset) < 30 // More precise center detection
+                            // Check if this hour is in screen view (visible on screen)
+                            let isInScreenView = abs(scrollOffset) < 200 // Within 200 points means it's visible
                             
                             // Debug output
-                            let _ = print("Scroll offset: \(scrollOffset), isAtCenter: \(isAtCenter)")
+                            let _ = print("Scroll offset: \(scrollOffset), isInScreenView: \(isInScreenView)")
                             
                             // Time text in rectangular box - transparent background with white border
                             Text("\(currentHour):\(String(format: "%02d", currentMinute))")
                                 .font(.caption2)
                                 .fontWeight(.semibold)
-                                .foregroundColor(isAtCenter ? .clear : .white) // Transparent text when filled, white when transparent
+                                .foregroundColor(isInScreenView ? .clear : .white) // Transparent text when in view, white when not
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(
                                     RoundedRectangle(cornerRadius: 4)
-                                        .fill(isAtCenter ? Color.white : Color.clear) // Fill when at center
+                                        .fill(isInScreenView ? Color.white : Color.clear) // Fill when in view
                                         .overlay(
                                             RoundedRectangle(cornerRadius: 4)
                                                 .stroke(Color.white, lineWidth: 1) // Always show border
                                         )
                                 )
-                                .animation(.easeInOut(duration: 0.3), value: isAtCenter)
+                                .animation(.easeInOut(duration: 0.3), value: isInScreenView)
                                 .offset(y: 20) // Position it below the hour text
                         }
                     }
