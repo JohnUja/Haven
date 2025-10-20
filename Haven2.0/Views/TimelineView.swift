@@ -331,7 +331,6 @@ struct TimelineHourView: View {
                         
                         if isCurrentHour {
                             // Calculate if we're scrolled to the center of the screen
-                            // The center is when this hour is at the top of the visible area
                             let isAtCenter = abs(scrollOffset) < 60 // Within 60 points of center
                             
                             VStack(spacing: 4) {
@@ -342,11 +341,11 @@ struct TimelineHourView: View {
                                     .scaleEffect(isCurrentHour ? 1.2 : 1.0)
                                     .animation(.easeInOut(duration: 0.3), value: isCurrentHour)
                                 
-                                // Time text in rectangular box - visible text, transparent background initially
+                                // Time text in rectangular box - transparent background with white border
                                 Text("\(currentHour):\(String(format: "%02d", currentMinute))")
                                     .font(.caption2)
                                     .fontWeight(.semibold)
-                                    .foregroundColor(.white) // Always white text
+                                    .foregroundColor(isAtCenter ? .black : .white) // Black text when filled, white when transparent
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
                                     .background(
@@ -359,6 +358,7 @@ struct TimelineHourView: View {
                                     )
                                     .animation(.easeInOut(duration: 0.3), value: isAtCenter)
                             }
+                            .offset(y: 20) // Position it below the hour text
                         }
                     }
                 }
