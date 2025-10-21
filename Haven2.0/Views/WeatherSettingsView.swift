@@ -46,22 +46,11 @@ struct WeatherSettingsView: View {
                 HStack {
                     Text("Location Permission")
                     Spacer()
-                    if weatherManager.locationPermissionStatus == .authorized {
-                        Text("Granted")
-                            .foregroundColor(.green)
-                    } else {
-                        Text("Not Granted")
-                            .foregroundColor(.red)
-                    }
+                    Text("Not Available")
+                        .foregroundColor(.orange)
                 }
                 
-                if weatherManager.locationPermissionStatus != .authorized {
-                    Button("Request Location Permission") {
-                        weatherManager.requestLocationPermission()
-                    }
-                }
-                
-                Text("Location is needed to show accurate weather data for your area")
+                Text("Location features will be added in a future update")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
