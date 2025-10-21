@@ -137,6 +137,12 @@ struct ProfileView: View {
     
     private var settingsSections: some View {
         Group {
+            Section("Weather") {
+                NavigationLink(destination: WeatherSettingsView()) {
+                    Label("Weather Settings", systemImage: "cloud.sun")
+                }
+            }
+            
             Section("Notifications") {
                 NavigationLink(destination: Text("Notification Settings")) {
                     Label("Notification Settings", systemImage: "bell")

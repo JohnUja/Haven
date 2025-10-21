@@ -19,6 +19,9 @@ struct TimelineView: View {
     @StateObject private var weatherManager = WeatherManager()
     @State private var timer: Timer?
     
+    // Drag and drop state
+    @State private var draggedTask: Task? = nil
+    
     private var selectedDateTasks: [Task] {
         tasks.filter { task in
             Calendar.current.isDate(task.startTime, inSameDayAs: selectedDate)
@@ -35,6 +38,29 @@ struct TimelineView: View {
     
     private var currentMinute: Int {
         Calendar.current.component(.minute, from: currentTime)
+    }
+    
+    // MARK: - Drag and Drop Functions
+    private func updateTaskTime(_ task: Task, _ newStartTime: Date, _ newEndTime: Date) {
+        task.startTime = newStartTime
+        task.endTime = newEndTime
+        
+        do {
+            try modelContext.save()
+        } catch {
+            print("Failed to update task time: \(error)")
+        }
+    }
+    
+    private func updateTaskSide(_ task: Task, _ newSide: TaskTimelineBlock.TimelineSide) {
+        // Update task category based on side
+        task.category = newSide == .left ? .work : .personal
+        
+        do {
+            try modelContext.save()
+        } catch {
+            print("Failed to update task side: \(error)")
+        }
     }
     
     private var scrollBasedTime: String {
@@ -242,20 +268,6 @@ struct TimelineView: View {
             HStack {
                 Spacer()
                 
-                // Temperature Unit Toggle
-                Button(action: {
-                    weatherManager.toggleTemperatureUnit()
-                }) {
-                    Text(weatherManager.isCelsius ? "°C" : "°F")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.2))
-                        .cornerRadius(6)
-                }
-                
                 // Weather Toggle Button
                 Button(action: {
                     weatherManager.toggleWeather()
@@ -422,8 +434,13 @@ struct TimelineHourView: View {
         return ForEach(Array(overlappingWorkGroups.enumerated()), id: \.offset) { index, group in
             HStack(spacing: 2) {
                 ForEach(group, id: \.id) { task in
-                    TaskTimelineBlock(task: task, side: .left)
-                        .frame(maxWidth: group.count > 1 ? 60 : 120)
+                    DraggableTaskTimelineBlock(
+                        task: task,
+                        side: .left,
+                        onTimeChanged: updateTaskTime,
+                        onSideChanged: updateTaskSide
+                    )
+                    .frame(maxWidth: group.count > 1 ? 60 : 120)
                 }
             }
         }
@@ -513,8 +530,13 @@ struct TimelineHourView: View {
         return ForEach(Array(overlappingPersonalGroups.enumerated()), id: \.offset) { index, group in
             HStack(spacing: 2) {
                 ForEach(group, id: \.id) { task in
-                    TaskTimelineBlock(task: task, side: .right)
-                        .frame(maxWidth: group.count > 1 ? 60 : 120)
+                    DraggableTaskTimelineBlock(
+                        task: task,
+                        side: .right,
+                        onTimeChanged: updateTaskTime,
+                        onSideChanged: updateTaskSide
+                    )
+                    .frame(maxWidth: group.count > 1 ? 60 : 120)
                 }
             }
         }
