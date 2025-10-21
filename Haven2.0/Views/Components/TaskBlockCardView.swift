@@ -184,7 +184,9 @@ struct TaskBlockCardView: View {
                 )
                 .opacity(isBlockComplete ? 0.7 : 1.0)
                 .onChange(of: isBlockComplete) { _, newValue in
+                    print("TaskBlock completion changed: \(newValue), showAnimation: \(showCompletionAnimation)")
                     if newValue && !showCompletionAnimation {
+                        print("Triggering completion animation")
                         triggerCompletionAnimation()
                     }
                 }

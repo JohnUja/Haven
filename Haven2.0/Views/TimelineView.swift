@@ -21,6 +21,8 @@ struct TimelineView: View {
     
     // Drag and drop state
     @State private var draggedTask: Task? = nil
+    @State private var showTimelineGuidelines = false
+    @State private var guidelineHour: Int? = nil
     
     private var selectedDateTasks: [Task] {
         tasks.filter { task in
@@ -60,6 +62,17 @@ struct TimelineView: View {
             try modelContext.save()
         } catch {
             print("Failed to update task side: \(error)")
+        }
+    }
+    
+    private func showGuidelines(for hour: Int) {
+        guidelineHour = hour
+        showTimelineGuidelines = true
+        
+        // Auto-hide after 3 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            showTimelineGuidelines = false
+            guidelineHour = nil
         }
     }
     
@@ -155,7 +168,9 @@ struct TimelineView: View {
                                     getTasksForBlock: getTasksForBlock,
                                     getOverlappingTasks: getOverlappingTasks,
                                     updateTaskTime: updateTaskTime,
-                                    updateTaskSide: updateTaskSide
+                                    updateTaskSide: updateTaskSide,
+                                    showGuidelines: showTimelineGuidelines && guidelineHour == hour,
+                                    onShowGuidelines: { showGuidelines(for: hour) }
                                 )
                                 .frame(height: 120)
                             }
@@ -388,6 +403,8 @@ struct TimelineHourView: View {
     let getOverlappingTasks: ([Task]) -> [[Task]]
     let updateTaskTime: (Task, Date, Date) -> Void
     let updateTaskSide: (Task, TaskTimelineBlock.TimelineSide) -> Void
+    let showGuidelines: Bool
+    let onShowGuidelines: () -> Void
     
     private var hourText: String {
         let formatter = DateFormatter()
@@ -476,11 +493,42 @@ struct TimelineHourView: View {
                     .frame(width: 2)
                     .frame(maxHeight: .infinity)
                 
+                // Guidelines overlay
+                if showGuidelines {
+                    guidelinesOverlay
+                }
+                
                 // Current time indicator
                 currentTimeIndicator
             }
         }
         .frame(width: 60)
+        .onTapGesture {
+            onShowGuidelines()
+        }
+    }
+    
+    private var guidelinesOverlay: some View {
+        VStack(spacing: 0) {
+            // 15-minute guideline (30 points from top)
+            Rectangle()
+                .fill(Color.white.opacity(0.6))
+                .frame(width: 8, height: 1)
+                .offset(y: 30)
+            
+            // 30-minute guideline (60 points from top)
+            Rectangle()
+                .fill(Color.white.opacity(0.8))
+                .frame(width: 12, height: 1)
+                .offset(y: 60)
+            
+            // 45-minute guideline (90 points from top)
+            Rectangle()
+                .fill(Color.white.opacity(0.6))
+                .frame(width: 8, height: 1)
+                .offset(y: 90)
+        }
+        .animation(.easeInOut(duration: 0.3), value: showGuidelines)
     }
     
     private var currentTimeIndicator: some View {
@@ -583,6 +631,12 @@ struct TaskTimelineBlock: View {
         return max(16, min(120, CGFloat(minutes) * 2))
     }
     
+    private var taskOffset: CGFloat {
+        // Calculate offset based on start time within the hour
+        let startMinute = Calendar.current.component(.minute, from: task.startTime)
+        return CGFloat(startMinute) * 2 // 2 points per minute
+    }
+    
     private var taskColor: Color {
         switch task.priority {
         case .urgent: return .red.opacity(0.3)
@@ -633,6 +687,7 @@ struct TaskTimelineBlock: View {
                 )
         )
         .frame(maxWidth: 120, minHeight: taskHeight)
+        .offset(y: taskOffset)
         .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
         .overlay(
             // Lock icon for locked tasks
