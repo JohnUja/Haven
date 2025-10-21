@@ -24,6 +24,10 @@ struct TimelineView: View {
     @State private var showTimelineGuidelines = false
     @State private var guidelineHour: Int? = nil
     
+    // Edit and delete states
+    @State private var showingEditTask: Task? = nil
+    @State private var taskToDelete: Task? = nil
+    
     private var selectedDateTasks: [Task] {
         tasks.filter { task in
             Calendar.current.isDate(task.startTime, inSameDayAs: selectedDate)
@@ -74,6 +78,27 @@ struct TimelineView: View {
             showTimelineGuidelines = false
             guidelineHour = nil
         }
+    }
+    
+    private func editTask(_ task: Task) {
+        showingEditTask = task
+    }
+    
+    private func deleteTask(_ task: Task) {
+        taskToDelete = task
+    }
+    
+    private func confirmDeleteTask() {
+        guard let task = taskToDelete else { return }
+        modelContext.delete(task)
+        
+        do {
+            try modelContext.save()
+        } catch {
+            print("Failed to delete task: \(error)")
+        }
+        
+        taskToDelete = nil
     }
     
     private var scrollBasedTime: String {
@@ -193,9 +218,24 @@ struct TimelineView: View {
             .onAppear {
                 startTimer()
             }
-                .onDisappear {
-                    stopTimer()
+            .onDisappear {
+                stopTimer()
+            }
+            .sheet(item: $showingEditTask) { task in
+                EditTaskView(task: task)
+            }
+            .alert("Delete Task", isPresented: .constant(taskToDelete != nil)) {
+                Button("Cancel", role: .cancel) {
+                    taskToDelete = nil
                 }
+                Button("Delete", role: .destructive) {
+                    confirmDeleteTask()
+                }
+            } message: {
+                if let task = taskToDelete {
+                    Text("Are you sure you want to delete '\(task.title)'? This action cannot be undone.")
+                }
+            }
         }
     }
     
@@ -444,14 +484,14 @@ struct TimelineHourView: View {
                         onTimeChanged: updateTaskTime,
                         onSideChanged: updateTaskSide,
                         onEdit: {
-                            // TODO: Implement edit task
+                            editTask(task)
                         },
                         onUnlock: {
                             task.isLocked.toggle()
                             try? modelContext.save()
                         },
                         onDelete: {
-                            // TODO: Implement delete task
+                            deleteTask(task)
                         }
                     )
                     .frame(maxWidth: group.count > 1 ? 60 : 120)
@@ -581,14 +621,14 @@ struct TimelineHourView: View {
                         onTimeChanged: updateTaskTime,
                         onSideChanged: updateTaskSide,
                         onEdit: {
-                            // TODO: Implement edit task
+                            editTask(task)
                         },
                         onUnlock: {
                             task.isLocked.toggle()
                             try? modelContext.save()
                         },
                         onDelete: {
-                            // TODO: Implement delete task
+                            deleteTask(task)
                         }
                     )
                     .frame(maxWidth: group.count > 1 ? 60 : 120)
