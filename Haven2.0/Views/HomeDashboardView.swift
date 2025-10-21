@@ -198,6 +198,12 @@ struct HomeDashboardView: View {
                                 showingFloatingMenu = nil
                                 // TODO: Implement delete task
                             },
+                            onUnlock: {
+                                showingFloatingMenu = nil
+                                // Toggle lock status
+                                task.isLocked.toggle()
+                                try? modelContext.save()
+                            },
                             onDismiss: {
                                 showingFloatingMenu = nil
                             }
@@ -238,6 +244,14 @@ struct HomeDashboardView: View {
                             onDelete: {
                                 showingFloatingMenuForBlock = nil
                                 // TODO: Implement delete task block
+                            },
+                            onUnlock: {
+                                showingFloatingMenuForBlock = nil
+                                // Toggle lock status for all tasks in block
+                                for task in taskBlock {
+                                    task.isLocked.toggle()
+                                }
+                                try? modelContext.save()
                             },
                             onDismiss: {
                                 showingFloatingMenuForBlock = nil
@@ -924,9 +938,10 @@ struct FloatingActionMenu: View {
     let onAddToGoal: () -> Void
     let onMove: () -> Void
     let onDelete: () -> Void
+    let onUnlock: () -> Void
     let onDismiss: () -> Void
     
-    init(task: Task? = nil, taskBlock: [Task]? = nil, theme: any AppTheme, onEdit: @escaping () -> Void, onChangeCategory: @escaping () -> Void, onAddToGoal: @escaping () -> Void, onMove: @escaping () -> Void, onDelete: @escaping () -> Void, onDismiss: @escaping () -> Void) {
+    init(task: Task? = nil, taskBlock: [Task]? = nil, theme: any AppTheme, onEdit: @escaping () -> Void, onChangeCategory: @escaping () -> Void, onAddToGoal: @escaping () -> Void, onMove: @escaping () -> Void, onDelete: @escaping () -> Void, onUnlock: @escaping () -> Void, onDismiss: @escaping () -> Void) {
         self.task = task
         self.taskBlock = taskBlock
         self.theme = theme
@@ -935,6 +950,7 @@ struct FloatingActionMenu: View {
         self.onAddToGoal = onAddToGoal
         self.onMove = onMove
         self.onDelete = onDelete
+        self.onUnlock = onUnlock
         self.onDismiss = onDismiss
     }
     
@@ -985,19 +1001,35 @@ struct FloatingActionMenu: View {
                 .cornerRadius(12)
             }
             
-            // Move
-            Button(action: onMove) {
-                VStack(spacing: 4) {
-                    Image(systemName: "arrow.up.arrow.down")
-                        .font(.title2)
-                    Text("Move")
-                        .font(.caption)
+            // Move or Unlock (conditional)
+            if let task = task, task.isLocked {
+                Button(action: onUnlock) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "lock.open")
+                            .font(.title2)
+                        Text("Unlock")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(theme.cardBackground)
+                    .cornerRadius(12)
                 }
-                .foregroundColor(theme.textPrimary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(theme.cardBackground)
-                .cornerRadius(12)
+            } else {
+                Button(action: onMove) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.title2)
+                        Text("Move")
+                            .font(.caption)
+                    }
+                    .foregroundColor(theme.textPrimary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(theme.cardBackground)
+                    .cornerRadius(12)
+                }
             }
             
             // Delete
@@ -1156,6 +1188,23 @@ struct TaskCardView: View {
         )
         .opacity(task.isComplete ? 0.7 : 1.0)
         .animation(.easeInOut(duration: 0.3), value: task.isComplete)
+        .overlay(
+            // Lock icon for locked tasks
+            Group {
+                if task.isLocked {
+                    Image(systemName: "lock.fill")
+                        .font(.caption)
+                        .foregroundColor(.white)
+                        .padding(6)
+                        .background(
+                            Circle()
+                                .fill(Color.black.opacity(0.7))
+                        )
+                        .offset(x: 60, y: -60) // Top-right corner
+                }
+            },
+            alignment: .topTrailing
+        )
         .onLongPressGesture {
             // Long press to show floating menu
             onEditTask?(task)

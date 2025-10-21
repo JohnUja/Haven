@@ -266,24 +266,7 @@ struct TimelineView: View {
             }
             .padding(.horizontal)
             
-            // Weather controls row
-            HStack {
-                Spacer()
-                
-                // Weather Toggle Button
-                Button(action: {
-                    weatherManager.toggleWeather()
-                }) {
-                    Image(systemName: weatherManager.isWeatherEnabled ? "cloud.sun.fill" : "cloud.slash.fill")
-                        .font(.title3)
-                        .foregroundColor(.white)
-                        .padding(8)
-                        .background(Color.white.opacity(0.2))
-                        .cornerRadius(8)
-                }
-                
-                Spacer()
-            }
+            // Weather controls row - removed, now in settings
             
                 // Dynamic time based on scroll position (smaller)
                 Text(headerTimeDisplay)
@@ -576,16 +559,16 @@ struct TaskTimelineBlock: View {
         let duration = task.endTime.timeIntervalSince(task.startTime)
         let minutes = duration / 60
         // Each hour is 120 points, so each minute is 2 points
-        // Minimum height of 20 points, maximum of 100 points per hour
-        return max(20, min(100, CGFloat(minutes) * 2))
+        // Minimum height of 16 points (8 minutes), maximum of 120 points (1 hour)
+        return max(16, min(120, CGFloat(minutes) * 2))
     }
     
     private var taskColor: Color {
         switch task.priority {
-        case .urgent: return .red
-        case .high: return .orange
-        case .normal: return .green
-        case .low: return .blue
+        case .urgent: return .red.opacity(0.3)
+        case .high: return .orange.opacity(0.3)
+        case .normal: return .green.opacity(0.3)
+        case .low: return .blue.opacity(0.3)
         }
     }
     
@@ -631,6 +614,23 @@ struct TaskTimelineBlock: View {
         )
         .frame(maxWidth: 120, minHeight: taskHeight)
         .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
+        .overlay(
+            // Lock icon for locked tasks
+            Group {
+                if task.isLocked {
+                    Image(systemName: "lock.fill")
+                        .font(.caption2)
+                        .foregroundColor(.white)
+                        .padding(4)
+                        .background(
+                            Circle()
+                                .fill(Color.black.opacity(0.6))
+                        )
+                        .offset(x: 50, y: -20) // Top-right corner
+                }
+            },
+            alignment: .topTrailing
+        )
     }
 }
 
