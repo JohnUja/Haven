@@ -399,109 +399,142 @@ struct TimelineHourView: View {
     
     var body: some View {
         HStack(spacing: 0) {
-            // Left side (Work tasks)
-            VStack(alignment: .leading, spacing: 4) {
-                // Individual work tasks (handle overlaps)
-                let workTasks = tasks.filter { $0.category == .work && $0.taskBlockID == nil }
-                let overlappingWorkGroups = getOverlappingTasks(workTasks)
-                
-                ForEach(Array(overlappingWorkGroups.enumerated()), id: \.offset) { index, group in
-                    HStack(spacing: 2) {
-                        ForEach(group, id: \.id) { task in
-                            TaskTimelineBlock(task: task, side: .left)
-                                .frame(maxWidth: group.count > 1 ? 60 : 120)
-                        }
-                    }
-                }
-                
-                // Work task blocks
-                ForEach(taskBlocks.filter { block in
-                    let blockTasks = getTasksForBlock(block, hour: hour)
-                    return blockTasks.contains { $0.category == .work }
-                }, id: \.id) { taskBlock in
-                    TaskBlockTimelineView(
-                        taskBlock: taskBlock,
-                        tasks: getTasksForBlock(taskBlock, hour: hour).filter { $0.category == .work },
-                        side: .left
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            
-            // Central Timeline
-            VStack {
-                Text(hourText)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.white)
-                    .padding(.vertical, 4)
-                
-                ZStack(alignment: .top) {
-                    // Background timeline
-                    Rectangle()
-                        .fill(Color.white.opacity(0.3))
-                        .frame(width: 2)
-                        .frame(maxHeight: .infinity)
-                    
-                    // Current time indicator (only for today, positioned at hour intervals)
-                    if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
-                        let currentHour = Calendar.current.component(.hour, from: currentTime)
-                        let currentMinute = Calendar.current.component(.minute, from: currentTime)
-                        let isCurrentHour = hour == currentHour
-                        
-                        if isCurrentHour {
-                            // Simple static time indicator - transparent background with white border
-                            Text("\(currentHour):\(String(format: "%02d", currentMinute))")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white) // Always white text
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(Color.clear) // Always transparent background
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 4)
-                                                .stroke(Color.white, lineWidth: 1) // Always show border
-                                        )
-                                )
-                                .offset(y: 20) // Position it below the hour text
-                        }
-                    }
-                }
-            }
-            .frame(width: 60)
-            
-            // Right side (Personal tasks)
-            VStack(alignment: .trailing, spacing: 4) {
-                // Individual personal tasks (handle overlaps)
-                let personalTasks = tasks.filter { $0.category == .personal && $0.taskBlockID == nil }
-                let overlappingPersonalGroups = getOverlappingTasks(personalTasks)
-                
-                ForEach(Array(overlappingPersonalGroups.enumerated()), id: \.offset) { index, group in
-                    HStack(spacing: 2) {
-                        ForEach(group, id: \.id) { task in
-                            TaskTimelineBlock(task: task, side: .right)
-                                .frame(maxWidth: group.count > 1 ? 60 : 120)
-                        }
-                    }
-                }
-                
-                // Personal task blocks
-                ForEach(taskBlocks.filter { block in
-                    let blockTasks = getTasksForBlock(block, hour: hour)
-                    return blockTasks.contains { $0.category == .personal }
-                }, id: \.id) { taskBlock in
-                    TaskBlockTimelineView(
-                        taskBlock: taskBlock,
-                        tasks: getTasksForBlock(taskBlock, hour: hour).filter { $0.category == .personal },
-                        side: .right
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .trailing)
+            workTasksView
+            centralTimelineView
+            personalTasksView
         }
         .padding(.horizontal)
+    }
+    
+    // MARK: - Work Tasks View
+    private var workTasksView: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            workTasksList
+            workTaskBlocksList
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    
+    private var workTasksList: some View {
+        let workTasks = tasks.filter { $0.category == .work && $0.taskBlockID == nil }
+        let overlappingWorkGroups = getOverlappingTasks(workTasks)
+        
+        return ForEach(Array(overlappingWorkGroups.enumerated()), id: \.offset) { index, group in
+            HStack(spacing: 2) {
+                ForEach(group, id: \.id) { task in
+                    TaskTimelineBlock(task: task, side: .left)
+                        .frame(maxWidth: group.count > 1 ? 60 : 120)
+                }
+            }
+        }
+    }
+    
+    private var workTaskBlocksList: some View {
+        ForEach(workTaskBlocks, id: \.id) { taskBlock in
+            TaskBlockTimelineView(
+                taskBlock: taskBlock,
+                tasks: getTasksForBlock(taskBlock, hour).filter { $0.category == .work },
+                side: .left
+            )
+        }
+    }
+    
+    private var workTaskBlocks: [TaskBlock] {
+        taskBlocks.filter { block in
+            let blockTasks = getTasksForBlock(block, hour)
+            return blockTasks.contains { $0.category == .work }
+        }
+    }
+    
+    // MARK: - Central Timeline View
+    private var centralTimelineView: some View {
+        VStack {
+            Text(hourText)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.white)
+                .padding(.vertical, 4)
+            
+            ZStack(alignment: .top) {
+                // Background timeline
+                Rectangle()
+                    .fill(Color.white.opacity(0.3))
+                    .frame(width: 2)
+                    .frame(maxHeight: .infinity)
+                
+                // Current time indicator
+                currentTimeIndicator
+            }
+        }
+        .frame(width: 60)
+    }
+    
+    private var currentTimeIndicator: some View {
+        Group {
+            if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
+                let currentHour = Calendar.current.component(.hour, from: currentTime)
+                let currentMinute = Calendar.current.component(.minute, from: currentTime)
+                let isCurrentHour = hour == currentHour
+                
+                if isCurrentHour {
+                    Text("\(currentHour):\(String(format: "%02d", currentMinute))")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.clear)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .stroke(Color.white, lineWidth: 1)
+                                )
+                        )
+                        .offset(y: 20)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Personal Tasks View
+    private var personalTasksView: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            personalTasksList
+            personalTaskBlocksList
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+    
+    private var personalTasksList: some View {
+        let personalTasks = tasks.filter { $0.category == .personal && $0.taskBlockID == nil }
+        let overlappingPersonalGroups = getOverlappingTasks(personalTasks)
+        
+        return ForEach(Array(overlappingPersonalGroups.enumerated()), id: \.offset) { index, group in
+            HStack(spacing: 2) {
+                ForEach(group, id: \.id) { task in
+                    TaskTimelineBlock(task: task, side: .right)
+                        .frame(maxWidth: group.count > 1 ? 60 : 120)
+                }
+            }
+        }
+    }
+    
+    private var personalTaskBlocksList: some View {
+        ForEach(personalTaskBlocks, id: \.id) { taskBlock in
+            TaskBlockTimelineView(
+                taskBlock: taskBlock,
+                tasks: getTasksForBlock(taskBlock, hour).filter { $0.category == .personal },
+                side: .right
+            )
+        }
+    }
+    
+    private var personalTaskBlocks: [TaskBlock] {
+        taskBlocks.filter { block in
+            let blockTasks = getTasksForBlock(block, hour)
+            return blockTasks.contains { $0.category == .personal }
+        }
     }
 }
 
