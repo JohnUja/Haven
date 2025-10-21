@@ -101,6 +101,14 @@ struct TimelineView: View {
         taskToDelete = nil
     }
     
+    private func editTask(_ task: Task) {
+        showingEditTask = task
+    }
+    
+    private func deleteTask(_ task: Task) {
+        taskToDelete = task
+    }
+    
     private var scrollBasedTime: String {
         // Calculate time based on scroll position
         let hourOffset = Int(abs(scrollOffset) / 120)
