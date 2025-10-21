@@ -475,29 +475,41 @@ struct TimelineHourView: View {
         let workTasks = tasks.filter { $0.category == .work && $0.taskBlockID == nil }
         let overlappingWorkGroups = getOverlappingTasks(workTasks)
         
-        return ForEach(Array(overlappingWorkGroups.enumerated()), id: \.offset) { index, group in
-            HStack(spacing: 2) {
-                ForEach(group, id: \.id) { task in
-                    DraggableTaskTimelineBlock(
-                        task: task,
-                        side: .left,
-                        onTimeChanged: updateTaskTime,
-                        onSideChanged: updateTaskSide,
-                        onEdit: { [weak self] in
-                            self?.editTask(task)
-                        },
-                        onUnlock: {
-                            task.isLocked.toggle()
-                            try? modelContext.save()
-                        },
-                        onDelete: { [weak self] in
-                            self?.deleteTask(task)
-                        }
-                    )
-                    .frame(maxWidth: group.count > 1 ? 60 : 120)
-                }
+        return workTasksListContent(groups: overlappingWorkGroups)
+    }
+    
+    private func workTasksListContent(groups: [[Task]]) -> some View {
+        ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
+            workTaskGroupView(group: group)
+        }
+    }
+    
+    private func workTaskGroupView(group: [Task]) -> some View {
+        HStack(spacing: 2) {
+            ForEach(group, id: \.id) { task in
+                workTaskItemView(task: task, groupCount: group.count)
             }
         }
+    }
+    
+    private func workTaskItemView(task: Task, groupCount: Int) -> some View {
+        DraggableTaskTimelineBlock(
+            task: task,
+            side: .left,
+            onTimeChanged: updateTaskTime,
+            onSideChanged: updateTaskSide,
+            onEdit: { [weak self] in
+                self?.editTask(task)
+            },
+            onUnlock: {
+                task.isLocked.toggle()
+                try? modelContext.save()
+            },
+            onDelete: { [weak self] in
+                self?.deleteTask(task)
+            }
+        )
+        .frame(maxWidth: groupCount > 1 ? 60 : 120)
     }
     
     private var workTaskBlocksList: some View {
@@ -612,29 +624,41 @@ struct TimelineHourView: View {
         let personalTasks = tasks.filter { $0.category == .personal && $0.taskBlockID == nil }
         let overlappingPersonalGroups = getOverlappingTasks(personalTasks)
         
-        return ForEach(Array(overlappingPersonalGroups.enumerated()), id: \.offset) { index, group in
-            HStack(spacing: 2) {
-                ForEach(group, id: \.id) { task in
-                    DraggableTaskTimelineBlock(
-                        task: task,
-                        side: .right,
-                        onTimeChanged: updateTaskTime,
-                        onSideChanged: updateTaskSide,
-                        onEdit: { [weak self] in
-                            self?.editTask(task)
-                        },
-                        onUnlock: {
-                            task.isLocked.toggle()
-                            try? modelContext.save()
-                        },
-                        onDelete: { [weak self] in
-                            self?.deleteTask(task)
-                        }
-                    )
-                    .frame(maxWidth: group.count > 1 ? 60 : 120)
-                }
+        return personalTasksListContent(groups: overlappingPersonalGroups)
+    }
+    
+    private func personalTasksListContent(groups: [[Task]]) -> some View {
+        ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
+            personalTaskGroupView(group: group)
+        }
+    }
+    
+    private func personalTaskGroupView(group: [Task]) -> some View {
+        HStack(spacing: 2) {
+            ForEach(group, id: \.id) { task in
+                personalTaskItemView(task: task, groupCount: group.count)
             }
         }
+    }
+    
+    private func personalTaskItemView(task: Task, groupCount: Int) -> some View {
+        DraggableTaskTimelineBlock(
+            task: task,
+            side: .right,
+            onTimeChanged: updateTaskTime,
+            onSideChanged: updateTaskSide,
+            onEdit: { [weak self] in
+                self?.editTask(task)
+            },
+            onUnlock: {
+                task.isLocked.toggle()
+                try? modelContext.save()
+            },
+            onDelete: { [weak self] in
+                self?.deleteTask(task)
+            }
+        )
+        .frame(maxWidth: groupCount > 1 ? 60 : 120)
     }
     
     private var personalTaskBlocksList: some View {
