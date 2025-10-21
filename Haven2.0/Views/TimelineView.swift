@@ -425,7 +425,17 @@ struct TimelineHourView: View {
                         task: task,
                         side: .left,
                         onTimeChanged: updateTaskTime,
-                        onSideChanged: updateTaskSide
+                        onSideChanged: updateTaskSide,
+                        onEdit: {
+                            // TODO: Implement edit task
+                        },
+                        onUnlock: {
+                            task.isLocked.toggle()
+                            try? modelContext.save()
+                        },
+                        onDelete: {
+                            // TODO: Implement delete task
+                        }
                     )
                     .frame(maxWidth: group.count > 1 ? 60 : 120)
                 }
@@ -521,7 +531,17 @@ struct TimelineHourView: View {
                         task: task,
                         side: .right,
                         onTimeChanged: updateTaskTime,
-                        onSideChanged: updateTaskSide
+                        onSideChanged: updateTaskSide,
+                        onEdit: {
+                            // TODO: Implement edit task
+                        },
+                        onUnlock: {
+                            task.isLocked.toggle()
+                            try? modelContext.save()
+                        },
+                        onDelete: {
+                            // TODO: Implement delete task
+                        }
                     )
                     .frame(maxWidth: group.count > 1 ? 60 : 120)
                 }

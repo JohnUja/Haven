@@ -14,6 +14,9 @@ struct DraggableTaskTimelineBlock: View {
     let side: TaskTimelineBlock.TimelineSide
     let onTimeChanged: (Task, Date, Date) -> Void
     let onSideChanged: (Task, TaskTimelineBlock.TimelineSide) -> Void
+    let onEdit: (() -> Void)?
+    let onUnlock: (() -> Void)?
+    let onDelete: (() -> Void)?
     
     @State private var dragOffset: CGSize = .zero
     @State private var isDragging: Bool = false
@@ -22,6 +25,7 @@ struct DraggableTaskTimelineBlock: View {
     @State private var pendingSideChange: TaskTimelineBlock.TimelineSide? = nil
     @State private var showGuidelines = false
     @State private var showingLockedAlert = false
+    @State private var showingActionMenu = false
     
     private let minuteHeight: CGFloat = 2.0 // 120 points per hour / 60 minutes = 2 points per minute
     
@@ -32,94 +36,77 @@ struct DraggableTaskTimelineBlock: View {
             .shadow(color: isDragging ? .black.opacity(0.3) : .clear, radius: 8, x: 0, y: 4)
             .gesture(
                 LongPressGesture(minimumDuration: 0.5)
-                    .sequenced(before: DragGesture())
-                    .onChanged { value in
-                        switch value {
-                        case .first(true):
-                            // Long press started - check if task is locked
-                            if task.isLocked {
-                                showingLockedAlert = true
-                                AudioServicesPlaySystemSound(1521) // Error haptic
-                            } else {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    isDragging = true
-                                    showGuidelines = true
-                                }
-                                AudioServicesPlaySystemSound(1519) // Haptic feedback
-                            }
-                            
-                        case .second(true, let drag):
-                            // Drag started
-                            if let drag = drag {
-                                dragOffset = drag.translation
-                                
-                                // Calculate potential new time based on drag
-                                let verticalTranslation = drag.translation.height
-                                let minuteTranslation = Int(verticalTranslation / minuteHeight)
-                                
-                                let newStartTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: task.startTime) ?? task.startTime
-                                let newEndTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: task.endTime) ?? task.endTime
-                                
-                                // Snap to nearest 5-minute interval
-                                currentHoverTime = snapToNearestFiveMinutes(date: newStartTime)
-                                
-                                // Check if crossing to other side
-                                if let newSide = determineSideFromPosition(drag.translation), newSide != side {
-                                    pendingSideChange = newSide
-                                } else {
-                                    pendingSideChange = nil
-                                }
-                            }
-                            
-                        default:
-                            break
+                    .onEnded { _ in
+                        // Long press for action menu
+                        if task.isLocked {
+                            showingLockedAlert = true
+                            AudioServicesPlaySystemSound(1521) // Error haptic
+                        } else {
+                            showingActionMenu = true
+                            AudioServicesPlaySystemSound(1519) // Haptic feedback
                         }
                     }
-                    .onEnded { value in
-                        switch value {
-                        case .second(true, let drag):
-                            // Drag ended
+            )
+            .gesture(
+                DragGesture()
+                    .onChanged { drag in
+                        // Only allow dragging if not locked
+                        if !task.isLocked {
+                            isDragging = true
+                            showGuidelines = true
+                            dragOffset = drag.translation
+                            
+                            // Calculate potential new time based on drag
+                            let verticalTranslation = drag.translation.height
+                            let minuteTranslation = Int(verticalTranslation / minuteHeight)
+                            
+                            let newStartTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: task.startTime) ?? task.startTime
+                            let newEndTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: task.endTime) ?? task.endTime
+                            
+                            // Snap to nearest 5-minute interval
+                            currentHoverTime = snapToNearestFiveMinutes(date: newStartTime)
+                            
+                            // Check if crossing to other side
+                            if let newSide = determineSideFromPosition(drag.translation), newSide != side {
+                                pendingSideChange = newSide
+                            } else {
+                                pendingSideChange = nil
+                            }
+                        }
+                    }
+                    .onEnded { drag in
+                        if !task.isLocked {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 isDragging = false
                                 dragOffset = .zero
                                 showGuidelines = false
                             }
                             
-                            if let drag = drag {
-                                // Calculate final new time based on drag
-                                let verticalTranslation = drag.translation.height
-                                let minuteTranslation = Int(verticalTranslation / minuteHeight)
-                                
-                                var finalNewStartTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: task.startTime) ?? task.startTime
-                                var finalNewEndTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: task.endTime) ?? task.endTime
-                                
-                                // Snap to nearest 5-minute interval on drop
-                                if let snappedTime = snapToNearestFiveMinutes(date: finalNewStartTime) {
-                                    let duration = finalNewEndTime.timeIntervalSince(finalNewStartTime)
-                                    finalNewStartTime = snappedTime
-                                    finalNewEndTime = snappedTime.addingTimeInterval(duration)
-                                }
-                                
-                                // Check if side changed
-                                if let newSide = determineSideFromPosition(drag.translation), newSide != side {
-                                    showingSideChangeConfirmation = true
-                                    pendingSideChange = newSide
-                                } else {
-                                    // Just update time
-                                    onTimeChanged(task, finalNewStartTime, finalNewEndTime)
-                                }
+                            // Calculate final new time based on drag
+                            let verticalTranslation = drag.translation.height
+                            let minuteTranslation = Int(verticalTranslation / minuteHeight)
+                            
+                            var finalNewStartTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: task.startTime) ?? task.startTime
+                            var finalNewEndTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: task.endTime) ?? task.endTime
+                            
+                            // Snap to nearest 5-minute interval on drop
+                            if let snappedTime = snapToNearestFiveMinutes(date: finalNewStartTime) {
+                                let duration = finalNewEndTime.timeIntervalSince(finalNewStartTime)
+                                finalNewStartTime = snappedTime
+                                finalNewEndTime = snappedTime.addingTimeInterval(duration)
+                            }
+                            
+                            // Check if side changed
+                            if let newSide = determineSideFromPosition(drag.translation), newSide != side {
+                                showingSideChangeConfirmation = true
+                                pendingSideChange = newSide
+                            } else {
+                                // Just update time
+                                onTimeChanged(task, finalNewStartTime, finalNewEndTime)
                             }
                             
                             currentHoverTime = nil
                             AudioServicesPlaySystemSound(1520) // Haptic feedback
-                            
-                        default:
-                            // Long press cancelled
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                isDragging = false
-                                dragOffset = .zero
-                                showGuidelines = false
-                            }
                         }
                     }
             )
@@ -212,6 +199,75 @@ struct DraggableTaskTimelineBlock: View {
             } message: {
                 Text("'\(task.title)' is locked and cannot be moved. Unlock it from the home screen to move it.")
             }
+            .overlay(
+                // Action menu overlay
+                Group {
+                    if showingActionMenu {
+                        VStack(spacing: 8) {
+                            // Edit button
+                            if let onEdit = onEdit {
+                                Button(action: {
+                                    showingActionMenu = false
+                                    onEdit()
+                                }) {
+                                    HStack {
+                                        Image(systemName: "pencil")
+                                        Text("Edit")
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(Color.blue.opacity(0.8))
+                                    .cornerRadius(8)
+                                }
+                            }
+                            
+                            // Unlock button
+                            if let onUnlock = onUnlock {
+                                Button(action: {
+                                    showingActionMenu = false
+                                    onUnlock()
+                                }) {
+                                    HStack {
+                                        Image(systemName: "lock.open")
+                                        Text("Unlock")
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(Color.orange.opacity(0.8))
+                                    .cornerRadius(8)
+                                }
+                            }
+                            
+                            // Delete button
+                            if let onDelete = onDelete {
+                                Button(action: {
+                                    showingActionMenu = false
+                                    onDelete()
+                                }) {
+                                    HStack {
+                                        Image(systemName: "trash")
+                                        Text("Delete")
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(Color.red.opacity(0.8))
+                                    .cornerRadius(8)
+                                }
+                            }
+                        }
+                        .padding(16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.black.opacity(0.9))
+                                .shadow(radius: 8)
+                        )
+                        .offset(y: -80)
+                    }
+                }
+            )
     }
     
     private func snapToNearestFiveMinutes(date: Date) -> Date? {
@@ -251,7 +307,10 @@ struct DraggableTaskTimelineBlock: View {
             ),
             side: .left,
             onTimeChanged: { _, _, _ in },
-            onSideChanged: { _, _ in }
+            onSideChanged: { _, _ in },
+            onEdit: { },
+            onUnlock: { },
+            onDelete: { }
         )
     }
     .padding()
