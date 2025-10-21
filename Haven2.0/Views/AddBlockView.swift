@@ -19,6 +19,8 @@ struct AddBlockView: View {
     @State private var blockDescription = ""
     @State private var selectedColor = "blue"
     @State private var subtasks = ["Task 1", "Task 2", "Task 3"]
+    @State private var startTime = Date()
+    @State private var endTime = Date().addingTimeInterval(3600) // 1 hour later
     
     private let availableColors = ["red", "orange", "yellow", "green", "blue", "purple", "pink", "mint", "cyan", "indigo", "brown"]
     
@@ -34,6 +36,11 @@ struct AddBlockView: View {
                     
                     TextField("Description (optional)", text: $blockDescription, axis: .vertical)
                         .lineLimit(2...4)
+                }
+                
+                Section("Time") {
+                    NumericTimeInput(time: $startTime, title: "Start time")
+                    NumericTimeInput(time: $endTime, title: "End time")
                 }
                 
                 Section("Color") {
@@ -147,12 +154,17 @@ struct AddBlockView: View {
         // Create the subtasks
         for (index, subtaskTitle) in subtasks.enumerated() {
             if !subtaskTitle.isEmpty {
+                // Calculate time for each subtask within the block duration
+                let taskDuration = endTime.timeIntervalSince(startTime) / Double(subtasks.count)
+                let taskStartTime = startTime.addingTimeInterval(taskDuration * Double(index))
+                let taskEndTime = taskStartTime.addingTimeInterval(taskDuration)
+                
                 let task = Task(
                     userID: user.id,
                     title: subtaskTitle,
                     taskDescription: nil,
-                    startTime: selectedDate,
-                    endTime: selectedDate.addingTimeInterval(3600), // 1 hour later
+                    startTime: taskStartTime,
+                    endTime: taskEndTime,
                     priority: .normal,
                     category: .personal,
                     isComplete: false,

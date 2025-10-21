@@ -59,7 +59,7 @@ struct AddTaskView: View {
                 
                 Section("Time") {
                     if !isFlexibleTask {
-                        DatePicker("Start time", selection: $startTime, displayedComponents: [.date, .hourAndMinute])
+                        NumericTimeInput(time: $startTime, title: "Start time")
                             .onChange(of: startTime) { _, newValue in
                                 // Prevent past times for today
                                 if Calendar.current.isDateInToday(newValue) && newValue < Date() {
@@ -70,7 +70,7 @@ struct AddTaskView: View {
                         Toggle("Has end time", isOn: $hasEndTime)
                         
                         if hasEndTime {
-                            DatePicker("End time", selection: $endTime, displayedComponents: [.date, .hourAndMinute])
+                            NumericTimeInput(time: $endTime, title: "End time")
                         }
                     } else {
                         Text("This task can be done anytime today")
