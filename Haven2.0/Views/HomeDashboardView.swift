@@ -23,6 +23,7 @@ struct HomeDashboardView: View {
     @State private var taskSortOrder: TaskSortOrder = .priority
     @State private var recentlyCompletedTasks: Set<String> = []
     @State private var showingEditTask: Task? = nil
+    @State private var taskToDelete: Task? = nil
     @State private var showingProgressDetails = false
     @State private var showingFloatingMenu: Task? = nil
     @State private var showingFloatingMenuForBlock: [Task]? = nil
@@ -567,6 +568,18 @@ struct HomeDashboardView: View {
                 }
             }
         )
+        .alert("Delete Task", isPresented: .constant(taskToDelete != nil)) {
+            Button("Cancel", role: .cancel) {
+                taskToDelete = nil
+            }
+            Button("Delete", role: .destructive) {
+                confirmDeleteTask()
+            }
+        } message: {
+            if let task = taskToDelete {
+                Text("Are you sure you want to delete '\(task.title)'? This action cannot be undone.")
+            }
+        }
     }
     
     // MARK: - Top Navigation Bar
@@ -1079,6 +1092,19 @@ struct HomeDashboardView: View {
     
     private func showAddToGoal(for taskBlock: [Task]) {
         showingAddToGoalBlock = taskBlock
+    }
+    
+    private func confirmDeleteTask() {
+        guard let task = taskToDelete else { return }
+        modelContext.delete(task)
+        
+        do {
+            try modelContext.save()
+        } catch {
+            print("Failed to delete task: \(error)")
+        }
+        
+        taskToDelete = nil
     }
 }
 
