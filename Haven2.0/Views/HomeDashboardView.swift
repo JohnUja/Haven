@@ -33,6 +33,11 @@ struct HomeDashboardView: View {
     @State private var undoMoveTimer: Timer? = nil
     @State private var originalTaskDates: [String: Date] = [:]
     @State private var originalBlockDates: [String: [Date]] = [:]
+    @State private var taskBlockToDelete: [Task]? = nil
+    @State private var showingCategoryPriorityPopup: Task? = nil
+    @State private var showingCategoryPriorityPopupBlock: [Task]? = nil
+    @State private var showingAddToGoal: Task? = nil
+    @State private var showingAddToGoalBlock: [Task]? = nil
     
     private var currentUser: User? {
         users.first
@@ -184,11 +189,11 @@ struct HomeDashboardView: View {
                             },
                             onChangeCategory: {
                                 showingFloatingMenu = nil
-                                // TODO: Implement category change
+                                showCategoryPriorityPopup(for: task)
                             },
                             onAddToGoal: {
                                 showingFloatingMenu = nil
-                                // TODO: Implement add to goal
+                                showAddToGoal(for: task)
                             },
                             onMove: {
                                 showingFloatingMenu = nil
@@ -196,7 +201,7 @@ struct HomeDashboardView: View {
                             },
                             onDelete: {
                                 showingFloatingMenu = nil
-                                // TODO: Implement delete task
+                                taskToDelete = task
                             },
                             onUnlock: {
                                 showingFloatingMenu = nil
@@ -227,15 +232,15 @@ struct HomeDashboardView: View {
                             theme: themeManager.currentTheme,
                             onEdit: {
                                 showingFloatingMenuForBlock = nil
-                                // TODO: Implement edit task block
+                                editTaskBlock(taskBlock)
                             },
                             onChangeCategory: {
                                 showingFloatingMenuForBlock = nil
-                                // TODO: Implement category change
+                                showCategoryPriorityPopup(for: taskBlock)
                             },
                             onAddToGoal: {
                                 showingFloatingMenuForBlock = nil
-                                // TODO: Implement add to goal
+                                showAddToGoal(for: taskBlock)
                             },
                             onMove: {
                                 showingFloatingMenuForBlock = nil
@@ -243,7 +248,7 @@ struct HomeDashboardView: View {
                             },
                             onDelete: {
                                 showingFloatingMenuForBlock = nil
-                                // TODO: Implement delete task block
+                                deleteTaskBlock(taskBlock)
                             },
                             onUnlock: {
                                 showingFloatingMenuForBlock = nil
@@ -454,6 +459,111 @@ struct HomeDashboardView: View {
                         .padding(.horizontal, 20)
                         .padding(.bottom, 100)
                     }
+                }
+            }
+        )
+        .overlay(
+            // Task Block Delete Confirmation
+            Group {
+                if taskBlockToDelete != nil {
+                    VStack {
+                        Spacer()
+                        VStack(spacing: 16) {
+                            Text("Delete Task Block")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            
+                            Text("Are you sure you want to delete this task block? This action cannot be undone.")
+                                .font(.body)
+                                .foregroundColor(.white.opacity(0.8))
+                                .multilineTextAlignment(.center)
+                            
+                            HStack(spacing: 16) {
+                                Button("Cancel") {
+                                    taskBlockToDelete = nil
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(Color.gray.opacity(0.6))
+                                )
+                                
+                                Button("Delete") {
+                                    confirmDeleteTaskBlock()
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(Color.red)
+                                )
+                            }
+                        }
+                        .padding(20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(Color.black.opacity(0.9))
+                        )
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 100)
+                    }
+                }
+            }
+        )
+        .overlay(
+            // Category & Priority Popup
+            Group {
+                if let task = showingCategoryPriorityPopup {
+                    CategoryPriorityPopup(
+                        task: task,
+                        onDismiss: { showingCategoryPriorityPopup = nil },
+                        onSave: { newCategory, newPriority in
+                            task.category = newCategory
+                            task.priority = newPriority
+                            try? modelContext.save()
+                            showingCategoryPriorityPopup = nil
+                        }
+                    )
+                } else if let taskBlock = showingCategoryPriorityPopupBlock {
+                    CategoryPriorityPopup(
+                        taskBlock: taskBlock,
+                        onDismiss: { showingCategoryPriorityPopupBlock = nil },
+                        onSave: { newCategory, newPriority in
+                            for task in taskBlock {
+                                task.category = newCategory
+                                task.priority = newPriority
+                            }
+                            try? modelContext.save()
+                            showingCategoryPriorityPopupBlock = nil
+                        }
+                    )
+                }
+            }
+        )
+        .overlay(
+            // Add to Goal Popup
+            Group {
+                if let task = showingAddToGoal {
+                    AddToGoalPopup(
+                        task: task,
+                        onDismiss: { showingAddToGoal = nil },
+                        onSave: { goal in
+                            // TODO: Implement adding task to goal
+                            showingAddToGoal = nil
+                        }
+                    )
+                } else if let taskBlock = showingAddToGoalBlock {
+                    AddToGoalPopup(
+                        taskBlock: taskBlock,
+                        onDismiss: { showingAddToGoalBlock = nil },
+                        onSave: { goal in
+                            // TODO: Implement adding task block to goal
+                            showingAddToGoalBlock = nil
+                        }
+                    )
                 }
             }
         )
@@ -1318,8 +1428,295 @@ struct TaskCardView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     showCompletionAnimation = false
                 }
-            }
         }
+    }
+    
+    private func deleteTaskBlock(_ taskBlock: [Task]) {
+        taskBlockToDelete = taskBlock
+    }
+    
+    private func confirmDeleteTaskBlock() {
+        guard let block = taskBlockToDelete else { return }
+        
+        for task in block {
+            modelContext.delete(task)
+        }
+        
+        do {
+            try modelContext.save()
+        } catch {
+            print("Failed to delete task block: \(error)")
+        }
+        
+        taskBlockToDelete = nil
+    }
+    
+    private func editTaskBlock(_ taskBlock: [Task]) {
+        // For now, edit the first task in the block
+        // In the future, this could open a dedicated task block editor
+        if let firstTask = taskBlock.first {
+            showingEditTask = firstTask
+        }
+    }
+    
+    private func showCategoryPriorityPopup(for task: Task) {
+        showingCategoryPriorityPopup = task
+    }
+    
+    private func showCategoryPriorityPopup(for taskBlock: [Task]) {
+        showingCategoryPriorityPopupBlock = taskBlock
+    }
+    
+    private func showAddToGoal(for task: Task) {
+        showingAddToGoal = task
+    }
+    
+    private func showAddToGoal(for taskBlock: [Task]) {
+        showingAddToGoalBlock = taskBlock
+    }
+}
+
+// MARK: - Category & Priority Popup
+struct CategoryPriorityPopup: View {
+    let task: Task?
+    let taskBlock: [Task]?
+    let onDismiss: () -> Void
+    let onSave: (TaskCategory, PriorityType) -> Void
+    
+    @State private var selectedCategory: TaskCategory
+    @State private var selectedPriority: PriorityType
+    
+    init(task: Task? = nil, taskBlock: [Task]? = nil, onDismiss: @escaping () -> Void, onSave: @escaping (TaskCategory, PriorityType) -> Void) {
+        self.task = task
+        self.taskBlock = taskBlock
+        self.onDismiss = onDismiss
+        self.onSave = onSave
+        
+        // Initialize with current values
+        if let task = task {
+            self._selectedCategory = State(initialValue: task.category)
+            self._selectedPriority = State(initialValue: task.priority)
+        } else if let taskBlock = taskBlock, let firstTask = taskBlock.first {
+            self._selectedCategory = State(initialValue: firstTask.category)
+            self._selectedPriority = State(initialValue: firstTask.priority)
+        } else {
+            self._selectedCategory = State(initialValue: .work)
+            self._selectedPriority = State(initialValue: .normal)
+        }
+    }
+    
+    var body: some View {
+        VStack {
+            Spacer()
+            
+            VStack(spacing: 20) {
+                Text("Change Category & Priority")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                
+                // Category Selection
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Category")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.8))
+                    
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 8) {
+                        ForEach(TaskCategory.allCases, id: \.self) { category in
+                            Button(action: { selectedCategory = category }) {
+                                VStack(spacing: 4) {
+                                    Image(systemName: category.icon)
+                                        .font(.title2)
+                                    Text(category.rawValue.capitalized)
+                                        .font(.caption)
+                                }
+                                .foregroundColor(selectedCategory == category ? .white : .white.opacity(0.6))
+                                .padding(8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(selectedCategory == category ? category.color() : Color.clear)
+                                        .stroke(category.color(), lineWidth: 1)
+                                )
+                            }
+                        }
+                    }
+                }
+                
+                // Priority Selection
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Priority")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.8))
+                    
+                    HStack(spacing: 12) {
+                        ForEach(PriorityType.allCases, id: \.self) { priority in
+                            Button(action: { selectedPriority = priority }) {
+                                Text(priority.rawValue.capitalized)
+                                    .font(.subheadline)
+                                    .foregroundColor(selectedPriority == priority ? .white : .white.opacity(0.6))
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(selectedPriority == priority ? priority.color() : Color.clear)
+                                            .stroke(priority.color(), lineWidth: 1)
+                                    )
+                            }
+                        }
+                    }
+                }
+                
+                // Action Buttons
+                HStack(spacing: 16) {
+                    Button("Cancel") {
+                        onDismiss()
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.gray.opacity(0.6))
+                    )
+                    
+                    Button("Save") {
+                        onSave(selectedCategory, selectedPriority)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.blue)
+                    )
+                }
+            }
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.black.opacity(0.9))
+            )
+            .padding(.horizontal, 20)
+            .padding(.bottom, 100)
+        }
+        .onTapGesture {
+            onDismiss()
+        }
+    }
+}
+
+// MARK: - Add to Goal Popup
+struct AddToGoalPopup: View {
+    let task: Task?
+    let taskBlock: [Task]?
+    let onDismiss: () -> Void
+    let onSave: (Goal) -> Void
+    
+    @Query private var goals: [Goal]
+    @State private var selectedGoal: Goal?
+    
+    init(task: Task? = nil, taskBlock: [Task]? = nil, onDismiss: @escaping () -> Void, onSave: @escaping (Goal) -> Void) {
+        self.task = task
+        self.taskBlock = taskBlock
+        self.onDismiss = onDismiss
+        self.onSave = onSave
+    }
+    
+    var body: some View {
+        VStack {
+            Spacer()
+            
+            VStack(spacing: 20) {
+                Text("Add to Goal")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                
+                if goals.isEmpty {
+                    Text("No goals available. Create a goal first.")
+                        .font(.body)
+                        .foregroundColor(.white.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Select Goal")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.8))
+                        
+                        ScrollView {
+                            LazyVStack(spacing: 8) {
+                                ForEach(goals, id: \.id) { goal in
+                                    Button(action: { selectedGoal = goal }) {
+                                        HStack {
+                                            VStack(alignment: .leading) {
+                                                Text(goal.title)
+                                                    .font(.subheadline)
+                                                    .foregroundColor(selectedGoal?.id == goal.id ? .white : .white.opacity(0.8))
+                                                
+                                                Text(goal.goalDescription)
+                                                    .font(.caption)
+                                                    .foregroundColor(.white.opacity(0.6))
+                                            }
+                                            
+                                            Spacer()
+                                            
+                                            if selectedGoal?.id == goal.id {
+                                                Image(systemName: "checkmark")
+                                                    .foregroundColor(.white)
+                                            }
+                                        }
+                                        .padding(12)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(selectedGoal?.id == goal.id ? Color.blue.opacity(0.3) : Color.clear)
+                                                .stroke(selectedGoal?.id == goal.id ? Color.blue : Color.white.opacity(0.3), lineWidth: 1)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        .frame(maxHeight: 200)
+                    }
+                }
+                
+                // Action Buttons
+                HStack(spacing: 16) {
+                    Button("Cancel") {
+                        onDismiss()
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.gray.opacity(0.6))
+                    )
+                    
+                    Button("Add") {
+                        if let goal = selectedGoal {
+                            onSave(goal)
+                        }
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(selectedGoal != nil ? Color.blue : Color.gray)
+                    )
+                    .disabled(selectedGoal == nil)
+                }
+            }
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.black.opacity(0.9))
+            )
+            .padding(.horizontal, 20)
+            .padding(.bottom, 100)
+        }
+        .onTapGesture {
+            onDismiss()
+        }
+    }
 }
 
 

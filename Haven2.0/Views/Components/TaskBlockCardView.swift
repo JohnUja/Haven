@@ -114,6 +114,8 @@ struct TaskBlockCardView: View {
                                 .font(theme.bodyFont)
                                 .fontWeight(.semibold)
                                 .foregroundColor(theme.textPrimary)
+                                .strikethrough(isBlockComplete, color: .green)
+                                .opacity(isBlockComplete ? 0.6 : 1.0)
                             
                             Spacer()
                             
