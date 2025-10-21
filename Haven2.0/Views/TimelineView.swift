@@ -153,7 +153,9 @@ struct TimelineView: View {
                                     scrollBasedTime: scrollBasedTime,
                                     scrollOffset: scrollOffset,
                                     getTasksForBlock: getTasksForBlock,
-                                    getOverlappingTasks: getOverlappingTasks
+                                    getOverlappingTasks: getOverlappingTasks,
+                                    updateTaskTime: updateTaskTime,
+                                    updateTaskSide: updateTaskSide
                                 )
                                 .frame(height: 120)
                             }
@@ -401,6 +403,8 @@ struct TimelineHourView: View {
     let scrollOffset: CGFloat
     let getTasksForBlock: (TaskBlock, Int) -> [Task]
     let getOverlappingTasks: ([Task]) -> [[Task]]
+    let updateTaskTime: (Task, Date, Date) -> Void
+    let updateTaskSide: (Task, TaskTimelineBlock.TimelineSide) -> Void
     
     private var hourText: String {
         let formatter = DateFormatter()
