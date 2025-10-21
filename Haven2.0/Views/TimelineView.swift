@@ -194,6 +194,8 @@ struct TimelineView: View {
                                     getOverlappingTasks: getOverlappingTasks,
                                     updateTaskTime: updateTaskTime,
                                     updateTaskSide: updateTaskSide,
+                                    editTask: editTask,
+                                    deleteTask: deleteTask,
                                     showGuidelines: showTimelineGuidelines && guidelineHour == hour,
                                     onShowGuidelines: { showGuidelines(for: hour) }
                                 )
@@ -443,6 +445,8 @@ struct TimelineHourView: View {
     let getOverlappingTasks: ([Task]) -> [[Task]]
     let updateTaskTime: (Task, Date, Date) -> Void
     let updateTaskSide: (Task, TaskTimelineBlock.TimelineSide) -> Void
+    let editTask: (Task) -> Void
+    let deleteTask: (Task) -> Void
     let showGuidelines: Bool
     let onShowGuidelines: () -> Void
     
@@ -498,15 +502,15 @@ struct TimelineHourView: View {
             side: .left,
             onTimeChanged: updateTaskTime,
             onSideChanged: updateTaskSide,
-            onEdit: { [weak self] in
-                self?.editTask(task)
+            onEdit: {
+                editTask(task)
             },
             onUnlock: {
                 task.isLocked.toggle()
                 try? modelContext.save()
             },
-            onDelete: { [weak self] in
-                self?.deleteTask(task)
+            onDelete: {
+                deleteTask(task)
             }
         )
         .frame(maxWidth: groupCount > 1 ? 60 : 120)
@@ -647,15 +651,15 @@ struct TimelineHourView: View {
             side: .right,
             onTimeChanged: updateTaskTime,
             onSideChanged: updateTaskSide,
-            onEdit: { [weak self] in
-                self?.editTask(task)
+            onEdit: {
+                editTask(task)
             },
             onUnlock: {
                 task.isLocked.toggle()
                 try? modelContext.save()
             },
-            onDelete: { [weak self] in
-                self?.deleteTask(task)
+            onDelete: {
+                deleteTask(task)
             }
         )
         .frame(maxWidth: groupCount > 1 ? 60 : 120)
