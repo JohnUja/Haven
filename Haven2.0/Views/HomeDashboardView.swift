@@ -1474,50 +1474,6 @@ struct TaskCardView: View {
                 }
         }
     }
-    
-    private func deleteTaskBlock(_ taskBlock: [Task]) {
-        taskBlockToDelete = taskBlock
-    }
-    
-    private func confirmDeleteTaskBlock() {
-        guard let block = taskBlockToDelete else { return }
-        
-        for task in block {
-            modelContext.delete(task)
-        }
-        
-        do {
-            try modelContext.save()
-        } catch {
-            print("Failed to delete task block: \(error)")
-        }
-        
-        taskBlockToDelete = nil
-    }
-    
-    private func editTaskBlock(_ taskBlock: [Task]) {
-        // For now, edit the first task in the block
-        // In the future, this could open a dedicated task block editor
-        if let firstTask = taskBlock.first {
-            showingEditTask = firstTask
-        }
-    }
-    
-    private func showCategoryPriorityPopup(for task: Task) {
-        showingCategoryPriorityPopup = task
-    }
-    
-    private func showCategoryPriorityPopup(for taskBlock: [Task]) {
-        showingCategoryPriorityPopupBlock = taskBlock
-    }
-    
-    private func showAddToGoal(for task: Task) {
-        showingAddToGoal = task
-    }
-    
-    private func showAddToGoal(for taskBlock: [Task]) {
-        showingAddToGoalBlock = taskBlock
-    }
 }
 
 // MARK: - Category & Priority Popup
