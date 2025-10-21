@@ -101,14 +101,6 @@ struct TimelineView: View {
         taskToDelete = nil
     }
     
-    private func editTask(_ task: Task) {
-        showingEditTask = task
-    }
-    
-    private func deleteTask(_ task: Task) {
-        taskToDelete = task
-    }
-    
     private var scrollBasedTime: String {
         // Calculate time based on scroll position
         let hourOffset = Int(abs(scrollOffset) / 120)
@@ -491,15 +483,15 @@ struct TimelineHourView: View {
                         side: .left,
                         onTimeChanged: updateTaskTime,
                         onSideChanged: updateTaskSide,
-                        onEdit: {
-                            editTask(task)
+                        onEdit: { [weak self] in
+                            self?.editTask(task)
                         },
                         onUnlock: {
                             task.isLocked.toggle()
                             try? modelContext.save()
                         },
-                        onDelete: {
-                            deleteTask(task)
+                        onDelete: { [weak self] in
+                            self?.deleteTask(task)
                         }
                     )
                     .frame(maxWidth: group.count > 1 ? 60 : 120)
@@ -628,15 +620,15 @@ struct TimelineHourView: View {
                         side: .right,
                         onTimeChanged: updateTaskTime,
                         onSideChanged: updateTaskSide,
-                        onEdit: {
-                            editTask(task)
+                        onEdit: { [weak self] in
+                            self?.editTask(task)
                         },
                         onUnlock: {
                             task.isLocked.toggle()
                             try? modelContext.save()
                         },
-                        onDelete: {
-                            deleteTask(task)
+                        onDelete: { [weak self] in
+                            self?.deleteTask(task)
                         }
                     )
                     .frame(maxWidth: group.count > 1 ? 60 : 120)
