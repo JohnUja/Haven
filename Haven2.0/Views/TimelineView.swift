@@ -21,12 +21,6 @@ struct TimelineView: View {
     
     // Drag and drop state
     @State private var draggedTask: Task? = nil
-    @State private var showTimelineGuidelines = false
-    @State private var guidelineHour: Int? = nil
-    
-    // Edit and delete states
-    @State private var showingEditTask: Task? = nil
-    @State private var taskToDelete: Task? = nil
     
     private var selectedDateTasks: [Task] {
         tasks.filter { task in
@@ -67,38 +61,6 @@ struct TimelineView: View {
         } catch {
             print("Failed to update task side: \(error)")
         }
-    }
-    
-    private func showGuidelines(for hour: Int) {
-        guidelineHour = hour
-        showTimelineGuidelines = true
-        
-        // Auto-hide after 3 seconds
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            showTimelineGuidelines = false
-            guidelineHour = nil
-        }
-    }
-    
-    private func editTask(_ task: Task) {
-        showingEditTask = task
-    }
-    
-    private func deleteTask(_ task: Task) {
-        taskToDelete = task
-    }
-    
-    private func confirmDeleteTask() {
-        guard let task = taskToDelete else { return }
-        modelContext.delete(task)
-        
-        do {
-            try modelContext.save()
-        } catch {
-            print("Failed to delete task: \(error)")
-        }
-        
-        taskToDelete = nil
     }
     
     private var scrollBasedTime: String {
@@ -193,11 +155,7 @@ struct TimelineView: View {
                                     getTasksForBlock: getTasksForBlock,
                                     getOverlappingTasks: getOverlappingTasks,
                                     updateTaskTime: updateTaskTime,
-                                    updateTaskSide: updateTaskSide,
-                                    editTask: editTask,
-                                    deleteTask: deleteTask,
-                                    showGuidelines: showTimelineGuidelines && guidelineHour == hour,
-                                    onShowGuidelines: { showGuidelines(for: hour) }
+                                    updateTaskSide: updateTaskSide
                                 )
                                 .frame(height: 120)
                             }
@@ -220,24 +178,9 @@ struct TimelineView: View {
             .onAppear {
                 startTimer()
             }
-            .onDisappear {
-                stopTimer()
-            }
-            .sheet(item: $showingEditTask) { task in
-                EditTaskView(task: task)
-            }
-            .alert("Delete Task", isPresented: .constant(taskToDelete != nil)) {
-                Button("Cancel", role: .cancel) {
-                    taskToDelete = nil
+                .onDisappear {
+                    stopTimer()
                 }
-                Button("Delete", role: .destructive) {
-                    confirmDeleteTask()
-                }
-            } message: {
-                if let task = taskToDelete {
-                    Text("Are you sure you want to delete '\(task.title)'? This action cannot be undone.")
-                }
-            }
         }
     }
     
@@ -445,10 +388,6 @@ struct TimelineHourView: View {
     let getOverlappingTasks: ([Task]) -> [[Task]]
     let updateTaskTime: (Task, Date, Date) -> Void
     let updateTaskSide: (Task, TaskTimelineBlock.TimelineSide) -> Void
-    let editTask: (Task) -> Void
-    let deleteTask: (Task) -> Void
-    let showGuidelines: Bool
-    let onShowGuidelines: () -> Void
     
     private var hourText: String {
         let formatter = DateFormatter()
@@ -479,41 +418,19 @@ struct TimelineHourView: View {
         let workTasks = tasks.filter { $0.category == .work && $0.taskBlockID == nil }
         let overlappingWorkGroups = getOverlappingTasks(workTasks)
         
-        return workTasksListContent(groups: overlappingWorkGroups)
-    }
-    
-    private func workTasksListContent(groups: [[Task]]) -> some View {
-        ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
-            workTaskGroupView(group: group)
-        }
-    }
-    
-    private func workTaskGroupView(group: [Task]) -> some View {
-        HStack(spacing: 2) {
-            ForEach(group, id: \.id) { task in
-                workTaskItemView(task: task, groupCount: group.count)
+        return ForEach(Array(overlappingWorkGroups.enumerated()), id: \.offset) { index, group in
+            HStack(spacing: 2) {
+                ForEach(group, id: \.id) { task in
+                    DraggableTaskTimelineBlock(
+                        task: task,
+                        side: .left,
+                        onTimeChanged: updateTaskTime,
+                        onSideChanged: updateTaskSide
+                    )
+                    .frame(maxWidth: group.count > 1 ? 60 : 120)
+                }
             }
         }
-    }
-    
-    private func workTaskItemView(task: Task, groupCount: Int) -> some View {
-        DraggableTaskTimelineBlock(
-            task: task,
-            side: .left,
-            onTimeChanged: updateTaskTime,
-            onSideChanged: updateTaskSide,
-            onEdit: {
-                editTask(task)
-            },
-            onUnlock: {
-                task.isLocked.toggle()
-                try? modelContext.save()
-            },
-            onDelete: {
-                deleteTask(task)
-            }
-        )
-        .frame(maxWidth: groupCount > 1 ? 60 : 120)
     }
     
     private var workTaskBlocksList: some View {
@@ -549,42 +466,11 @@ struct TimelineHourView: View {
                     .frame(width: 2)
                     .frame(maxHeight: .infinity)
                 
-                // Guidelines overlay
-                if showGuidelines {
-                    guidelinesOverlay
-                }
-                
                 // Current time indicator
                 currentTimeIndicator
             }
         }
         .frame(width: 60)
-        .onTapGesture {
-            onShowGuidelines()
-        }
-    }
-    
-    private var guidelinesOverlay: some View {
-        VStack(spacing: 0) {
-            // 15-minute guideline (30 points from top)
-            Rectangle()
-                .fill(Color.white.opacity(0.6))
-                .frame(width: 8, height: 1)
-                .offset(y: 30)
-            
-            // 30-minute guideline (60 points from top)
-            Rectangle()
-                .fill(Color.white.opacity(0.8))
-                .frame(width: 12, height: 1)
-                .offset(y: 60)
-            
-            // 45-minute guideline (90 points from top)
-            Rectangle()
-                .fill(Color.white.opacity(0.6))
-                .frame(width: 8, height: 1)
-                .offset(y: 90)
-        }
-        .animation(.easeInOut(duration: 0.3), value: showGuidelines)
     }
     
     private var currentTimeIndicator: some View {
@@ -628,41 +514,19 @@ struct TimelineHourView: View {
         let personalTasks = tasks.filter { $0.category == .personal && $0.taskBlockID == nil }
         let overlappingPersonalGroups = getOverlappingTasks(personalTasks)
         
-        return personalTasksListContent(groups: overlappingPersonalGroups)
-    }
-    
-    private func personalTasksListContent(groups: [[Task]]) -> some View {
-        ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
-            personalTaskGroupView(group: group)
-        }
-    }
-    
-    private func personalTaskGroupView(group: [Task]) -> some View {
-        HStack(spacing: 2) {
-            ForEach(group, id: \.id) { task in
-                personalTaskItemView(task: task, groupCount: group.count)
+        return ForEach(Array(overlappingPersonalGroups.enumerated()), id: \.offset) { index, group in
+            HStack(spacing: 2) {
+                ForEach(group, id: \.id) { task in
+                    DraggableTaskTimelineBlock(
+                        task: task,
+                        side: .right,
+                        onTimeChanged: updateTaskTime,
+                        onSideChanged: updateTaskSide
+                    )
+                    .frame(maxWidth: group.count > 1 ? 60 : 120)
+                }
             }
         }
-    }
-    
-    private func personalTaskItemView(task: Task, groupCount: Int) -> some View {
-        DraggableTaskTimelineBlock(
-            task: task,
-            side: .right,
-            onTimeChanged: updateTaskTime,
-            onSideChanged: updateTaskSide,
-            onEdit: {
-                editTask(task)
-            },
-            onUnlock: {
-                task.isLocked.toggle()
-                try? modelContext.save()
-            },
-            onDelete: {
-                deleteTask(task)
-            }
-        )
-        .frame(maxWidth: groupCount > 1 ? 60 : 120)
     }
     
     private var personalTaskBlocksList: some View {
@@ -697,12 +561,6 @@ struct TaskTimelineBlock: View {
         // Each hour is 120 points, so each minute is 2 points
         // Minimum height of 16 points (8 minutes), maximum of 120 points (1 hour)
         return max(16, min(120, CGFloat(minutes) * 2))
-    }
-    
-    private var taskOffset: CGFloat {
-        // Calculate offset based on start time within the hour
-        let startMinute = Calendar.current.component(.minute, from: task.startTime)
-        return CGFloat(startMinute) * 2 // 2 points per minute
     }
     
     private var taskColor: Color {
@@ -755,7 +613,6 @@ struct TaskTimelineBlock: View {
                 )
         )
         .frame(maxWidth: 120, minHeight: taskHeight)
-        .offset(y: taskOffset)
         .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
         .overlay(
             // Lock icon for locked tasks

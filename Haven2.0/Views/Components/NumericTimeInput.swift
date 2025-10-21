@@ -55,8 +55,8 @@ struct NumericTimeInput: View {
                 }
                 .font(.title2)
                 .fontWeight(.medium)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color.gray.opacity(0.1))
@@ -74,6 +74,7 @@ struct NumericTimeInput: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 80)
+                .padding(.vertical, 6)
                 .onChange(of: isAM) { _, _ in
                     updateTime()
                 }

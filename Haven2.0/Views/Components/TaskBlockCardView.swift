@@ -18,8 +18,6 @@ struct TaskBlockCardView: View {
     let onRemoveSubtask: ((Task) -> Void)?
     
     @State private var isExpanded = false
-    @State private var showCompletionAnimation = false
-    @State private var ringProgress: CGFloat = 0
     
     init(tasks: [Task], taskBlock: TaskBlock? = nil, theme: any AppTheme, onEditBlock: (([Task]) -> Void)? = nil, onAddSubtask: (() -> Void)? = nil, onRemoveSubtask: ((Task) -> Void)? = nil) {
         self.tasks = tasks
@@ -114,8 +112,6 @@ struct TaskBlockCardView: View {
                                 .font(theme.bodyFont)
                                 .fontWeight(.semibold)
                                 .foregroundColor(theme.textPrimary)
-                                .strikethrough(isBlockComplete, color: .green)
-                                .opacity(isBlockComplete ? 0.6 : 1.0)
                             
                             Spacer()
                             
@@ -166,32 +162,15 @@ struct TaskBlockCardView: View {
                             )
                             .shadow(color: theme.primaryColor.opacity(0.1), radius: theme.shadowRadius)
                         
-                        // Completion ring animation
-                        if showCompletionAnimation {
+                        // Simple completion highlight
+                        if isBlockComplete {
                             RoundedRectangle(cornerRadius: theme.cardCornerRadius)
-                                .stroke(
-                                    AngularGradient(
-                                        colors: [.green, .blue, .purple, .pink, .green],
-                                        center: .center,
-                                        startAngle: .degrees(0),
-                                        endAngle: .degrees(360)
-                                    ),
-                                    lineWidth: 3
-                                )
-                                .opacity(ringProgress)
-                                .scaleEffect(1.05)
-                                .animation(.easeInOut(duration: 2.0), value: ringProgress)
+                                .stroke(Color.green, lineWidth: 2)
+                                .opacity(0.8)
                         }
                     }
                 )
                 .opacity(isBlockComplete ? 0.7 : 1.0)
-                .onChange(of: isBlockComplete) { _, newValue in
-                    print("TaskBlock completion changed: \(newValue), showAnimation: \(showCompletionAnimation)")
-                    if newValue && !showCompletionAnimation {
-                        print("Triggering completion animation")
-                        triggerCompletionAnimation()
-                    }
-                }
             }
             .buttonStyle(PlainButtonStyle())
             .onLongPressGesture {
@@ -233,9 +212,10 @@ struct TaskBlockCardView: View {
                                     withAnimation(.easeInOut(duration: 0.3)) {
                                         task.isComplete.toggle()
                                         
-                                        // Trigger completion animation if all tasks are now complete
-                                        if task.isComplete && isBlockComplete && !showCompletionAnimation {
-                                            triggerCompletionAnimation()
+                                        // Simple completion feedback
+                                        if task.isComplete && isBlockComplete {
+                                            AudioServicesPlaySystemSound(1104) // Tink sound
+                                            AudioServicesPlaySystemSound(1520) // Haptic feedback
                                         }
                                     }
                                 }) {
@@ -266,28 +246,6 @@ struct TaskBlockCardView: View {
         }
     }
     
-    private func triggerCompletionAnimation() {
-        showCompletionAnimation = true
-        
-        // Ring animation
-        withAnimation(.easeInOut(duration: 1.5)) {
-            ringProgress = 1.0
-        }
-        
-        // Play completion sound and vibration
-        AudioServicesPlaySystemSound(1104) // Tink sound (more satisfying)
-        AudioServicesPlaySystemSound(1520) // Haptic feedback
-        
-        // Hide animation after completion
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            withAnimation(.easeOut(duration: 0.5)) {
-                ringProgress = 0
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                showCompletionAnimation = false
-            }
-        }
-    }
 }
 
 #Preview {
