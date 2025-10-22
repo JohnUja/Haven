@@ -25,7 +25,6 @@ struct TimelineView: View {
     
     @State private var showingCollisionAlert = false
     @State private var collisionData: (newStart: Date, newEnd: Date, overlappingTasks: [Task])?
-    @State private var refreshID = UUID() // Force refresh when tasks change
     
     private var selectedDateTasks: [Task] {
         let calendar = Calendar.current
@@ -57,6 +56,23 @@ struct TimelineView: View {
     
     // MARK: - Drag and Drop Functions
     private func updateTaskTime(_ task: Task, _ newStartTime: Date, _ newEndTime: Date) {
+        // Validate realistic task times
+        guard newStartTime < newEndTime else {
+            print("❌ Invalid task time: start time must be before end time")
+            return
+        }
+        
+        // Check for overlap with other tasks
+        let overlappingTasks = selectedDateTasks.filter { otherTask in
+            guard otherTask.id != task.id else { return false }
+            return (newStartTime < otherTask.endTime && newEndTime > otherTask.startTime)
+        }
+        
+        if !overlappingTasks.isEmpty {
+            print("⚠️ Task overlap detected with: \(overlappingTasks.map { $0.title }.joined(separator: ", "))")
+            // Still allow the update, but warn the user
+        }
+        
         task.startTime = newStartTime
         task.endTime = newEndTime
         
@@ -116,6 +132,9 @@ struct TimelineView: View {
     }
     
     private func handleTaskCollision(newStartTime: Date, newEndTime: Date) {
+        print("🔍 Checking collision for time: \(newStartTime) - \(newEndTime)")
+        print("📋 Total tasks on selected date: \(selectedDateTasks.count)")
+        
         // Check if the new time overlaps with any existing tasks
         let overlappingTasks = selectedDateTasks.filter { task in
             let taskStart = task.startTime
@@ -123,10 +142,20 @@ struct TimelineView: View {
             
             // Check for overlap, but exclude tasks that are being moved (same time range)
             let isSameTask = (taskStart == newStartTime && taskEnd == newEndTime)
-            if isSameTask { return false }
+            if isSameTask { 
+                print("⏭️ Skipping same task: \(task.title)")
+                return false 
+            }
             
-            return (newStartTime < taskEnd && newEndTime > taskStart)
+            let hasOverlap = (newStartTime < taskEnd && newEndTime > taskStart)
+            if hasOverlap {
+                print("⚠️ Collision found with task: \(task.title) (\(taskStart) - \(taskEnd))")
+            }
+            
+            return hasOverlap
         }
+        
+        print("🎯 Found \(overlappingTasks.count) overlapping tasks")
         
         if !overlappingTasks.isEmpty {
             // Store collision data and show alert
@@ -456,9 +485,9 @@ struct TimelineView: View {
         
         // Debug output
         if !hourTasks.isEmpty {
-            print("Hour \(hour): Found \(hourTasks.count) tasks")
+            print("🕐 Hour \(hour): Found \(hourTasks.count) tasks")
             for task in hourTasks {
-                print("  - \(task.title) at \(task.startTime)")
+                print("  - \(task.title) at \(task.startTime) (category: \(task.category))")
             }
         }
         
@@ -658,7 +687,7 @@ struct TimelineHourView: View {
                 .frame(width: 2)
                 .frame(maxHeight: .infinity)
             
-            // Hour markers positioned on the side
+            // Hour markers on the left side - don't break the timeline
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(0..<24, id: \.self) { hour in
                     HStack {
@@ -681,7 +710,7 @@ struct TimelineHourView: View {
             // Current time indicator
             currentTimeIndicator
         }
-        .frame(width: 80)
+        .frame(width: 80) // Fixed width to prevent changes when time format changes
     }
     
     private var calendarEventsIndicators: some View {
