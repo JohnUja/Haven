@@ -165,8 +165,8 @@ struct AddBlockView: View {
                     taskDescription: nil,
                     startTime: taskStartTime,
                     endTime: taskEndTime,
-                    priority: .normal,
-                    category: .personal,
+                    priority: priority,
+                    category: category,
                     isComplete: false,
                     taskBlockID: taskBlock.id
                 )

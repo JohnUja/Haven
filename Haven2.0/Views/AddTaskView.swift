@@ -47,7 +47,7 @@ struct AddTaskView: View {
                     TextField("Description (optional)", text: $taskDescription, axis: .vertical)
                         .lineLimit(3...6)
                     
-                    // Priority toggle
+                    // Priority dropdown
                     HStack {
                         Text("Priority")
                             .font(.headline)
@@ -60,8 +60,8 @@ struct AddTaskView: View {
                                 Text(priority.rawValue.capitalized).tag(priority)
                             }
                         }
-                        .pickerStyle(.segmented)
-                        .frame(width: 200)
+                        .pickerStyle(.menu)
+                        .frame(width: 120)
                     }
                 }
                 

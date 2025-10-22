@@ -63,6 +63,43 @@ struct TimelineView: View {
         }
     }
     
+    private func updateTaskBlockTime(_ taskBlock: TaskBlock, _ newStartTime: Date, _ newEndTime: Date) {
+        // Update all tasks in the block
+        let tasksInBlock = tasks.filter { $0.taskBlockID == taskBlock.id }
+        let duration = newEndTime.timeIntervalSince(newStartTime)
+        let taskDuration = duration / Double(tasksInBlock.count)
+        
+        for (index, task) in tasksInBlock.enumerated() {
+            let taskStartTime = newStartTime.addingTimeInterval(taskDuration * Double(index))
+            let taskEndTime = taskStartTime.addingTimeInterval(taskDuration)
+            
+            task.startTime = taskStartTime
+            task.endTime = taskEndTime
+        }
+        
+        do {
+            try modelContext.save()
+        } catch {
+            print("Failed to update task block time: \(error)")
+        }
+    }
+    
+    private func updateTaskBlockSide(_ taskBlock: TaskBlock, _ newSide: TaskTimelineBlock.TimelineSide) {
+        // Update all tasks in the block category based on side
+        let tasksInBlock = tasks.filter { $0.taskBlockID == taskBlock.id }
+        let newCategory = newSide == .left ? TaskCategory.work : TaskCategory.personal
+        
+        for task in tasksInBlock {
+            task.category = newCategory
+        }
+        
+        do {
+            try modelContext.save()
+        } catch {
+            print("Failed to update task block side: \(error)")
+        }
+    }
+    
     private var scrollBasedTime: String {
         // Calculate time based on scroll position
         let hourOffset = Int(abs(scrollOffset) / 120)
@@ -155,7 +192,9 @@ struct TimelineView: View {
                                     getTasksForBlock: getTasksForBlock,
                                     getOverlappingTasks: getOverlappingTasks,
                                     updateTaskTime: updateTaskTime,
-                                    updateTaskSide: updateTaskSide
+                                    updateTaskSide: updateTaskSide,
+                                    updateTaskBlockTime: updateTaskBlockTime,
+                                    updateTaskBlockSide: updateTaskBlockSide
                                 )
                                 .frame(height: 120)
                             }
@@ -388,6 +427,8 @@ struct TimelineHourView: View {
     let getOverlappingTasks: ([Task]) -> [[Task]]
     let updateTaskTime: (Task, Date, Date) -> Void
     let updateTaskSide: (Task, TaskTimelineBlock.TimelineSide) -> Void
+    let updateTaskBlockTime: (TaskBlock, Date, Date) -> Void
+    let updateTaskBlockSide: (TaskBlock, TaskTimelineBlock.TimelineSide) -> Void
     
     private var hourText: String {
         let formatter = DateFormatter()
@@ -421,11 +462,20 @@ struct TimelineHourView: View {
         return ForEach(Array(overlappingWorkGroups.enumerated()), id: \.offset) { index, group in
             HStack(spacing: 2) {
                 ForEach(group, id: \.id) { task in
-                    DraggableTaskTimelineBlock(
-                        task: task,
+                    UnifiedDraggableTimelineItem(
+                        content: {
+                            TaskTimelineBlock(task: task, side: .left)
+                        },
                         side: .left,
-                        onTimeChanged: updateTaskTime,
-                        onSideChanged: updateTaskSide
+                        isLocked: task.isLocked,
+                        startTime: task.startTime,
+                        endTime: task.endTime,
+                        onTimeChanged: { newStart, newEnd in
+                            updateTaskTime(task, newStart, newEnd)
+                        },
+                        onSideChanged: { newSide in
+                            updateTaskSide(task, newSide)
+                        }
                     )
                     .frame(maxWidth: group.count > 1 ? 60 : 120)
                 }
@@ -435,10 +485,28 @@ struct TimelineHourView: View {
     
     private var workTaskBlocksList: some View {
         ForEach(workTaskBlocks, id: \.id) { taskBlock in
-            TaskBlockTimelineView(
-                taskBlock: taskBlock,
-                tasks: getTasksForBlock(taskBlock, hour).filter { $0.category == .work },
-                side: .left
+            let blockTasks = getTasksForBlock(taskBlock, hour).filter { $0.category == .work }
+            let firstTask = blockTasks.first
+            let lastTask = blockTasks.last
+            
+            UnifiedDraggableTimelineItem(
+                content: {
+                    TaskBlockTimelineView(
+                        taskBlock: taskBlock,
+                        tasks: blockTasks,
+                        side: .left
+                    )
+                },
+                side: .left,
+                isLocked: taskBlock.isLocked,
+                startTime: firstTask?.startTime ?? Date(),
+                endTime: lastTask?.endTime ?? Date(),
+                onTimeChanged: { newStart, newEnd in
+                    updateTaskBlockTime(taskBlock, newStart, newEnd)
+                },
+                onSideChanged: { newSide in
+                    updateTaskBlockSide(taskBlock, newSide)
+                }
             )
         }
     }
@@ -517,11 +585,20 @@ struct TimelineHourView: View {
         return ForEach(Array(overlappingPersonalGroups.enumerated()), id: \.offset) { index, group in
             HStack(spacing: 2) {
                 ForEach(group, id: \.id) { task in
-                    DraggableTaskTimelineBlock(
-                        task: task,
+                    UnifiedDraggableTimelineItem(
+                        content: {
+                            TaskTimelineBlock(task: task, side: .right)
+                        },
                         side: .right,
-                        onTimeChanged: updateTaskTime,
-                        onSideChanged: updateTaskSide
+                        isLocked: task.isLocked,
+                        startTime: task.startTime,
+                        endTime: task.endTime,
+                        onTimeChanged: { newStart, newEnd in
+                            updateTaskTime(task, newStart, newEnd)
+                        },
+                        onSideChanged: { newSide in
+                            updateTaskSide(task, newSide)
+                        }
                     )
                     .frame(maxWidth: group.count > 1 ? 60 : 120)
                 }
@@ -531,10 +608,28 @@ struct TimelineHourView: View {
     
     private var personalTaskBlocksList: some View {
         ForEach(personalTaskBlocks, id: \.id) { taskBlock in
-            TaskBlockTimelineView(
-                taskBlock: taskBlock,
-                tasks: getTasksForBlock(taskBlock, hour).filter { $0.category == .personal },
-                side: .right
+            let blockTasks = getTasksForBlock(taskBlock, hour).filter { $0.category == .personal }
+            let firstTask = blockTasks.first
+            let lastTask = blockTasks.last
+            
+            UnifiedDraggableTimelineItem(
+                content: {
+                    TaskBlockTimelineView(
+                        taskBlock: taskBlock,
+                        tasks: blockTasks,
+                        side: .right
+                    )
+                },
+                side: .right,
+                isLocked: taskBlock.isLocked,
+                startTime: firstTask?.startTime ?? Date(),
+                endTime: lastTask?.endTime ?? Date(),
+                onTimeChanged: { newStart, newEnd in
+                    updateTaskBlockTime(taskBlock, newStart, newEnd)
+                },
+                onSideChanged: { newSide in
+                    updateTaskBlockSide(taskBlock, newSide)
+                }
             )
         }
     }

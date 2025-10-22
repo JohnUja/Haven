@@ -53,16 +53,16 @@ struct NumericTimeInput: View {
                             updateTime()
                         }
                 }
-                .font(.title2)
+                .font(.title3)
                 .fontWeight(.medium)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
                 .background(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: 4)
                         .fill(Color.gray.opacity(0.1))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(isFocused ? Color.blue : Color.clear, lineWidth: 2)
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(isFocused ? Color.blue : Color.clear, lineWidth: 1)
                         )
                 )
                 .disabled(!isEnabled)
@@ -74,7 +74,7 @@ struct NumericTimeInput: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 80)
-                .padding(.vertical, 6)
+                .padding(.vertical, 4)
                 .onChange(of: isAM) { _, _ in
                     updateTime()
                 }
