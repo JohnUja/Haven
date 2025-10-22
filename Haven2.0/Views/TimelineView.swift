@@ -117,21 +117,16 @@ struct TimelineView: View {
         let baseHour = Calendar.current.component(.hour, from: selectedDate)
         let targetHour = (baseHour + hourOffset) % 24
         
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        
         let targetDate = Calendar.current.date(bySettingHour: targetHour, minute: 0, second: 0, of: selectedDate) ?? selectedDate
-        return formatter.string(from: targetDate)
+        return timeSettings.formatTime(targetDate)
     }
     
     private var headerTimeDisplay: String {
         // Show current time if viewing today, otherwise show 00:00 for other days
         if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
-            let formatter = DateFormatter()
-            formatter.timeStyle = .short
-            return formatter.string(from: currentTime)
+            return timeSettings.formatTime(currentTime)
         } else {
-            return "00:00"
+            return timeSettings.use24HourFormat ? "00:00" : "12:00 AM"
         }
     }
     
@@ -663,6 +658,7 @@ struct TimelineHourView: View {
 struct TaskTimelineBlock: View {
     let task: Task
     let side: TimelineSide
+    @EnvironmentObject private var timeSettings: TimeSettingsManager
     
     enum TimelineSide {
         case left, right
@@ -700,7 +696,7 @@ struct TaskTimelineBlock: View {
                 .multilineTextAlignment(side == .left ? .leading : .trailing)
             
             // Time range
-            Text("\(task.startTime, format: .dateTime.hour().minute()) - \(task.endTime, format: .dateTime.hour().minute())")
+            Text("\(timeSettings.formatTime(task.startTime)) - \(timeSettings.formatTime(task.endTime))")
                 .font(.caption2)
                 .foregroundColor(.white.opacity(0.8))
             
@@ -751,6 +747,7 @@ struct TaskBlockTimelineView: View {
     let taskBlock: TaskBlock
     let tasks: [Task]
     let side: TaskTimelineBlock.TimelineSide
+    @EnvironmentObject private var timeSettings: TimeSettingsManager
     
     private var blockHeight: CGFloat {
         let totalDuration = tasks.reduce(0) { total, task in
@@ -800,7 +797,7 @@ struct TaskBlockTimelineView: View {
                 let startTime = sortedTasks.first?.startTime ?? firstTask.startTime
                 let endTime = sortedTasks.last?.endTime ?? lastTask.endTime
                 
-                Text("\(startTime, format: .dateTime.hour().minute()) - \(endTime, format: .dateTime.hour().minute())")
+                Text("\(timeSettings.formatTime(startTime)) - \(timeSettings.formatTime(endTime))")
                     .font(.caption2)
                     .foregroundColor(.white.opacity(0.8))
             }

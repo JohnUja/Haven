@@ -12,6 +12,7 @@ import AudioToolbox
 struct HomeDashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(ThemeManager.self) private var themeManager
+    @EnvironmentObject private var timeSettings: TimeSettingsManager
     @Query private var users: [User]
     @Query private var tasks: [Task]
     @Query private var taskBlocks: [TaskBlock]
@@ -589,7 +590,7 @@ struct HomeDashboardView: View {
     // MARK: - Central Time Display
     private func centralTimeView(theme: any AppTheme) -> some View {
         VStack(spacing: 12) {
-            Text(currentTime, format: .dateTime.hour().minute())
+            Text(timeSettings.formatTime(currentTime))
                 .font(.custom("Montserrat", size: 48).weight(.bold))
                 .foregroundColor(theme.textPrimary)
         }
@@ -1067,6 +1068,7 @@ struct TaskCardView: View {
     let onTaskCompleted: ((String) -> Void)?
     let onEditTask: ((Task) -> Void)?
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var timeSettings: TimeSettingsManager
     @State private var showCompletionAnimation = false
     @State private var ringProgress: CGFloat = 0
     
@@ -1221,11 +1223,8 @@ struct TaskCardView: View {
     }
     
     private var timeRangeText: String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        
         if Calendar.current.isDate(task.startTime, inSameDayAs: task.endTime) {
-            return "\(formatter.string(from: task.startTime)) - \(formatter.string(from: task.endTime))"
+            return "\(timeSettings.formatTime(task.startTime)) - \(timeSettings.formatTime(task.endTime))"
         } else {
             return "Multi-day"
         }
