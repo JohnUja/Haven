@@ -398,7 +398,7 @@ struct TimelineView: View {
             
             // Weather controls row - removed, now in settings
             
-                // Dynamic time based on scroll position (smaller)
+                // Dynamic time based on scroll position (smaller) - Clickable to toggle format
                 Text(headerTimeDisplay)
                     .font(.title2)
                     .fontWeight(.semibold)
@@ -409,6 +409,9 @@ struct TimelineView: View {
                         RoundedRectangle(cornerRadius: 6)
                             .fill(Color.white.opacity(0.2))
                     )
+                    .onTapGesture {
+                        timeSettings.use24HourFormat.toggle()
+                    }
         }
         .padding()
         .background(
@@ -443,8 +446,8 @@ struct TimelineView: View {
             let taskStartHour = Calendar.current.component(.hour, from: task.startTime)
             let taskEndHour = Calendar.current.component(.hour, from: task.endTime)
             
-            // Show task if it starts in this hour, ends in this hour, or spans across this hour
-            return taskStartHour == hour || taskEndHour == hour || (taskStartHour < hour && taskEndHour > hour)
+            // Only show task in the hour it starts, not in every hour it spans
+            return taskStartHour == hour
         }
     }
     
@@ -821,10 +824,10 @@ struct TaskTimelineBlock: View {
     
     private var taskColor: Color {
         switch task.priority {
-        case .urgent: return .red.opacity(0.3)
-        case .high: return .orange.opacity(0.3)
-        case .normal: return .green.opacity(0.3)
-        case .low: return .blue.opacity(0.3)
+        case .urgent: return .red
+        case .high: return .orange
+        case .normal: return .green
+        case .low: return .blue
         }
     }
     
@@ -850,7 +853,7 @@ struct TaskTimelineBlock: View {
             // Priority indicator
             HStack(spacing: 4) {
                 Circle()
-                    .fill(categoryColor)
+                    .fill(taskColor)
                     .frame(width: 6, height: 6)
                 
                 Text(task.priority.rawValue.capitalized)
@@ -865,7 +868,7 @@ struct TaskTimelineBlock: View {
                 .fill(categoryColor.opacity(0.8))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(categoryColor, lineWidth: 2)
+                        .stroke(taskColor, lineWidth: 2)
                 )
         )
         .frame(maxWidth: 120, minHeight: taskHeight)
