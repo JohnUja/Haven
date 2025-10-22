@@ -25,6 +25,7 @@ struct TimelineView: View {
     
     @State private var showingCollisionAlert = false
     @State private var collisionData: (newStart: Date, newEnd: Date, overlappingTasks: [Task])?
+    @State private var refreshID = UUID() // Force refresh when tasks change
     
     private var selectedDateTasks: [Task] {
         let calendar = Calendar.current
@@ -114,24 +115,16 @@ struct TimelineView: View {
         }
     }
     
-    private func handleTaskCollision(newStartTime: Date, newEndTime: Date, excludingTaskID: String? = nil) {
-        // Validate task times first
-        guard newStartTime < newEndTime else {
-            print("Invalid task time: start time must be before end time")
-            return
-        }
-        
+    private func handleTaskCollision(newStartTime: Date, newEndTime: Date) {
         // Check if the new time overlaps with any existing tasks
         let overlappingTasks = selectedDateTasks.filter { task in
-            // Exclude the task being moved
-            if let excludingID = excludingTaskID, task.id == excludingID {
-                return false
-            }
-            
             let taskStart = task.startTime
             let taskEnd = task.endTime
             
-            // Check for overlap
+            // Check for overlap, but exclude tasks that are being moved (same time range)
+            let isSameTask = (taskStart == newStartTime && taskEnd == newEndTime)
+            if isSameTask { return false }
+            
             return (newStartTime < taskEnd && newEndTime > taskStart)
         }
         
@@ -264,7 +257,6 @@ struct TimelineView: View {
                                     currentTime: currentTime,
                                     scrollBasedTime: scrollBasedTime,
                                     scrollOffset: scrollOffset,
-                                    selectedDateTasks: selectedDateTasks,
                                     getTasksForBlock: getTasksForBlock,
                                     getAllTasksForBlock: getAllTasksForBlock,
                                     getOverlappingTasks: getOverlappingTasks,
@@ -272,9 +264,7 @@ struct TimelineView: View {
                                     updateTaskSide: updateTaskSide,
                                     updateTaskBlockTime: updateTaskBlockTime,
                                     updateTaskBlockSide: updateTaskBlockSide,
-                                    handleTaskCollision: { newStart, newEnd in
-                                        handleTaskCollision(newStartTime: newStart, newEndTime: newEnd)
-                                    }
+                                    handleTaskCollision: handleTaskCollision
                                 )
                                 .frame(height: 120)
                             }
@@ -456,13 +446,23 @@ struct TimelineView: View {
     }
     
     private func tasksForHour(_ hour: Int) -> [Task] {
-        selectedDateTasks.filter { task in
+        let hourTasks = selectedDateTasks.filter { task in
             let taskStartHour = Calendar.current.component(.hour, from: task.startTime)
             let taskEndHour = Calendar.current.component(.hour, from: task.endTime)
             
             // Only show task in the hour it starts, not in every hour it spans
             return taskStartHour == hour
         }
+        
+        // Debug output
+        if !hourTasks.isEmpty {
+            print("Hour \(hour): Found \(hourTasks.count) tasks")
+            for task in hourTasks {
+                print("  - \(task.title) at \(task.startTime)")
+            }
+        }
+        
+        return hourTasks
     }
     
     private func calendarEventsForHour(_ hour: Int) -> [EKEvent] {
@@ -548,7 +548,6 @@ struct TimelineHourView: View {
     let currentTime: Date
     let scrollBasedTime: String
     let scrollOffset: CGFloat
-    let selectedDateTasks: [Task]
     let getTasksForBlock: (TaskBlock, Int) -> [Task]
     let getAllTasksForBlock: (TaskBlock) -> [Task]
     let getOverlappingTasks: ([Task]) -> [[Task]]
@@ -575,13 +574,13 @@ struct TimelineHourView: View {
     // MARK: - Work Tasks View
     private var workTasksView: some View {
         VStack(alignment: .leading, spacing: 4) {
-            workTasksList(for: selectedDateTasks)
+            workTasksList
             workTaskBlocksList
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
     
-    private func workTasksList(for tasks: [Task]) -> some View {
+    private var workTasksList: some View {
         let workTasks = tasks.filter { $0.category == .work && $0.taskBlockID == nil }
         let overlappingWorkGroups = getOverlappingTasks(workTasks)
         
@@ -653,29 +652,28 @@ struct TimelineHourView: View {
     // MARK: - Central Timeline View
     private var centralTimelineView: some View {
         ZStack(alignment: .top) {
-            // Continuous background timeline - no breaks
+            // Continuous timeline line - no breaks
             Rectangle()
                 .fill(Color.white.opacity(0.3))
                 .frame(width: 2)
                 .frame(maxHeight: .infinity)
             
-            // Hour text overlaid on timeline - positioned at hour marks
-            VStack(alignment: .center, spacing: 0) {
+            // Hour markers positioned on the side
+            VStack(alignment: .leading, spacing: 0) {
                 ForEach(0..<24, id: \.self) { hour in
-                    Text(timeSettings.formatHour(hour))
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.black.opacity(0.3))
-                        )
-                        .frame(height: 120, alignment: .top)
-                        .padding(.top, 8)
+                    HStack {
+                        Text(timeSettings.formatHour(hour))
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.7))
+                            .frame(width: 50, alignment: .trailing)
+                        
+                        Spacer()
+                    }
+                    .frame(height: 120)
                 }
             }
+            .offset(x: -60) // Position to the left of timeline
             
             // Calendar events indicators
             calendarEventsIndicators
@@ -683,7 +681,7 @@ struct TimelineHourView: View {
             // Current time indicator
             currentTimeIndicator
         }
-        .frame(width: 80) // Fixed width to prevent changes when time format changes
+        .frame(width: 80)
     }
     
     private var calendarEventsIndicators: some View {
@@ -739,13 +737,13 @@ struct TimelineHourView: View {
     // MARK: - Personal Tasks View
     private var personalTasksView: some View {
         VStack(alignment: .trailing, spacing: 4) {
-            personalTasksList(for: selectedDateTasks)
+            personalTasksList
             personalTaskBlocksList
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
     
-    private func personalTasksList(for tasks: [Task]) -> some View {
+    private var personalTasksList: some View {
         let personalTasks = tasks.filter { $0.category == .personal && $0.taskBlockID == nil }
         let overlappingPersonalGroups = getOverlappingTasks(personalTasks)
         
