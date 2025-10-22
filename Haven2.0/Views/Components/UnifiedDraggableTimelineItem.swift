@@ -37,7 +37,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
     @State private var showGuidelines = false
     @State private var showingLockedAlert = false
     
-    private let minuteHeight: CGFloat = 1.5 // Account for hour text space: ~90 points available per hour / 60 minutes = 1.5 points per minute
+    private let minuteHeight: CGFloat = 2.0 // Full hour space: 120 points per hour / 60 minutes = 2 points per minute (including hour text)
     
     init(
         @ViewBuilder content: () -> Content,
@@ -163,8 +163,8 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                             finalNewEndTime = snappedTime.addingTimeInterval(duration)
                         }
                         
-                        // Check for collision before updating time
-                        onTaskCollision?(finalNewStartTime, finalNewEndTime)
+                        // Collision detection temporarily disabled
+                        // onTaskCollision?(finalNewStartTime, finalNewEndTime)
                         
                         // Check if side changed
                         if let newSide = determineSideFromPosition(drag.translation), newSide != side {

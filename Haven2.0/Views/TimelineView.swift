@@ -56,23 +56,6 @@ struct TimelineView: View {
     
     // MARK: - Drag and Drop Functions
     private func updateTaskTime(_ task: Task, _ newStartTime: Date, _ newEndTime: Date) {
-        // Validate realistic task times
-        guard newStartTime < newEndTime else {
-            print("❌ Invalid task time: start time must be before end time")
-            return
-        }
-        
-        // Check for overlap with other tasks
-        let overlappingTasks = selectedDateTasks.filter { otherTask in
-            guard otherTask.id != task.id else { return false }
-            return (newStartTime < otherTask.endTime && newEndTime > otherTask.startTime)
-        }
-        
-        if !overlappingTasks.isEmpty {
-            print("⚠️ Task overlap detected with: \(overlappingTasks.map { $0.title }.joined(separator: ", "))")
-            // Still allow the update, but warn the user
-        }
-        
         task.startTime = newStartTime
         task.endTime = newEndTime
         
@@ -132,9 +115,6 @@ struct TimelineView: View {
     }
     
     private func handleTaskCollision(newStartTime: Date, newEndTime: Date) {
-        print("🔍 Checking collision for time: \(newStartTime) - \(newEndTime)")
-        print("📋 Total tasks on selected date: \(selectedDateTasks.count)")
-        
         // Check if the new time overlaps with any existing tasks
         let overlappingTasks = selectedDateTasks.filter { task in
             let taskStart = task.startTime
@@ -142,20 +122,10 @@ struct TimelineView: View {
             
             // Check for overlap, but exclude tasks that are being moved (same time range)
             let isSameTask = (taskStart == newStartTime && taskEnd == newEndTime)
-            if isSameTask { 
-                print("⏭️ Skipping same task: \(task.title)")
-                return false 
-            }
+            if isSameTask { return false }
             
-            let hasOverlap = (newStartTime < taskEnd && newEndTime > taskStart)
-            if hasOverlap {
-                print("⚠️ Collision found with task: \(task.title) (\(taskStart) - \(taskEnd))")
-            }
-            
-            return hasOverlap
+            return (newStartTime < taskEnd && newEndTime > taskStart)
         }
-        
-        print("🎯 Found \(overlappingTasks.count) overlapping tasks")
         
         if !overlappingTasks.isEmpty {
             // Store collision data and show alert
@@ -475,23 +445,13 @@ struct TimelineView: View {
     }
     
     private func tasksForHour(_ hour: Int) -> [Task] {
-        let hourTasks = selectedDateTasks.filter { task in
+        selectedDateTasks.filter { task in
             let taskStartHour = Calendar.current.component(.hour, from: task.startTime)
             let taskEndHour = Calendar.current.component(.hour, from: task.endTime)
             
-            // Only show task in the hour it starts, not in every hour it spans
-            return taskStartHour == hour
+            // Show task if it starts in this hour, ends in this hour, or spans across this hour
+            return taskStartHour == hour || taskEndHour == hour || (taskStartHour < hour && taskEndHour > hour)
         }
-        
-        // Debug output
-        if !hourTasks.isEmpty {
-            print("🕐 Hour \(hour): Found \(hourTasks.count) tasks")
-            for task in hourTasks {
-                print("  - \(task.title) at \(task.startTime) (category: \(task.category))")
-            }
-        }
-        
-        return hourTasks
     }
     
     private func calendarEventsForHour(_ hour: Int) -> [EKEvent] {
@@ -680,35 +640,26 @@ struct TimelineHourView: View {
     
     // MARK: - Central Timeline View
     private var centralTimelineView: some View {
-        ZStack(alignment: .top) {
-            // Continuous timeline line - no breaks
-            Rectangle()
-                .fill(Color.white.opacity(0.3))
-                .frame(width: 2)
-                .frame(maxHeight: .infinity)
+        VStack {
+            Text(hourText)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.white)
+                .padding(.vertical, 4)
             
-            // Hour markers on the left side - don't break the timeline
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(0..<24, id: \.self) { hour in
-                    HStack {
-                        Text(timeSettings.formatHour(hour))
-                            .font(.caption2)
-                            .fontWeight(.medium)
-                            .foregroundColor(.white.opacity(0.7))
-                            .frame(width: 50, alignment: .trailing)
-                        
-                        Spacer()
-                    }
-                    .frame(height: 120)
-                }
+            ZStack(alignment: .top) {
+                // Background timeline
+                Rectangle()
+                    .fill(Color.white.opacity(0.3))
+                    .frame(width: 2)
+                    .frame(maxHeight: .infinity)
+                
+                // Calendar events indicators
+                calendarEventsIndicators
+                
+                // Current time indicator
+                currentTimeIndicator
             }
-            .offset(x: -60) // Position to the left of timeline
-            
-            // Calendar events indicators
-            calendarEventsIndicators
-            
-            // Current time indicator
-            currentTimeIndicator
         }
         .frame(width: 80) // Fixed width to prevent changes when time format changes
     }
@@ -854,9 +805,9 @@ struct TaskTimelineBlock: View {
     private var taskHeight: CGFloat {
         let duration = task.endTime.timeIntervalSince(task.startTime)
         let minutes = duration / 60
-        // Account for hour text space: ~90 points available per hour, so each minute is 1.5 points
+        // Full hour space: 120 points per hour, so each minute is 2 points
         // Allow tasks to span multiple hours - no maximum height cap
-        return max(20, CGFloat(minutes) * 1.5)
+        return max(20, CGFloat(minutes) * 2.0)
     }
     
     private var taskOffset: CGFloat {
@@ -866,7 +817,7 @@ struct TaskTimelineBlock: View {
         
         // If task starts in this hour, offset by minutes within the hour
         if taskStartHour == Calendar.current.component(.hour, from: Date()) {
-            return CGFloat(taskStartMinute) * 1.5 // 1.5 points per minute
+            return CGFloat(taskStartMinute) * 2.0 // 2 points per minute
         }
         
         // If task spans across this hour, start at the top

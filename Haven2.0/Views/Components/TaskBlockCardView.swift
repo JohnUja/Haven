@@ -174,9 +174,6 @@ struct TaskBlockCardView: View {
             }
             .buttonStyle(PlainButtonStyle())
             .onLongPressGesture {
-                // Haptic feedback for long press
-                let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-                impactFeedback.impactOccurred()
                 onEditBlock?(tasks)
             }
             
@@ -244,9 +241,6 @@ struct TaskBlockCardView: View {
             }
         }
         .onLongPressGesture {
-            // Haptic feedback for long press
-            let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-            impactFeedback.impactOccurred()
             // Long press to edit task block
             onEditBlock?(tasks)
         }
