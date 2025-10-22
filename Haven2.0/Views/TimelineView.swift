@@ -23,9 +23,19 @@ struct TimelineView: View {
     @State private var draggedTask: Task? = nil
     
     private var selectedDateTasks: [Task] {
-        tasks.filter { task in
-            Calendar.current.isDate(task.startTime, inSameDayAs: selectedDate)
+        let calendar = Calendar.current
+        let filteredTasks = tasks.filter { task in
+            calendar.isDate(task.startTime, inSameDayAs: selectedDate)
         }.sorted { $0.startTime < $1.startTime }
+        
+        // Debug: Print what we're looking for vs what we found
+        print("Looking for tasks on: \(selectedDate)")
+        print("Found \(filteredTasks.count) tasks:")
+        for task in filteredTasks {
+            print("  - \(task.title) at \(task.startTime)")
+        }
+        
+        return filteredTasks
     }
     
     private var currentTime: Date {
@@ -172,21 +182,6 @@ struct TimelineView: View {
                 )
                 .ignoresSafeArea()
                 
-                // Debug overlay to show task count
-                VStack {
-                    HStack {
-                        Spacer()
-                        Text("Tasks: \(tasks.count), Selected: \(selectedDateTasks.count)")
-                            .font(.caption)
-                            .padding(8)
-                            .background(Color.black.opacity(0.7))
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
-                    }
-                    Spacer()
-                }
-                .padding()
-                
                 // Main Content
                 VStack(spacing: 0) {
                     // Header
@@ -205,6 +200,7 @@ struct TimelineView: View {
                                     scrollBasedTime: scrollBasedTime,
                                     scrollOffset: scrollOffset,
                                     getTasksForBlock: getTasksForBlock,
+                                    getAllTasksForBlock: getAllTasksForBlock,
                                     getOverlappingTasks: getOverlappingTasks,
                                     updateTaskTime: updateTaskTime,
                                     updateTaskSide: updateTaskSide,
@@ -385,6 +381,13 @@ struct TimelineView: View {
         }
     }
     
+    // New function to get all tasks for a block regardless of hour
+    private func getAllTasksForBlock(_ taskBlock: TaskBlock) -> [Task] {
+        selectedDateTasks.filter { task in
+            task.taskBlockID == taskBlock.id
+        }
+    }
+    
     private func getOverlappingTasks(_ tasks: [Task]) -> [[Task]] {
         var groups: [[Task]] = []
         var processed: Set<String> = []
@@ -439,6 +442,7 @@ struct TimelineHourView: View {
     let scrollBasedTime: String
     let scrollOffset: CGFloat
     let getTasksForBlock: (TaskBlock, Int) -> [Task]
+    let getAllTasksForBlock: (TaskBlock) -> [Task]
     let getOverlappingTasks: ([Task]) -> [[Task]]
     let updateTaskTime: (Task, Date, Date) -> Void
     let updateTaskSide: (Task, TaskTimelineBlock.TimelineSide) -> Void
@@ -500,7 +504,7 @@ struct TimelineHourView: View {
     
     private var workTaskBlocksList: some View {
         ForEach(workTaskBlocks, id: \.id) { taskBlock in
-            let blockTasks = getTasksForBlock(taskBlock, hour).filter { $0.category == .work }
+            let blockTasks = getAllTasksForBlock(taskBlock).filter { $0.category == .work }
             let firstTask = blockTasks.first
             let lastTask = blockTasks.last
             
@@ -623,7 +627,7 @@ struct TimelineHourView: View {
     
     private var personalTaskBlocksList: some View {
         ForEach(personalTaskBlocks, id: \.id) { taskBlock in
-            let blockTasks = getTasksForBlock(taskBlock, hour).filter { $0.category == .personal }
+            let blockTasks = getAllTasksForBlock(taskBlock).filter { $0.category == .personal }
             let firstTask = blockTasks.first
             let lastTask = blockTasks.last
             
