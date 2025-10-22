@@ -12,6 +12,7 @@ import SwiftData
 
 struct TimelineView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var timeSettings: TimeSettingsManager
     @Query private var tasks: [Task]
     @Query private var taskBlocks: [TaskBlock]
     @State private var selectedDate = Date()
@@ -448,12 +449,10 @@ struct TimelineHourView: View {
     let updateTaskSide: (Task, TaskTimelineBlock.TimelineSide) -> Void
     let updateTaskBlockTime: (TaskBlock, Date, Date) -> Void
     let updateTaskBlockSide: (TaskBlock, TaskTimelineBlock.TimelineSide) -> Void
+    @EnvironmentObject private var timeSettings: TimeSettingsManager
     
     private var hourText: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h a"
-        let date = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: selectedDate) ?? selectedDate
-        return formatter.string(from: date)
+        return timeSettings.formatHour(hour)
     }
     
     var body: some View {

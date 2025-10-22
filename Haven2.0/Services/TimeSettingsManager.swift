@@ -1,0 +1,98 @@
+//
+//  TimeSettingsManager.swift
+//  TimeFlow
+//
+//  Created by John Uja on 2025-10-21.
+//
+
+import Foundation
+import SwiftUI
+
+class TimeSettingsManager: ObservableObject {
+    @Published var use24HourFormat: Bool = true
+    @Published var timezone: TimeZone = TimeZone.current
+    
+    init() {
+        // Load from UserDefaults
+        loadSettings()
+    }
+    
+    private func loadSettings() {
+        use24HourFormat = UserDefaults.standard.bool(forKey: "use24HourFormat")
+        if let timezoneIdentifier = UserDefaults.standard.string(forKey: "timezone") {
+            timezone = TimeZone(identifier: timezoneIdentifier) ?? TimeZone.current
+        }
+    }
+    
+    func toggleTimeFormat() {
+        use24HourFormat.toggle()
+        UserDefaults.standard.set(use24HourFormat, forKey: "use24HourFormat")
+    }
+    
+    func setTimezone(_ newTimezone: TimeZone) {
+        timezone = newTimezone
+        UserDefaults.standard.set(newTimezone.identifier, forKey: "timezone")
+    }
+    
+    func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeZone = timezone
+        
+        if use24HourFormat {
+            formatter.dateFormat = "HH:mm"
+        } else {
+            formatter.dateFormat = "h:mm a"
+        }
+        
+        return formatter.string(from: date)
+    }
+    
+    func formatTimeWithSeconds(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeZone = timezone
+        
+        if use24HourFormat {
+            formatter.dateFormat = "HH:mm:ss"
+        } else {
+            formatter.dateFormat = "h:mm:ss a"
+        }
+        
+        return formatter.string(from: date)
+    }
+    
+    func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeZone = timezone
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: date)
+    }
+    
+    func formatDateTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeZone = timezone
+        
+        if use24HourFormat {
+            formatter.dateFormat = "MMM d, HH:mm"
+        } else {
+            formatter.dateFormat = "MMM d, h:mm a"
+        }
+        
+        return formatter.string(from: date)
+    }
+    
+    func formatHour(_ hour: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.timeZone = timezone
+        
+        if use24HourFormat {
+            formatter.dateFormat = "HH:mm"
+        } else {
+            formatter.dateFormat = "h a"
+        }
+        
+        let date = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) ?? Date()
+        return formatter.string(from: date)
+    }
+}
+

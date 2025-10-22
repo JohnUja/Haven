@@ -11,6 +11,7 @@ import SwiftData
 @main
 struct TimeFlowApp: App {
     @State private var themeManager = ThemeManager()
+    @StateObject private var timeSettings = TimeSettingsManager()
     
     var sharedModelContainer: ModelContainer = {
         do {
@@ -35,6 +36,7 @@ struct TimeFlowApp: App {
         WindowGroup {
             MainTabView()
                 .environment(themeManager)
+                .environmentObject(timeSettings)
         }
         .modelContainer(sharedModelContainer)
     }
