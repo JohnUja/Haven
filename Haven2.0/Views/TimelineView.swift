@@ -440,7 +440,11 @@ struct TimelineView: View {
     
     private func tasksForHour(_ hour: Int) -> [Task] {
         selectedDateTasks.filter { task in
-            Calendar.current.component(.hour, from: task.startTime) == hour
+            let taskStartHour = Calendar.current.component(.hour, from: task.startTime)
+            let taskEndHour = Calendar.current.component(.hour, from: task.endTime)
+            
+            // Show task if it starts in this hour, ends in this hour, or spans across this hour
+            return taskStartHour == hour || taskEndHour == hour || (taskStartHour < hour && taskEndHour > hour)
         }
     }
     
@@ -797,8 +801,22 @@ struct TaskTimelineBlock: View {
         let duration = task.endTime.timeIntervalSince(task.startTime)
         let minutes = duration / 60
         // Each hour is 120 points, so each minute is 2 points
-        // Minimum height of 16 points (8 minutes), maximum of 120 points (1 hour)
-        return max(16, min(120, CGFloat(minutes) * 2))
+        // Allow tasks to span multiple hours - no maximum height cap
+        return max(16, CGFloat(minutes) * 2)
+    }
+    
+    private var taskOffset: CGFloat {
+        // Calculate offset within the hour for tasks that start in this hour
+        let taskStartHour = Calendar.current.component(.hour, from: task.startTime)
+        let taskStartMinute = Calendar.current.component(.minute, from: task.startTime)
+        
+        // If task starts in this hour, offset by minutes within the hour
+        if taskStartHour == Calendar.current.component(.hour, from: Date()) {
+            return CGFloat(taskStartMinute) * 2 // 2 points per minute
+        }
+        
+        // If task spans across this hour, start at the top
+        return 0
     }
     
     private var taskColor: Color {
@@ -832,7 +850,7 @@ struct TaskTimelineBlock: View {
             // Priority indicator
             HStack(spacing: 4) {
                 Circle()
-                    .fill(taskColor)
+                    .fill(categoryColor)
                     .frame(width: 6, height: 6)
                 
                 Text(task.priority.rawValue.capitalized)
@@ -847,10 +865,11 @@ struct TaskTimelineBlock: View {
                 .fill(categoryColor.opacity(0.8))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(taskColor, lineWidth: 2)
+                        .stroke(categoryColor, lineWidth: 2)
                 )
         )
         .frame(maxWidth: 120, minHeight: taskHeight)
+        .offset(y: taskOffset) // Apply the calculated offset
         .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
         .overlay(
             // Lock icon for locked tasks

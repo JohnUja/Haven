@@ -9,7 +9,7 @@ import Foundation
 import SwiftUI
 
 class TimeSettingsManager: ObservableObject {
-    @Published var use24HourFormat: Bool = true
+    @Published var use24HourFormat: Bool = false
     @Published var timezone: TimeZone = TimeZone.current
     
     init() {

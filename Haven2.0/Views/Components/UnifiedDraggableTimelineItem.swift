@@ -163,6 +163,9 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                             finalNewEndTime = snappedTime.addingTimeInterval(duration)
                         }
                         
+                        // Check for collision before updating time
+                        onTaskCollision?(finalNewStartTime, finalNewEndTime)
+                        
                         // Check if side changed
                         if let newSide = determineSideFromPosition(drag.translation), newSide != side {
                             showingSideChangeConfirmation = true
