@@ -16,6 +16,18 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
     let endTime: Date
     let onTimeChanged: (Date, Date) -> Void
     let onSideChanged: (TaskTimelineBlock.TimelineSide) -> Void
+    let onTaskCollision: ((Date, Date) -> Void)? // New parameter for collision detection
+    
+    init(content: Content, side: TaskTimelineBlock.TimelineSide, isLocked: Bool, startTime: Date, endTime: Date, onTimeChanged: @escaping (Date, Date) -> Void, onSideChanged: @escaping (TaskTimelineBlock.TimelineSide) -> Void, onTaskCollision: ((Date, Date) -> Void)? = nil) {
+        self.content = content
+        self.side = side
+        self.isLocked = isLocked
+        self.startTime = startTime
+        self.endTime = endTime
+        self.onTimeChanged = onTimeChanged
+        self.onSideChanged = onSideChanged
+        self.onTaskCollision = onTaskCollision
+    }
     
     @State private var dragOffset: CGSize = .zero
     @State private var isDragging: Bool = false
@@ -34,7 +46,8 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
         startTime: Date,
         endTime: Date,
         onTimeChanged: @escaping (Date, Date) -> Void,
-        onSideChanged: @escaping (TaskTimelineBlock.TimelineSide) -> Void
+        onSideChanged: @escaping (TaskTimelineBlock.TimelineSide) -> Void,
+        onTaskCollision: ((Date, Date) -> Void)? = nil
     ) {
         self.content = content()
         self.side = side
@@ -43,6 +56,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
         self.endTime = endTime
         self.onTimeChanged = onTimeChanged
         self.onSideChanged = onSideChanged
+        self.onTaskCollision = onTaskCollision
     }
     
     var body: some View {
@@ -109,8 +123,8 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                         let newStartTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: startTime) ?? startTime
                         let newEndTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: endTime) ?? endTime
                         
-                        // Snap to nearest 5-minute interval
-                        currentHoverTime = snapToNearestFiveMinutes(date: newStartTime)
+                        // Snap to nearest minute for ultra-precise positioning
+                        currentHoverTime = snapToNearestMinute(date: newStartTime)
                         
                         // Check if crossing to other side
                         if let newSide = determineSideFromPosition(drag.translation), newSide != side {
@@ -142,8 +156,8 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                         var finalNewStartTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: startTime) ?? startTime
                         var finalNewEndTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: endTime) ?? endTime
                         
-                        // Snap to nearest 5-minute interval on drop
-                        if let snappedTime = snapToNearestFiveMinutes(date: finalNewStartTime) {
+                        // Snap to nearest minute on drop for ultra-precise positioning
+                        if let snappedTime = snapToNearestMinute(date: finalNewStartTime) {
                             let duration = finalNewEndTime.timeIntervalSince(finalNewStartTime)
                             finalNewStartTime = snappedTime
                             finalNewEndTime = snappedTime.addingTimeInterval(duration)
@@ -212,29 +226,22 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
         Group {
             if showGuidelines && isDragging {
                 VStack(spacing: 0) {
-                    // 15-minute guideline
-                    Rectangle()
-                        .fill(Color.white.opacity(0.4))
-                        .frame(height: 1)
-                        .offset(y: -30) // 15 minutes = 30 points
-                    
-                    // 30-minute guideline (middle) - more prominent
-                    Rectangle()
-                        .fill(Color.white.opacity(0.7))
-                        .frame(height: 2)
-                        .offset(y: 0) // 30 minutes = 60 points
-                    
-                    // 45-minute guideline
-                    Rectangle()
-                        .fill(Color.white.opacity(0.4))
-                        .frame(height: 1)
-                        .offset(y: 30) // 45 minutes = 90 points
-                    
-                    // 60-minute guideline (end of hour)
-                    Rectangle()
-                        .fill(Color.white.opacity(0.6))
-                        .frame(height: 1)
-                        .offset(y: 60) // 60 minutes = 120 points
+                    // Create guidelines for every minute within the hour
+                    ForEach(0..<60, id: \.self) { minute in
+                        let offset = CGFloat(minute) * minuteHeight
+                        let isMajorMark = minute % 15 == 0 // 15, 30, 45 minute marks
+                        let isMinorMark = minute % 5 == 0 && minute % 15 != 0 // 5, 10, 20, 25, etc.
+                        let isMicroMark = minute % 5 != 0 // Individual minutes
+                        
+                        Rectangle()
+                            .fill(Color.white.opacity(
+                                isMajorMark ? 0.8 : 
+                                isMinorMark ? 0.5 : 
+                                0.2 // Very subtle for 1-minute marks
+                            ))
+                            .frame(height: isMajorMark ? 3 : isMinorMark ? 2 : 1)
+                            .offset(y: offset - 60) // Center around the hour mark
+                    }
                 }
                 .frame(width: 2)
                 .offset(x: 0) // Position in the center of the timeline
@@ -242,12 +249,12 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
         }
     }
     
-    private func snapToNearestFiveMinutes(date: Date) -> Date? {
+    private func snapToNearestMinute(date: Date) -> Date? {
         let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
         guard let hour = components.hour, let minute = components.minute else { return nil }
         
-        let snappedMinute = (minute / 5) * 5
-        return Calendar.current.date(bySettingHour: hour, minute: snappedMinute, second: 0, of: date)
+        // Snap to exact minute for ultra-precise positioning
+        return Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: date)
     }
     
     private func determineSideFromPosition(_ translation: CGSize) -> TaskTimelineBlock.TimelineSide? {

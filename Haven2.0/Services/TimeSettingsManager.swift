@@ -88,7 +88,7 @@ class TimeSettingsManager: ObservableObject {
         if use24HourFormat {
             formatter.dateFormat = "HH:mm"
         } else {
-            formatter.dateFormat = "h a"
+            formatter.dateFormat = "h:mm a"
         }
         
         let date = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) ?? Date()

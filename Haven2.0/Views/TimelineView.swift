@@ -15,6 +15,7 @@ struct TimelineView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     @EnvironmentObject private var calendarManager: CalendarManager
+    @Query private var users: [User]
     @Query private var tasks: [Task]
     @Query private var taskBlocks: [TaskBlock]
     @State private var selectedDate = Date()
@@ -22,8 +23,8 @@ struct TimelineView: View {
     @StateObject private var weatherManager = WeatherManager()
     @State private var timer: Timer?
     
-    // Drag and drop state
-    @State private var draggedTask: Task? = nil
+    @State private var showingCollisionAlert = false
+    @State private var collisionData: (newStart: Date, newEnd: Date, overlappingTasks: [Task])?
     
     private var selectedDateTasks: [Task] {
         let calendar = Calendar.current
@@ -111,6 +112,60 @@ struct TimelineView: View {
         } catch {
             print("Failed to update task block side: \(error)")
         }
+    }
+    
+    private func handleTaskCollision(newStartTime: Date, newEndTime: Date) {
+        // Check if the new time overlaps with any existing tasks
+        let overlappingTasks = selectedDateTasks.filter { task in
+            let taskStart = task.startTime
+            let taskEnd = task.endTime
+            
+            // Check for overlap
+            return (newStartTime < taskEnd && newEndTime > taskStart)
+        }
+        
+        if !overlappingTasks.isEmpty {
+            // Store collision data and show alert
+            collisionData = (newStartTime, newEndTime, overlappingTasks)
+            showingCollisionAlert = true
+        }
+    }
+    
+    private func replaceTaskWithNewTime() {
+        guard let data = collisionData else { return }
+        
+        // Delete overlapping tasks
+        for task in data.overlappingTasks {
+            modelContext.delete(task)
+        }
+        
+        // The new task will be created by the drag operation
+        try? modelContext.save()
+        collisionData = nil
+    }
+    
+    private func createTaskBlockWithCollision() {
+        guard let data = collisionData else { return }
+        
+        // Get current user ID
+        let currentUser = users.first
+        guard let userID = currentUser?.id else { return }
+        
+        // Create a new task block
+        let taskBlock = TaskBlock(
+            userID: userID,
+            title: "New Task Block",
+            blockDescription: "Created from task collision"
+        )
+        
+        // Move overlapping tasks into the block
+        for task in data.overlappingTasks {
+            task.taskBlockID = taskBlock.id
+        }
+        
+        modelContext.insert(taskBlock)
+        try? modelContext.save()
+        collisionData = nil
     }
     
     private var scrollBasedTime: String {
@@ -204,7 +259,8 @@ struct TimelineView: View {
                                     updateTaskTime: updateTaskTime,
                                     updateTaskSide: updateTaskSide,
                                     updateTaskBlockTime: updateTaskBlockTime,
-                                    updateTaskBlockSide: updateTaskBlockSide
+                                    updateTaskBlockSide: updateTaskBlockSide,
+                                    handleTaskCollision: handleTaskCollision
                                 )
                                 .frame(height: 120)
                             }
@@ -224,6 +280,21 @@ struct TimelineView: View {
                 }
             }
             .navigationBarHidden(true)
+            .alert("Task Collision Detected", isPresented: $showingCollisionAlert) {
+                Button("Replace Existing Tasks") {
+                    replaceTaskWithNewTime()
+                }
+                Button("Create Task Block") {
+                    createTaskBlockWithCollision()
+                }
+                Button("Cancel", role: .cancel) {
+                    collisionData = nil
+                }
+            } message: {
+                if let data = collisionData {
+                    Text("This time slot conflicts with \(data.overlappingTasks.count) existing task(s). Choose an action:")
+                }
+            }
             .onAppear {
                 startTimer()
             }
@@ -464,6 +535,7 @@ struct TimelineHourView: View {
     let updateTaskSide: (Task, TaskTimelineBlock.TimelineSide) -> Void
     let updateTaskBlockTime: (TaskBlock, Date, Date) -> Void
     let updateTaskBlockSide: (TaskBlock, TaskTimelineBlock.TimelineSide) -> Void
+    let handleTaskCollision: (Date, Date) -> Void
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     
     private var hourText: String {
@@ -508,6 +580,9 @@ struct TimelineHourView: View {
                         },
                         onSideChanged: { newSide in
                             updateTaskSide(task, newSide)
+                        },
+                        onTaskCollision: { newStart, newEnd in
+                            handleTaskCollision(newStart, newEnd)
                         }
                     )
                     .frame(maxWidth: group.count > 1 ? 60 : 120)
@@ -539,6 +614,9 @@ struct TimelineHourView: View {
                 },
                 onSideChanged: { newSide in
                     updateTaskBlockSide(taskBlock, newSide)
+                },
+                onTaskCollision: { newStart, newEnd in
+                    handleTaskCollision(newStart, newEnd)
                 }
             )
         }
@@ -656,6 +734,9 @@ struct TimelineHourView: View {
                         },
                         onSideChanged: { newSide in
                             updateTaskSide(task, newSide)
+                        },
+                        onTaskCollision: { newStart, newEnd in
+                            handleTaskCollision(newStart, newEnd)
                         }
                     )
                     .frame(maxWidth: group.count > 1 ? 60 : 120)
@@ -687,6 +768,9 @@ struct TimelineHourView: View {
                 },
                 onSideChanged: { newSide in
                     updateTaskBlockSide(taskBlock, newSide)
+                },
+                onTaskCollision: { newStart, newEnd in
+                    handleTaskCollision(newStart, newEnd)
                 }
             )
         }
