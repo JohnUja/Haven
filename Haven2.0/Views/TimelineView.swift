@@ -803,9 +803,9 @@ struct TaskTimelineBlock: View {
     private var taskHeight: CGFloat {
         let duration = task.endTime.timeIntervalSince(task.startTime)
         let minutes = duration / 60
-        // Each hour is 120 points, so each minute is 2 points
+        // Account for hour text space: ~90 points available per hour, so each minute is 1.5 points
         // Allow tasks to span multiple hours - no maximum height cap
-        return max(16, CGFloat(minutes) * 2)
+        return max(16, CGFloat(minutes) * 1.5)
     }
     
     private var taskOffset: CGFloat {
@@ -815,7 +815,7 @@ struct TaskTimelineBlock: View {
         
         // If task starts in this hour, offset by minutes within the hour
         if taskStartHour == Calendar.current.component(.hour, from: Date()) {
-            return CGFloat(taskStartMinute) * 2 // 2 points per minute
+            return CGFloat(taskStartMinute) * 1.5 // 1.5 points per minute
         }
         
         // If task spans across this hour, start at the top

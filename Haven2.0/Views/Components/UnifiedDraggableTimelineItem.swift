@@ -37,7 +37,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
     @State private var showGuidelines = false
     @State private var showingLockedAlert = false
     
-    private let minuteHeight: CGFloat = 2.0 // 120 points per hour / 60 minutes = 2 points per minute
+    private let minuteHeight: CGFloat = 1.5 // Account for hour text space: ~90 points available per hour / 60 minutes = 1.5 points per minute
     
     init(
         @ViewBuilder content: () -> Content,
