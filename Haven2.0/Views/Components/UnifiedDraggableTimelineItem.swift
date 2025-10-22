@@ -82,11 +82,8 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
             .onChanged { value in
                 switch value {
                 case .first(true):
-                    // Long press started - check if item is locked
-                    if isLocked {
-                        showingLockedAlert = true
-                        AudioServicesPlaySystemSound(1521) // Error haptic
-                    } else {
+                    // Long press started - start dragging if not locked
+                    if !isLocked {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             isDragging = true
                             showGuidelines = true
@@ -95,7 +92,13 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                     }
                     
                 case .second(true, let drag):
-                    // Drag started
+                    // Drag started - check if item is locked
+                    if isLocked {
+                        showingLockedAlert = true
+                        AudioServicesPlaySystemSound(1521) // Error haptic
+                        return
+                    }
+                    
                     if let drag = drag {
                         dragOffset = drag.translation
                         
@@ -234,7 +237,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                         .offset(y: 60) // 60 minutes = 120 points
                 }
                 .frame(width: 2)
-                .offset(x: side == .left ? -20 : 20) // Position on the appropriate side
+                .offset(x: 0) // Position in the center of the timeline
             }
         }
     }

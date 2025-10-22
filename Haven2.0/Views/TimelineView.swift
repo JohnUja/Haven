@@ -172,6 +172,21 @@ struct TimelineView: View {
                 )
                 .ignoresSafeArea()
                 
+                // Debug overlay to show task count
+                VStack {
+                    HStack {
+                        Spacer()
+                        Text("Tasks: \(tasks.count), Selected: \(selectedDateTasks.count)")
+                            .font(.caption)
+                            .padding(8)
+                            .background(Color.black.opacity(0.7))
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                    }
+                    Spacer()
+                }
+                .padding()
+                
                 // Main Content
                 VStack(spacing: 0) {
                     // Header
@@ -810,6 +825,23 @@ struct TaskBlockTimelineView: View {
         )
         .frame(maxWidth: 120, minHeight: blockHeight)
         .shadow(color: .black.opacity(0.4), radius: 3, x: 0, y: 2)
+        .overlay(
+            // Lock icon for locked task blocks
+            Group {
+                if taskBlock.isLocked {
+                    Image(systemName: "lock.fill")
+                        .font(.caption2)
+                        .foregroundColor(.white)
+                        .padding(4)
+                        .background(
+                            Circle()
+                                .fill(Color.black.opacity(0.6))
+                        )
+                        .offset(x: 50, y: -20) // Top-right corner
+                }
+            },
+            alignment: .topTrailing
+        )
     }
 }
 
