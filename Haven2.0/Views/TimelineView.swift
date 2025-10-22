@@ -120,7 +120,10 @@ struct TimelineView: View {
             let taskStart = task.startTime
             let taskEnd = task.endTime
             
-            // Check for overlap
+            // Check for overlap, but exclude tasks that are being moved (same time range)
+            let isSameTask = (taskStart == newStartTime && taskEnd == newEndTime)
+            if isSameTask { return false }
+            
             return (newStartTime < taskEnd && newEndTime > taskStart)
         }
         
@@ -459,11 +462,10 @@ struct TimelineView: View {
     
     private func taskBlocksForHour(_ hour: Int) -> [TaskBlock] {
         taskBlocks.filter { taskBlock in
-            // Check if any task in this block falls within this hour
+            // Only show task block in the hour where its first task starts
             let blockTasks = selectedDateTasks.filter { $0.taskBlockID == taskBlock.id }
-            return blockTasks.contains { task in
-                Calendar.current.component(.hour, from: task.startTime) == hour
-            }
+            guard let firstTask = blockTasks.min(by: { $0.startTime < $1.startTime }) else { return false }
+            return Calendar.current.component(.hour, from: firstTask.startTime) == hour
         }
     }
     
@@ -659,7 +661,7 @@ struct TimelineHourView: View {
                 currentTimeIndicator
             }
         }
-        .frame(width: 60)
+        .frame(width: 80) // Fixed width to prevent changes when time format changes
     }
     
     private var calendarEventsIndicators: some View {
@@ -805,7 +807,7 @@ struct TaskTimelineBlock: View {
         let minutes = duration / 60
         // Account for hour text space: ~90 points available per hour, so each minute is 1.5 points
         // Allow tasks to span multiple hours - no maximum height cap
-        return max(16, CGFloat(minutes) * 1.5)
+        return max(20, CGFloat(minutes) * 1.5)
     }
     
     private var taskOffset: CGFloat {

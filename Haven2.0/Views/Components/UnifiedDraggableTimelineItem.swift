@@ -64,7 +64,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
             .offset(dragOffset)
             .scaleEffect(isDragging ? 1.05 : 1.0)
             .shadow(color: isDragging ? .black.opacity(0.3) : .clear, radius: 8, x: 0, y: 4)
-            .gesture(dragGesture)
+            .gesture(isLocked ? nil : dragGesture)
             .zIndex(isDragging ? 1000 : 0)
             .overlay(dragOverlay)
             .overlay(guidelinesOverlay)
