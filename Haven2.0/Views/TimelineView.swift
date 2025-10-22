@@ -7,12 +7,14 @@
 
 import SwiftUI
 import SwiftData
+import EventKit
 // import WeatherKit
 // import CoreLocation
 
 struct TimelineView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var timeSettings: TimeSettingsManager
+    @EnvironmentObject private var calendarManager: CalendarManager
     @Query private var tasks: [Task]
     @Query private var taskBlocks: [TaskBlock]
     @State private var selectedDate = Date()
@@ -191,6 +193,7 @@ struct TimelineView: View {
                                     hour: hour,
                                     tasks: tasksForHour(hour),
                                     taskBlocks: taskBlocksForHour(hour),
+                                    calendarEvents: calendarEventsForHour(hour),
                                     selectedDate: selectedDate,
                                     currentTime: currentTime,
                                     scrollBasedTime: scrollBasedTime,
@@ -235,7 +238,10 @@ struct TimelineView: View {
             // Day Selector
             HStack(spacing: 12) {
                 ForEach(weekDays, id: \.self) { day in
-                    Button(action: { selectedDate = day }) {
+                    Button(action: { 
+                        selectedDate = day
+                        calendarManager.loadCalendarEvents(for: day)
+                    }) {
                         VStack(spacing: 2) {
                             Text(dayOfWeek(for: day))
                                 .font(.caption2)
@@ -246,8 +252,15 @@ struct TimelineView: View {
                                 .font(.caption)
                                 .fontWeight(.semibold)
                                 .foregroundColor(Calendar.current.isDate(day, inSameDayAs: selectedDate) ? .white : .white.opacity(0.7))
+                            
+                            // Calendar event indicator
+                            if calendarManager.hasEventsOnDate(day) {
+                                Circle()
+                                    .fill(Color.blue)
+                                    .frame(width: 4, height: 4)
+                            }
                         }
-                        .frame(width: 40, height: 40)
+                        .frame(width: 40, height: 50)
                         .background(
                             Circle()
                                 .fill(Calendar.current.isDate(day, inSameDayAs: selectedDate) ? 
@@ -360,6 +373,12 @@ struct TimelineView: View {
         }
     }
     
+    private func calendarEventsForHour(_ hour: Int) -> [EKEvent] {
+        calendarManager.getEventsForDate(selectedDate).filter { event in
+            Calendar.current.component(.hour, from: event.startDate) == hour
+        }
+    }
+    
     private func taskBlocksForHour(_ hour: Int) -> [TaskBlock] {
         taskBlocks.filter { taskBlock in
             // Check if any task in this block falls within this hour
@@ -433,6 +452,7 @@ struct TimelineHourView: View {
     let hour: Int
     let tasks: [Task]
     let taskBlocks: [TaskBlock]
+    let calendarEvents: [EKEvent]
     let selectedDate: Date
     let currentTime: Date
     let scrollBasedTime: String
@@ -547,11 +567,36 @@ struct TimelineHourView: View {
                     .frame(width: 2)
                     .frame(maxHeight: .infinity)
                 
+                // Calendar events indicators
+                calendarEventsIndicators
+                
                 // Current time indicator
                 currentTimeIndicator
             }
         }
         .frame(width: 60)
+    }
+    
+    private var calendarEventsIndicators: some View {
+        ForEach(calendarEvents, id: \.eventIdentifier) { event in
+            let startMinute = Calendar.current.component(.minute, from: event.startDate)
+            let duration = event.endDate.timeIntervalSince(event.startDate)
+            let durationMinutes = duration / 60
+            
+            VStack(spacing: 0) {
+                // Event indicator dot
+                Circle()
+                    .fill(Color.blue)
+                    .frame(width: 8, height: 8)
+                    .offset(y: CGFloat(startMinute) * 2) // 2 points per minute
+                
+                // Event duration bar
+                Rectangle()
+                    .fill(Color.blue.opacity(0.3))
+                    .frame(width: 4, height: CGFloat(durationMinutes) * 2)
+                    .offset(y: CGFloat(startMinute) * 2)
+            }
+        }
     }
     
     private var currentTimeIndicator: some View {
