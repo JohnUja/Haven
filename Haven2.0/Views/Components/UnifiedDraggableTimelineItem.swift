@@ -121,7 +121,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                         let minuteTranslation = Int(verticalTranslation / minuteHeight)
                         
                         let newStartTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: startTime) ?? startTime
-                        let newEndTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: endTime) ?? endTime
+                        let _ = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: endTime) ?? endTime
                         
                         // Snap to nearest minute for ultra-precise positioning
                         currentHoverTime = snapToNearestMinute(date: newStartTime)
@@ -234,7 +234,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                         let offset = CGFloat(minute) * minuteHeight
                         let isMajorMark = minute % 15 == 0 // 15, 30, 45 minute marks
                         let isMinorMark = minute % 5 == 0 && minute % 15 != 0 // 5, 10, 20, 25, etc.
-                        let isMicroMark = minute % 5 != 0 // Individual minutes
+                        let _ = minute % 5 != 0 // Individual minutes
                         
                         Rectangle()
                             .fill(Color.white.opacity(
