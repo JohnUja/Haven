@@ -822,7 +822,6 @@ struct TimelineHourView: View {
             return blockTasks.contains { $0.category == .personal }
         }
     }
-}
 
 struct TaskTimelineBlock: View {
     let task: Task
