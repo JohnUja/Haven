@@ -230,10 +230,10 @@ struct TimelineView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Dynamic Weather Background
-                WeatherBackgroundView(
+                // Apple-style Weather Background
+                AppleWeatherBackground(
+                    weatherData: weatherManager.getWeatherForScrollPosition(scrollOffset, selectedDate: selectedDate),
                     scrollOffset: scrollOffset,
-                    weatherManager: weatherManager,
                     selectedDate: selectedDate
                 )
                 .ignoresSafeArea()
@@ -309,8 +309,18 @@ struct TimelineView: View {
     
     private var headerView: some View {
         VStack(spacing: 16) {
-            // Day Selector
+            // Day Selector with Swipe Navigation
             HStack(spacing: 12) {
+                // Previous week button
+                Button(action: {
+                    selectedDate = Calendar.current.date(byAdding: .weekOfYear, value: -1, to: selectedDate) ?? selectedDate
+                    calendarManager.loadCalendarEvents(for: selectedDate)
+                }) {
+                    Image(systemName: "chevron.left")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.7))
+                }
+                
                 ForEach(weekDays, id: \.self) { day in
                     Button(action: { 
                         selectedDate = day
@@ -341,6 +351,16 @@ struct TimelineView: View {
                                       Color.white.opacity(0.3) : Color.clear)
                         )
                     }
+                }
+                
+                // Next week button
+                Button(action: {
+                    selectedDate = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: selectedDate) ?? selectedDate
+                    calendarManager.loadCalendarEvents(for: selectedDate)
+                }) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.7))
                 }
             }
             
@@ -640,22 +660,38 @@ struct TimelineHourView: View {
     
     // MARK: - Central Timeline View
     private var centralTimelineView: some View {
-        VStack {
-            Text(hourText)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundColor(.white)
-                .padding(.vertical, 4)
+        ZStack(alignment: .top) {
+            // Background timeline line
+            Rectangle()
+                .fill(Color.white.opacity(0.3))
+                .frame(width: 2)
+                .frame(maxHeight: .infinity)
             
-            ZStack(alignment: .top) {
-                // Background timeline
-                Rectangle()
-                    .fill(Color.white.opacity(0.3))
-                    .frame(width: 2)
-                    .frame(maxHeight: .infinity)
-                
-                // Calendar events indicators
-                calendarEventsIndicators
+            // Hour text integrated into timeline
+            VStack(spacing: 0) {
+                ForEach(0..<24, id: \.self) { hour in
+                    let hourDate = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: selectedDate) ?? selectedDate
+                    let hourText = timeSettings.formatHour(hourDate)
+                    
+                    ZStack {
+                        // Hour text positioned on the timeline
+                        Text(hourText)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white)
+                            .background(
+                                Circle()
+                                    .fill(Color.black.opacity(0.3))
+                                    .frame(width: 24, height: 24)
+                            )
+                            .offset(x: -15) // Position to the left of timeline
+                    }
+                    .frame(height: 120) // Full hour height
+                }
+            }
+            
+            // Calendar events indicators
+            calendarEventsIndicators
                 
                 // Current time indicator
                 currentTimeIndicator
@@ -708,7 +744,7 @@ struct TimelineHourView: View {
                                         .stroke(Color.white, lineWidth: 1)
                                 )
                         )
-                        .offset(y: 20)
+                        .offset(y: 20) 
                 }
             }
         }
@@ -998,8 +1034,17 @@ struct TaskBlockTimelineView: View {
     }
 }
 
-struct WeatherBackgroundView: View {
-    let scrollOffset: CGFloat
+struct ScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+#Preview {
+    TimelineView()
+        .modelContainer(for: [Task.self], inMemory: true)
+}
     let weatherManager: WeatherManager
     let selectedDate: Date
     

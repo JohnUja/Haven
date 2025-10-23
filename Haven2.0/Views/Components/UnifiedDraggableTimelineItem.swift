@@ -110,7 +110,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                     if isLocked {
                         showingLockedAlert = true
                         AudioServicesPlaySystemSound(1521) // Error haptic
-                        return
+                        return 
                     }
                     
                     if let drag = drag {

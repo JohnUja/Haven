@@ -15,8 +15,12 @@ class WeatherManager: ObservableObject {
     @Published var currentWeather: WeatherData = WeatherData.sample
     @Published var hourlyWeather: [WeatherData] = []
     
+    private let weatherKitService = WeatherKitService()
+    
     init() {
-        generateSampleHourlyWeather()
+        // Try to load real weather data first
+        weatherKitService.requestLocationPermission()
+        loadRealWeatherData()
     }
     
     func toggleWeather() {
@@ -25,6 +29,23 @@ class WeatherManager: ObservableObject {
     
     func toggleTemperatureUnit() {
         isCelsius.toggle()
+    }
+    
+    private func loadRealWeatherData() {
+        Task {
+            await weatherKitService.loadWeatherData()
+            await MainActor.run {
+                if let realWeather = weatherKitService.currentWeather {
+                    self.currentWeather = realWeather
+                }
+                if !weatherKitService.hourlyWeather.isEmpty {
+                    self.hourlyWeather = weatherKitService.hourlyWeather
+                } else {
+                    // Fallback to sample data if real weather fails
+                    self.generateSampleHourlyWeather()
+                }
+            }
+        }
     }
     
     func getTemperatureString(_ temperature: Int) -> String {
@@ -41,9 +62,13 @@ class WeatherManager: ObservableObject {
             return WeatherData.sample
         }
         
-        let hour = Calendar.current.component(.hour, from: date)
+        // Try real weather first, fallback to sample
+        let realWeather = weatherKitService.getWeatherForTime(date)
+        if realWeather != WeatherData.sample {
+            return realWeather
+        }
         
-        // Return weather for the specific hour, or sample if not available
+        let hour = Calendar.current.component(.hour, from: date)
         if hour < hourlyWeather.count {
             return hourlyWeather[hour]
         }
@@ -56,17 +81,31 @@ class WeatherManager: ObservableObject {
             return WeatherData.sample
         }
         
+        // Try real weather first, fallback to sample
+        let realWeather = weatherKitService.getWeatherForScrollPosition(scrollOffset, selectedDate: selectedDate)
+        if realWeather != WeatherData.sample {
+            return realWeather
+        }
+        
         // Calculate which hour we're looking at based on scroll position
-        // Each hour is 120 points high, so we can calculate the hour
         let hourOffset = Int(abs(scrollOffset) / 120)
         let baseHour = Calendar.current.component(.hour, from: selectedDate)
         let targetHour = (baseHour + hourOffset) % 24
         
-        print("Scroll offset: \(scrollOffset), Hour offset: \(hourOffset), Target hour: \(targetHour)")
         return getWeatherForHour(targetHour)
     }
     
     func getWeatherForHour(_ hour: Int) -> WeatherData {
+        guard isWeatherEnabled else {
+            return WeatherData.sample
+        }
+        
+        // Try real weather first, fallback to sample
+        let realWeather = weatherKitService.getWeatherForHour(hour)
+        if realWeather != WeatherData.sample {
+            return realWeather
+        }
+        
         guard hour >= 0 && hour < hourlyWeather.count else {
             return WeatherData.sample
         }
