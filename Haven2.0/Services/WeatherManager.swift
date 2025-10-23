@@ -191,7 +191,7 @@ struct WeatherData {
 }
 
 enum WeatherCondition: CaseIterable {
-    case sunny, cloudy, rainy, stormy
+    case sunny, cloudy, rainy, stormy, overcast, showers
     
     var displayName: String {
         switch self {
@@ -199,6 +199,8 @@ enum WeatherCondition: CaseIterable {
         case .cloudy: return "Cloudy"
         case .rainy: return "Rainy"
         case .stormy: return "Stormy"
+        case .overcast: return "Overcast"
+        case .showers: return "Showers"
         }
     }
     
@@ -208,6 +210,8 @@ enum WeatherCondition: CaseIterable {
         case .cloudy: return .gray
         case .rainy: return .blue
         case .stormy: return .purple
+        case .overcast: return .gray
+        case .showers: return .blue
         }
     }
 }

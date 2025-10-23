@@ -111,31 +111,37 @@ class WeatherKitService: NSObject, ObservableObject {
 extension WeatherKitService: CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
-        Task { @MainActor in
-            currentLocation = location
-            loadWeatherData()
+        Task {
+            await MainActor.run {
+                currentLocation = location
+                loadWeatherData()
+            }
         }
     }
     
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        Task { @MainActor in
-            errorMessage = "Location error: \(error.localizedDescription)"
+        Task {
+            await MainActor.run {
+                errorMessage = "Location error: \(error.localizedDescription)"
+            }
         }
     }
     
     nonisolated func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
-        Task { @MainActor in
-            switch status {
-            case .authorizedWhenInUse, .authorizedAlways:
-                isAuthorized = true
-                locationManager.requestLocation()
-            case .denied, .restricted:
-                isAuthorized = false
-                errorMessage = "Location access denied"
-            case .notDetermined:
-                break
-            @unknown default:
-                break
+        Task {
+            await MainActor.run {
+                switch status {
+                case .authorizedWhenInUse, .authorizedAlways:
+                    isAuthorized = true
+                    locationManager.requestLocation()
+                case .denied, .restricted:
+                    isAuthorized = false
+                    errorMessage = "Location access denied"
+                case .notDetermined:
+                    break
+                @unknown default:
+                    break
+                }
             }
         }
     }
@@ -179,10 +185,14 @@ extension WeatherCondition {
         switch condition {
         case .clear, .mostlyClear:
             self = .sunny
-        case .partlyCloudy, .mostlyCloudy, .cloudy, .overcast:
+        case .partlyCloudy, .mostlyCloudy, .cloudy:
             self = .cloudy
-        case .drizzle, .rain, .showers, .heavyRain:
+        case .overcast:
+            self = .overcast
+        case .drizzle, .rain, .heavyRain:
             self = .rainy
+        case .showers:
+            self = .showers
         case .thunderstorms, .isolatedThunderstorms, .scatteredThunderstorms:
             self = .stormy
         default:
