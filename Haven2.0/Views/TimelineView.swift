@@ -311,16 +311,6 @@ struct TimelineView: View {
         VStack(spacing: 16) {
             // Day Selector with Swipe Navigation
             HStack(spacing: 12) {
-                // Previous week button
-                Button(action: {
-                    selectedDate = Calendar.current.date(byAdding: .weekOfYear, value: -1, to: selectedDate) ?? selectedDate
-                    calendarManager.loadCalendarEvents(for: selectedDate)
-                }) {
-                    Image(systemName: "chevron.left")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.7))
-                }
-                
                 ForEach(weekDays, id: \.self) { day in
                     Button(action: { 
                         selectedDate = day
@@ -352,17 +342,22 @@ struct TimelineView: View {
                         )
                     }
                 }
-                
-                // Next week button
-                Button(action: {
-                    selectedDate = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: selectedDate) ?? selectedDate
-                    calendarManager.loadCalendarEvents(for: selectedDate)
-                }) {
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.7))
-                }
             }
+            .gesture(
+                DragGesture()
+                    .onEnded { value in
+                        let threshold: CGFloat = 50
+                        if value.translation.x > threshold {
+                            // Swipe right - go to previous week
+                            selectedDate = Calendar.current.date(byAdding: .weekOfYear, value: -1, to: selectedDate) ?? selectedDate
+                            calendarManager.loadCalendarEvents(for: selectedDate)
+                        } else if value.translation.x < -threshold {
+                            // Swipe left - go to next week
+                            selectedDate = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: selectedDate) ?? selectedDate
+                            calendarManager.loadCalendarEvents(for: selectedDate)
+                        }
+                    }
+            )
             
             // Weather Info - Shows weather for selected date
             HStack {
