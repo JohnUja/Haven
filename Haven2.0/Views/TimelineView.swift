@@ -688,11 +688,9 @@ struct TimelineHourView: View {
             // Calendar events indicators
             calendarEventsIndicators
                 
-                // Current time indicator
-                currentTimeIndicator
-            }
+            // Current time indicator
+            currentTimeIndicator
         }
-        .frame(width: 80) // Fixed width to prevent changes when time format changes
     }
     
     private var calendarEventsIndicators: some View {
