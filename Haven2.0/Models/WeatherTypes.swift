@@ -11,7 +11,7 @@ import SwiftUI
 // MARK: - Weather Data Models
 struct WeatherData: Equatable {
     let temperature: Int
-    let condition: WeatherCondition
+    let condition: CustomWeatherCondition
     let icon: String
     let description: String
     
@@ -23,7 +23,7 @@ struct WeatherData: Equatable {
     )
 }
 
-enum WeatherCondition: CaseIterable, Equatable {
+enum CustomWeatherCondition: CaseIterable, Equatable {
     case sunny, cloudy, rainy, stormy, overcast, showers
     
     var displayName: String {

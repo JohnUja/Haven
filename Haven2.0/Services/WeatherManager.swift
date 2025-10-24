@@ -133,7 +133,7 @@ class WeatherManager: ObservableObject {
         return temp
     }
     
-    private func generateConditionForHour(_ hour: Int) -> WeatherCondition {
+    private func generateConditionForHour(_ hour: Int) -> CustomWeatherCondition {
         // Simulate weather patterns with more variety
         switch hour {
         case 0...5:

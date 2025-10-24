@@ -548,6 +548,255 @@ struct TimelineHourView: View {
         Text("Test")
     }
 }
+        .padding(.horizontal)
+    }
+    
+    // MARK: - Work Tasks View
+    private var workTasksView: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            workTasksList
+            workTaskBlocksList
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    
+    private var workTasksList: some View {
+        let workTasks = tasks.filter { $0.category == .work && $0.taskBlockID == nil }
+        let overlappingWorkGroups = getOverlappingTasks(workTasks)
+        
+        return ForEach(Array(overlappingWorkGroups.enumerated()), id: \.offset) { index, group in
+            HStack(spacing: 2) {
+                ForEach(group, id: \.id) { task in
+                    UnifiedDraggableTimelineItem(
+                        content: {
+                            TaskTimelineBlock(task: task, side: .left)
+                        },
+                        side: .left,
+                        isLocked: task.isLocked,
+                        startTime: task.startTime,
+                        endTime: task.endTime,
+                        onTimeChanged: { newStart, newEnd in
+                            updateTaskTime(task, newStart, newEnd)
+                        },
+                        onSideChanged: { newSide in
+                            updateTaskSide(task, newSide)
+                        },
+                        onTaskCollision: { newStart, newEnd in
+                            handleTaskCollision(newStart, newEnd)
+                        }
+                    )
+                    .frame(maxWidth: group.count > 1 ? 60 : 120)
+                }
+            }
+        }
+    }
+    
+    private var workTaskBlocksList: some View {
+        ForEach(workTaskBlocks, id: \.id) { taskBlock in
+            let blockTasks = getAllTasksForBlock(taskBlock).filter { $0.category == .work }
+            let firstTask = blockTasks.first
+            let lastTask = blockTasks.last
+            
+            UnifiedDraggableTimelineItem(
+                content: {
+                    TaskBlockTimelineView(
+                        taskBlock: taskBlock,
+                        tasks: blockTasks,
+                        side: .left
+                    )
+                },
+                side: .left,
+                isLocked: taskBlock.isLocked,
+                startTime: firstTask?.startTime ?? Date(),
+                endTime: lastTask?.endTime ?? Date(),
+                onTimeChanged: { newStart, newEnd in
+                    updateTaskBlockTime(taskBlock, newStart, newEnd)
+                },
+                onSideChanged: { newSide in
+                    updateTaskBlockSide(taskBlock, newSide)
+                },
+                onTaskCollision: { newStart, newEnd in
+                    handleTaskCollision(newStart, newEnd)
+                }
+            )
+        }
+    }
+    
+    private var workTaskBlocks: [TaskBlock] {
+        taskBlocks.filter { block in
+            let blockTasks = getTasksForBlock(block, hour)
+            return blockTasks.contains { $0.category == .work }
+        }
+    }
+    
+    // MARK: - Central Timeline View
+    private var centralTimelineView: some View {
+        ZStack(alignment: .top) {
+            // Background timeline line
+            Rectangle()
+                .fill(Color.white.opacity(0.3))
+                .frame(width: 2)
+                .frame(maxHeight: .infinity)
+            
+            // Hour text integrated into timeline
+            VStack(spacing: 0) {
+                ForEach(0..<24, id: \.self) { hour in
+                    let hourDate = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: selectedDate) ?? selectedDate
+                    let hourText = timeSettings.formatHour(hourDate)
+                    
+                    ZStack {
+                        // Hour text positioned on the timeline
+                        Text(hourText)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white)
+                            .background(
+                                Circle()
+                                    .fill(Color.black.opacity(0.3))
+                                    .frame(width: 24, height: 24)
+                            )
+                            .offset(x: -15) // Position to the left of timeline
+                    }
+                    .frame(height: 120) // Full hour height
+                }
+            }
+            
+            // Calendar events indicators
+            calendarEventsIndicators
+                
+            // Current time indicator
+            currentTimeIndicator
+        }
+    }
+    
+    private var calendarEventsIndicators: some View {
+        ForEach(calendarEvents, id: \.eventIdentifier) { event in
+            let startMinute = Calendar.current.component(.minute, from: event.startDate)
+            let duration = event.endDate.timeIntervalSince(event.startDate)
+            let durationMinutes = duration / 60
+            
+            VStack(spacing: 0) {
+                // Event indicator dot
+                Circle()
+                    .fill(Color.blue)
+                    .frame(width: 8, height: 8)
+                    .offset(y: CGFloat(startMinute) * 2) // 2 points per minute
+                
+                // Event duration bar
+                Rectangle()
+                    .fill(Color.blue.opacity(0.3))
+                    .frame(width: 4, height: CGFloat(durationMinutes) * 2)
+                    .offset(y: CGFloat(startMinute) * 2)
+            }
+        }
+    }
+    
+    private var currentTimeIndicator: some View {
+        Group {
+            if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
+                let currentHour = Calendar.current.component(.hour, from: currentTime)
+                let currentMinute = Calendar.current.component(.minute, from: currentTime)
+                let isCurrentHour = hour == currentHour
+                
+                if isCurrentHour {
+                    Text("\(currentHour):\(String(format: "%02d", currentMinute))")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.clear)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .stroke(Color.white, lineWidth: 1)
+                                )
+                        )
+                        .offset(y: 20) 
+                }
+            }
+        }
+    }
+    
+    // MARK: - Personal Tasks View
+    private var personalTasksView: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            personalTasksList
+            personalTaskBlocksList
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+    
+    private var personalTasksList: some View {
+        let personalTasks = tasks.filter { $0.category == .personal && $0.taskBlockID == nil }
+        let overlappingPersonalGroups = getOverlappingTasks(personalTasks)
+        
+        return ForEach(Array(overlappingPersonalGroups.enumerated()), id: \.offset) { index, group in
+            HStack(spacing: 2) {
+                ForEach(group, id: \.id) { task in
+                    UnifiedDraggableTimelineItem(
+                        content: {
+                            TaskTimelineBlock(task: task, side: .right)
+                        },
+                        side: .right,
+                        isLocked: task.isLocked,
+                        startTime: task.startTime,
+                        endTime: task.endTime,
+                        onTimeChanged: { newStart, newEnd in
+                            updateTaskTime(task, newStart, newEnd)
+                        },
+                        onSideChanged: { newSide in
+                            updateTaskSide(task, newSide)
+                        },
+                        onTaskCollision: { newStart, newEnd in
+                            handleTaskCollision(newStart, newEnd)
+                        }
+                    )
+                    .frame(maxWidth: group.count > 1 ? 60 : 120)
+                }
+            }
+        }
+    }
+    
+    private var personalTaskBlocksList: some View {
+        ForEach(personalTaskBlocks, id: \.id) { taskBlock in
+            let blockTasks = getAllTasksForBlock(taskBlock).filter { $0.category == .personal }
+            let firstTask = blockTasks.first
+            let lastTask = blockTasks.last
+            
+            UnifiedDraggableTimelineItem(
+                content: {
+                    TaskBlockTimelineView(
+                        taskBlock: taskBlock,
+                        tasks: blockTasks,
+                        side: .right
+                    )
+                },
+                side: .right,
+                isLocked: taskBlock.isLocked,
+                startTime: firstTask?.startTime ?? Date(),
+                endTime: lastTask?.endTime ?? Date(),
+                onTimeChanged: { newStart, newEnd in
+                    updateTaskBlockTime(taskBlock, newStart, newEnd)
+                },
+                onSideChanged: { newSide in
+                    updateTaskBlockSide(taskBlock, newSide)
+                },
+                onTaskCollision: { newStart, newEnd in
+                    handleTaskCollision(newStart, newEnd)
+                }
+            )
+        }
+    }
+    
+    private var personalTaskBlocks: [TaskBlock] {
+        taskBlocks.filter { block in
+            let blockTasks = getTasksForBlock(block, hour)
+            return blockTasks.contains { $0.category == .personal }
+        }
+    }
+
 struct TaskTimelineBlock: View {
     let task: Task
     let side: TimelineSide

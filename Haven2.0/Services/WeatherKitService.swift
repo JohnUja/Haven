@@ -108,14 +108,14 @@ extension WeatherKitService: CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         Task { @MainActor in
-            currentLocation = location
-            loadWeatherData()
+            self.currentLocation = location
+            self.loadWeatherData()
         }
     }
     
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         Task { @MainActor in
-            errorMessage = "Location error: \(error.localizedDescription)"
+            self.errorMessage = "Location error: \(error.localizedDescription)"
         }
     }
     
@@ -123,11 +123,11 @@ extension WeatherKitService: CLLocationManagerDelegate {
         Task { @MainActor in
             switch status {
             case .authorizedWhenInUse, .authorizedAlways:
-                isAuthorized = true
-                locationManager.requestLocation()
+                self.isAuthorized = true
+                self.locationManager.requestLocation()
             case .denied, .restricted:
-                isAuthorized = false
-                errorMessage = "Location access denied"
+                self.isAuthorized = false
+                self.errorMessage = "Location access denied"
             case .notDetermined:
                 break
             @unknown default:
@@ -142,14 +142,14 @@ extension WeatherKitService: CLLocationManagerDelegate {
 extension WeatherData {
     init(from weather: CurrentWeather) {
         self.temperature = Int(weather.temperature.value)
-        self.condition = WeatherCondition(from: weather.condition)
+        self.condition = CustomWeatherCondition(from: weather.condition)
         self.icon = WeatherData.iconForCondition(weather.condition)
         self.description = weather.condition.description
     }
     
     init(from weather: HourWeather) {
         self.temperature = Int(weather.temperature.value)
-        self.condition = WeatherCondition(from: weather.condition)
+        self.condition = CustomWeatherCondition(from: weather.condition)
         self.icon = WeatherData.iconForCondition(weather.condition)
         self.description = weather.condition.description
     }
@@ -170,19 +170,15 @@ extension WeatherData {
     }
 }
 
-extension WeatherCondition {
+extension CustomWeatherCondition {
     init(from condition: WeatherKit.WeatherCondition) {
         switch condition {
         case .clear, .mostlyClear:
             self = .sunny
         case .partlyCloudy, .mostlyCloudy, .cloudy:
             self = .cloudy
-        case .overcast:
-            self = .overcast
         case .drizzle, .rain, .heavyRain:
             self = .rainy
-        case .showers:
-            self = .showers
         case .thunderstorms, .isolatedThunderstorms, .scatteredThunderstorms:
             self = .stormy
         default:

@@ -8,6 +8,8 @@
 import Foundation
 
 // MARK: - Timeline Types
-enum TimelineSide {
+enum TimelineSide: String, Codable, CaseIterable, Identifiable {
     case left, right
+    
+    var id: String { self.rawValue }
 }
