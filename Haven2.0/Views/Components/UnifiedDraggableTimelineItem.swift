@@ -10,15 +10,15 @@ import AudioToolbox
 
 struct UnifiedDraggableTimelineItem<Content: View>: View {
     let content: Content
-    let side: TaskTimelineBlock.TimelineSide
+    let side: TimelineSide
     let isLocked: Bool
     let startTime: Date
     let endTime: Date
     let onTimeChanged: (Date, Date) -> Void
-    let onSideChanged: (TaskTimelineBlock.TimelineSide) -> Void
+    let onSideChanged: (TimelineSide) -> Void
     let onTaskCollision: ((Date, Date) -> Void)? // New parameter for collision detection
     
-    init(content: Content, side: TaskTimelineBlock.TimelineSide, isLocked: Bool, startTime: Date, endTime: Date, onTimeChanged: @escaping (Date, Date) -> Void, onSideChanged: @escaping (TaskTimelineBlock.TimelineSide) -> Void, onTaskCollision: ((Date, Date) -> Void)? = nil) {
+    init(content: Content, side: TimelineSide, isLocked: Bool, startTime: Date, endTime: Date, onTimeChanged: @escaping (Date, Date) -> Void, onSideChanged: @escaping (TimelineSide) -> Void, onTaskCollision: ((Date, Date) -> Void)? = nil) {
         self.content = content
         self.side = side
         self.isLocked = isLocked
@@ -33,7 +33,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
     @State private var isDragging: Bool = false
     @State private var currentHoverTime: Date? = nil
     @State private var showingSideChangeConfirmation = false
-    @State private var pendingSideChange: TaskTimelineBlock.TimelineSide? = nil
+    @State private var pendingSideChange: TimelineSide? = nil
     @State private var showGuidelines = false
     @State private var showingLockedAlert = false
     
@@ -41,12 +41,12 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
     
     init(
         @ViewBuilder content: () -> Content,
-        side: TaskTimelineBlock.TimelineSide,
+        side: TimelineSide,
         isLocked: Bool,
         startTime: Date,
         endTime: Date,
         onTimeChanged: @escaping (Date, Date) -> Void,
-        onSideChanged: @escaping (TaskTimelineBlock.TimelineSide) -> Void,
+        onSideChanged: @escaping (TimelineSide) -> Void,
         onTaskCollision: ((Date, Date) -> Void)? = nil
     ) {
         self.content = content()
@@ -260,7 +260,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
         return Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: date)
     }
     
-    private func determineSideFromPosition(_ translation: CGSize) -> TaskTimelineBlock.TimelineSide? {
+    private func determineSideFromPosition(_ translation: CGSize) -> TimelineSide? {
         // Only trigger side change when crossing the middle section (half screen width)
         // Use a threshold to prevent accidental side changes
         let screenWidth = UIScreen.main.bounds.width

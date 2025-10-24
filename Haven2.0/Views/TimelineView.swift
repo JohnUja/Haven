@@ -66,7 +66,7 @@ struct TimelineView: View {
         }
     }
     
-    private func updateTaskSide(_ task: Task, _ newSide: TaskTimelineBlock.TimelineSide) {
+    private func updateTaskSide(_ task: Task, _ newSide: TimelineSide) {
         // Update task category based on side
         task.category = newSide == .left ? .work : .personal
         
@@ -98,7 +98,7 @@ struct TimelineView: View {
         }
     }
     
-    private func updateTaskBlockSide(_ taskBlock: TaskBlock, _ newSide: TaskTimelineBlock.TimelineSide) {
+    private func updateTaskBlockSide(_ taskBlock: TaskBlock, _ newSide: TimelineSide) {
         // Update all tasks in the block category based on side
         let tasksInBlock = tasks.filter { $0.taskBlockID == taskBlock.id }
         let newCategory = newSide == .left ? TaskCategory.work : TaskCategory.personal
@@ -556,9 +556,9 @@ struct TimelineHourView: View {
     let getAllTasksForBlock: (TaskBlock) -> [Task]
     let getOverlappingTasks: ([Task]) -> [[Task]]
     let updateTaskTime: (Task, Date, Date) -> Void
-    let updateTaskSide: (Task, TaskTimelineBlock.TimelineSide) -> Void
+    let updateTaskSide: (Task, TimelineSide) -> Void
     let updateTaskBlockTime: (TaskBlock, Date, Date) -> Void
-    let updateTaskBlockSide: (TaskBlock, TaskTimelineBlock.TimelineSide) -> Void
+    let updateTaskBlockSide: (TaskBlock, TimelineSide) -> Void
     let handleTaskCollision: (Date, Date) -> Void
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     
@@ -826,9 +826,6 @@ struct TaskTimelineBlock: View {
     let side: TimelineSide
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     
-    enum TimelineSide {
-        case left, right
-    }
     
     private var taskHeight: CGFloat {
         let duration = task.endTime.timeIntervalSince(task.startTime)
@@ -927,7 +924,7 @@ struct TaskTimelineBlock: View {
 struct TaskBlockTimelineView: View {
     let taskBlock: TaskBlock
     let tasks: [Task]
-    let side: TaskTimelineBlock.TimelineSide
+    let side: TimelineSide
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     
     private var blockHeight: CGFloat {
