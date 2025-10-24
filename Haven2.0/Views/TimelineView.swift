@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import EventKit
+import TimelineTypes
 // import WeatherKit
 // import CoreLocation
 
