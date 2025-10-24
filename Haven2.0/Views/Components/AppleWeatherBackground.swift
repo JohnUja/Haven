@@ -24,11 +24,15 @@ struct AppleWeatherBackground: View {
             return createRainyGradient()
         case .stormy:
             return createStormyGradient()
+        case .overcast:
+            return createCloudyGradient()
+        case .showers:
+            return createRainyGradient()
         }
     }
     
     private var timeBasedColors: [Color] {
-        let hour = Calendar.current.component(.hour, from: selectedDate)
+        let _ = Calendar.current.component(.hour, from: selectedDate)
         let scrollHour = getScrollHour()
         
         switch scrollHour {
@@ -74,6 +78,10 @@ struct AppleWeatherBackground: View {
             RainyOverlay()
         case .stormy:
             StormyOverlay()
+        case .overcast:
+            CloudyOverlay()
+        case .showers:
+            RainyOverlay()
         }
     }
     
@@ -124,7 +132,8 @@ struct AppleWeatherBackground: View {
             let color2 = i < colors2.count ? colors2[i] : colors2.last ?? .clear
             
             // Simple blending - in a real implementation, you'd use proper color blending
-            blended.append(color1.opacity(0.7).overlay(color2.opacity(0.3)))
+            let blendedColor = color1.opacity(0.7)
+            blended.append(blendedColor)
         }
         
         return blended

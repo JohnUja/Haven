@@ -52,16 +52,7 @@ class WeatherKitService: NSObject, ObservableObject {
         }
         
         #if canImport(WeatherKit)
-        Task { @MainActor in
-            do {
-                let weather = try await weatherService.weather(for: location)
-                self.currentWeather = WeatherData(from: weather.currentWeather)
-                self.hourlyWeather = weather.hourlyForecast.prefix(24).map { WeatherData(from: $0) }
-                self.errorMessage = nil
-            } catch {
-                self.errorMessage = "Failed to load weather data: \(error.localizedDescription)"
-            }
-        }
+        loadWeatherDataAsync(for: location)
         #else
         // Fallback for simulator or when WeatherKit is not available
         await MainActor.run {
@@ -101,37 +92,62 @@ class WeatherKitService: NSObject, ObservableObject {
         let targetHour = (baseHour + hourOffset) % 24
         return getWeatherForHour(targetHour)
     }
+    
+    private func loadWeatherDataAsync(for location: CLLocation) {
+        // Use a simple approach to avoid namespace conflicts
+        _Concurrency.Task {
+            do {
+                let weather = try await weatherService.weather(for: location)
+                await MainActor.run {
+                    self.currentWeather = WeatherData(from: weather.currentWeather)
+                    self.hourlyWeather = weather.hourlyForecast.prefix(24).map { WeatherData(from: $0) }
+                    self.errorMessage = nil
+                }
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = "Failed to load weather data: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
 }
 
 // MARK: - CLLocationManagerDelegate
 extension WeatherKitService: CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
-        Task { @MainActor in
-            self.currentLocation = location
-            self.loadWeatherData()
+        _Concurrency.Task {
+            await MainActor.run {
+                self.currentLocation = location
+                self.loadWeatherData()
+            }
         }
     }
     
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        Task { @MainActor in
-            self.errorMessage = "Location error: \(error.localizedDescription)"
+        _Concurrency.Task {
+            await MainActor.run {
+                self.errorMessage = "Location error: \(error.localizedDescription)"
+            }
         }
     }
     
     nonisolated func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
-        Task { @MainActor in
-            switch status {
-            case .authorizedWhenInUse, .authorizedAlways:
-                self.isAuthorized = true
-                self.locationManager.requestLocation()
-            case .denied, .restricted:
-                self.isAuthorized = false
-                self.errorMessage = "Location access denied"
-            case .notDetermined:
-                break
-            @unknown default:
-                break
+        _Concurrency.Task {
+            await MainActor.run {
+                switch status {
+                case .authorizedWhenInUse, .authorizedAlways:
+                    self.isAuthorized = true
+                    self.locationManager.requestLocation()
+                case .denied, .restricted:
+                    self.isAuthorized = false
+                    self.errorMessage = "Location access denied"
+                case .notDetermined:
+                    break
+                @unknown default:
+                    break
+                }
             }
         }
     }

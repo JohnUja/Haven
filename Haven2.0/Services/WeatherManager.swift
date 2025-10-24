@@ -32,7 +32,7 @@ class WeatherManager: ObservableObject {
     }
     
     private func loadRealWeatherData() {
-        Task {
+        _Concurrency.Task {
             await weatherKitService.loadWeatherData()
             await MainActor.run {
                 if let realWeather = weatherKitService.currentWeather {
@@ -166,6 +166,10 @@ class WeatherManager: ObservableObject {
             return "cloud.rain.fill"
         case .stormy:
             return "cloud.bolt.fill"
+        case .overcast:
+            return "cloud.fill"
+        case .showers:
+            return "cloud.rain.fill"
         }
     }
     

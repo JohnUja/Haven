@@ -247,24 +247,7 @@ struct TimelineView: View {
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(hourRange, id: \.self) { hour in
-                                TimelineHourView(
-                                    hour: hour,
-                                    tasks: tasksForHour(hour),
-                                    taskBlocks: taskBlocksForHour(hour),
-                                    calendarEvents: calendarEventsForHour(hour),
-                                    selectedDate: selectedDate,
-                                    currentTime: currentTime,
-                                    scrollBasedTime: scrollBasedTime,
-                                    scrollOffset: scrollOffset,
-                                    getTasksForBlock: getTasksForBlock,
-                                    getAllTasksForBlock: getAllTasksForBlock,
-                                    getOverlappingTasks: getOverlappingTasks,
-                                    updateTaskTime: updateTaskTime,
-                                    updateTaskSide: updateTaskSide,
-                                    updateTaskBlockTime: updateTaskBlockTime,
-                                    updateTaskBlockSide: updateTaskBlockSide,
-                                    handleTaskCollision: handleTaskCollision
-                                )
+                                TimelineHourView()
                                 .frame(height: 120)
                             }
                         }
