@@ -330,11 +330,11 @@ struct TimelineView: View {
                 DragGesture()
                     .onEnded { value in
                         let threshold: CGFloat = 50
-                        if value.translation.x > threshold {
+                        if value.translation.width > threshold {
                             // Swipe right - go to previous week
                             selectedDate = Calendar.current.date(byAdding: .weekOfYear, value: -1, to: selectedDate) ?? selectedDate
                             calendarManager.loadCalendarEvents(for: selectedDate)
-                        } else if value.translation.x < -threshold {
+                        } else if value.translation.width < -threshold {
                             // Swipe left - go to next week
                             selectedDate = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: selectedDate) ?? selectedDate
                             calendarManager.loadCalendarEvents(for: selectedDate)
