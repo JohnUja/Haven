@@ -52,18 +52,14 @@ class WeatherKitService: NSObject, ObservableObject {
         }
         
         #if canImport(WeatherKit)
-        Task {
+        Task { @MainActor in
             do {
                 let weather = try await weatherService.weather(for: location)
-                await MainActor.run {
-                    self.currentWeather = WeatherData(from: weather.currentWeather)
-                    self.hourlyWeather = weather.hourlyForecast.prefix(24).map { WeatherData(from: $0) }
-                    self.errorMessage = nil
-                }
+                self.currentWeather = WeatherData(from: weather.currentWeather)
+                self.hourlyWeather = weather.hourlyForecast.prefix(24).map { WeatherData(from: $0) }
+                self.errorMessage = nil
             } catch {
-                await MainActor.run {
-                    self.errorMessage = "Failed to load weather data: \(error.localizedDescription)"
-                }
+                self.errorMessage = "Failed to load weather data: \(error.localizedDescription)"
             }
         }
         #else
@@ -111,37 +107,31 @@ class WeatherKitService: NSObject, ObservableObject {
 extension WeatherKitService: CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
-        Task {
-            await MainActor.run {
-                currentLocation = location
-                loadWeatherData()
-            }
+        Task { @MainActor in
+            currentLocation = location
+            loadWeatherData()
         }
     }
     
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        Task {
-            await MainActor.run {
-                errorMessage = "Location error: \(error.localizedDescription)"
-            }
+        Task { @MainActor in
+            errorMessage = "Location error: \(error.localizedDescription)"
         }
     }
     
     nonisolated func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
-        Task {
-            await MainActor.run {
-                switch status {
-                case .authorizedWhenInUse, .authorizedAlways:
-                    isAuthorized = true
-                    locationManager.requestLocation()
-                case .denied, .restricted:
-                    isAuthorized = false
-                    errorMessage = "Location access denied"
-                case .notDetermined:
-                    break
-                @unknown default:
-                    break
-                }
+        Task { @MainActor in
+            switch status {
+            case .authorizedWhenInUse, .authorizedAlways:
+                isAuthorized = true
+                locationManager.requestLocation()
+            case .denied, .restricted:
+                isAuthorized = false
+                errorMessage = "Location access denied"
+            case .notDetermined:
+                break
+            @unknown default:
+                break
             }
         }
     }
@@ -168,9 +158,9 @@ extension WeatherData {
         switch condition {
         case .clear, .mostlyClear:
             return "sun.max.fill"
-        case .partlyCloudy, .mostlyCloudy, .cloudy, .overcast:
+        case .partlyCloudy, .mostlyCloudy, .cloudy:
             return "cloud.fill"
-        case .drizzle, .rain, .showers, .heavyRain:
+        case .drizzle, .rain, .heavyRain:
             return "cloud.rain.fill"
         case .thunderstorms, .isolatedThunderstorms, .scatteredThunderstorms:
             return "cloud.bolt.fill"
