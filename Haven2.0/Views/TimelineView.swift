@@ -8,23 +8,20 @@
 import SwiftUI
 import SwiftData
 import EventKit
-// import WeatherKit
-// import CoreLocation
+import AudioToolbox
 
 struct TimelineView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     @EnvironmentObject private var calendarManager: CalendarManager
-    @Query private var users: [User]
     @Query private var tasks: [Task]
     @Query private var taskBlocks: [TaskBlock]
     @State private var selectedDate = Date()
     @State private var scrollOffset: CGFloat = 0
-    @StateObject private var weatherManager = WeatherManager()
     @State private var timer: Timer?
     
-    @State private var showingCollisionAlert = false
-    @State private var collisionData: (newStart: Date, newEnd: Date, overlappingTasks: [Task])?
+    // Drag and drop state
+    @State private var draggedTask: Task? = nil
     
     private var selectedDateTasks: [Task] {
         let calendar = Calendar.current
@@ -66,7 +63,7 @@ struct TimelineView: View {
         }
     }
     
-    private func updateTaskSide(_ task: Task, _ newSide: TimelineSide) {
+    private func updateTaskSide(_ task: Task, _ newSide: TaskTimelineBlock.TimelineSide) {
         // Update task category based on side
         task.category = newSide == .left ? .work : .personal
         
@@ -98,7 +95,7 @@ struct TimelineView: View {
         }
     }
     
-    private func updateTaskBlockSide(_ taskBlock: TaskBlock, _ newSide: TimelineSide) {
+    private func updateTaskBlockSide(_ taskBlock: TaskBlock, _ newSide: TaskTimelineBlock.TimelineSide) {
         // Update all tasks in the block category based on side
         let tasksInBlock = tasks.filter { $0.taskBlockID == taskBlock.id }
         let newCategory = newSide == .left ? TaskCategory.work : TaskCategory.personal
@@ -120,55 +117,15 @@ struct TimelineView: View {
             let taskStart = task.startTime
             let taskEnd = task.endTime
             
-            // Check for overlap, but exclude tasks that are being moved (same time range)
-            let isSameTask = (taskStart == newStartTime && taskEnd == newEndTime)
-            if isSameTask { return false }
-            
+            // Check for overlap
             return (newStartTime < taskEnd && newEndTime > taskStart)
         }
         
         if !overlappingTasks.isEmpty {
-            // Store collision data and show alert
-            collisionData = (newStartTime, newEndTime, overlappingTasks)
-            showingCollisionAlert = true
+            // Show collision options
+            print("Task collision detected with \(overlappingTasks.count) tasks")
+            // TODO: Show alert with options to replace or create task block
         }
-    }
-    
-    private func replaceTaskWithNewTime() {
-        guard let data = collisionData else { return }
-        
-        // Delete overlapping tasks
-        for task in data.overlappingTasks {
-            modelContext.delete(task)
-        }
-        
-        // The new task will be created by the drag operation
-        try? modelContext.save()
-        collisionData = nil
-    }
-    
-    private func createTaskBlockWithCollision() {
-        guard let data = collisionData else { return }
-        
-        // Get current user ID
-        let currentUser = users.first
-        guard let userID = currentUser?.id else { return }
-        
-        // Create a new task block
-        let taskBlock = TaskBlock(
-            userID: userID,
-            title: "New Task Block",
-            blockDescription: "Created from task collision"
-        )
-        
-        // Move overlapping tasks into the block
-        for task in data.overlappingTasks {
-            task.taskBlockID = taskBlock.id
-        }
-        
-        modelContext.insert(taskBlock)
-        try? modelContext.save()
-        collisionData = nil
     }
     
     private var scrollBasedTime: String {
@@ -230,11 +187,11 @@ struct TimelineView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Apple-style Weather Background
-                AppleWeatherBackground(
-                    weatherData: weatherManager.getWeatherForScrollPosition(scrollOffset, selectedDate: selectedDate),
-                    scrollOffset: scrollOffset,
-                    selectedDate: selectedDate
+                // Background gradient
+                LinearGradient(
+                    colors: [.purple.opacity(0.8), .blue.opacity(0.6), .pink.opacity(0.4)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
                 )
                 .ignoresSafeArea()
                 
@@ -283,86 +240,69 @@ struct TimelineView: View {
                 }
             }
             .navigationBarHidden(true)
-            .alert("Task Collision Detected", isPresented: $showingCollisionAlert) {
-                Button("Replace Existing Tasks") {
-                    replaceTaskWithNewTime()
-                }
-                Button("Create Task Block") {
-                    createTaskBlockWithCollision()
-                }
-                Button("Cancel", role: .cancel) {
-                    collisionData = nil
-                }
-            } message: {
-                if let data = collisionData {
-                    Text("This time slot conflicts with \(data.overlappingTasks.count) existing task(s). Choose an action:")
-                }
-            }
             .onAppear {
                 startTimer()
             }
-            .onDisappear {
-                stopTimer()
-            }
+                .onDisappear {
+                    stopTimer()
+                }
         }
     }
     
     private var headerView: some View {
         VStack(spacing: 16) {
-            // Day Selector with Swipe Navigation
-            HStack(spacing: 12) {
-                ForEach(weekDays, id: \.self) { day in
-                    Button(action: { 
-                        selectedDate = day
-                        calendarManager.loadCalendarEvents(for: day)
-                    }) {
-                        VStack(spacing: 2) {
-                            Text(dayOfWeek(for: day))
-                                .font(.caption2)
-                                .fontWeight(.medium)
-                                .foregroundColor(Calendar.current.isDate(day, inSameDayAs: selectedDate) ? .white : .white.opacity(0.7))
-                            
-                            Text("\(Calendar.current.component(.day, from: day))")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(Calendar.current.isDate(day, inSameDayAs: selectedDate) ? .white : .white.opacity(0.7))
-                            
-                            // Calendar event indicator
-                            if calendarManager.hasEventsOnDate(day) {
-                                Circle()
-                                    .fill(Color.blue)
-                                    .frame(width: 4, height: 4)
-                            }
-                        }
-                        .frame(width: 40, height: 50)
-                        .background(
-                            Circle()
-                                .fill(Calendar.current.isDate(day, inSameDayAs: selectedDate) ? 
-                                      Color.white.opacity(0.3) : Color.clear)
-                        )
-                    }
+            // Infinite Day Selector with Fixed Center Controller
+            InfiniteDaySelector(
+                selectedDate: $selectedDate,
+                onDateChanged: { newDate in
+                    calendarManager.loadCalendarEvents(for: newDate)
+                },
+                hasEvents: { date in
+                    calendarManager.hasEventsOnDate(date)
                 }
-            }
-            .gesture(
-                DragGesture()
-                    .onEnded { value in
-                        let threshold: CGFloat = 50
-                        if value.translation.width > threshold {
-                            // Swipe right - go to previous week
-                            selectedDate = Calendar.current.date(byAdding: .weekOfYear, value: -1, to: selectedDate) ?? selectedDate
-                            calendarManager.loadCalendarEvents(for: selectedDate)
-                        } else if value.translation.width < -threshold {
-                            // Swipe left - go to next week
-                            selectedDate = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: selectedDate) ?? selectedDate
-                            calendarManager.loadCalendarEvents(for: selectedDate)
-                        }
-                    }
             )
             
             // Weather Info - Shows weather for selected date
-            HStack {
-                // Work label on the left
-                Text("Work")
+            ZStack {
+                // Background HStack for edge buttons
+                HStack {
+                    // Work label on left edge
+                    Text("Work")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.blue.opacity(0.3))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.blue, lineWidth: 1)
+                                )
+                        )
+                    
+                    Spacer()
+                    
+                    // Personal label on right edge
+                    Text("Personal")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.green.opacity(0.3))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.green, lineWidth: 1)
+                                )
+                        )
+                }
+                
+                // Time box - truly centered in middle
+                Text(headerTimeDisplay)
                     .font(.caption)
                     .fontWeight(.bold)
                     .foregroundColor(.white)
@@ -370,66 +310,14 @@ struct TimelineView: View {
                     .padding(.vertical, 6)
                     .background(
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.blue.opacity(0.3))
+                            .fill(Color.clear)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.blue, lineWidth: 1)
-                            )
-                    )
-                
-                Spacer()
-                
-                let selectedDateWeather = weatherManager.getWeatherForTime(selectedDate)
-                
-                Image(systemName: selectedDateWeather.icon)
-                    .font(.title2)
-                    .foregroundColor(.white)
-                
-                Text(weatherManager.getTemperatureString(selectedDateWeather.temperature))
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                
-                Text(selectedDateWeather.description)
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.8))
-                
-                Spacer()
-                
-                // Personal label on the right
-                Text("Personal")
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.green.opacity(0.3))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.green, lineWidth: 1)
+                                    .stroke(Color.white.opacity(0.3), lineWidth: 1)
                             )
                     )
             }
             .padding(.horizontal)
-            
-            // Weather controls row - removed, now in settings
-            
-                // Dynamic time based on scroll position (smaller) - Clickable to toggle format
-                Text(headerTimeDisplay)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(Color.white.opacity(0.2))
-                    )
-                    .onTapGesture {
-                        timeSettings.use24HourFormat.toggle()
-                    }
         }
         .padding()
         .background(
@@ -461,11 +349,7 @@ struct TimelineView: View {
     
     private func tasksForHour(_ hour: Int) -> [Task] {
         selectedDateTasks.filter { task in
-            let taskStartHour = Calendar.current.component(.hour, from: task.startTime)
-            let taskEndHour = Calendar.current.component(.hour, from: task.endTime)
-            
-            // Show task if it starts in this hour, ends in this hour, or spans across this hour
-            return taskStartHour == hour || taskEndHour == hour || (taskStartHour < hour && taskEndHour > hour)
+            Calendar.current.component(.hour, from: task.startTime) == hour
         }
     }
     
@@ -477,10 +361,11 @@ struct TimelineView: View {
     
     private func taskBlocksForHour(_ hour: Int) -> [TaskBlock] {
         taskBlocks.filter { taskBlock in
-            // Only show task block in the hour where its first task starts
+            // Check if any task in this block falls within this hour
             let blockTasks = selectedDateTasks.filter { $0.taskBlockID == taskBlock.id }
-            guard let firstTask = blockTasks.min(by: { $0.startTime < $1.startTime }) else { return false }
-            return Calendar.current.component(.hour, from: firstTask.startTime) == hour
+            return blockTasks.contains { task in
+                Calendar.current.component(.hour, from: task.startTime) == hour
+            }
         }
     }
     
@@ -556,29 +441,23 @@ struct TimelineHourView: View {
     let getAllTasksForBlock: (TaskBlock) -> [Task]
     let getOverlappingTasks: ([Task]) -> [[Task]]
     let updateTaskTime: (Task, Date, Date) -> Void
-    let updateTaskSide: (Task, TimelineSide) -> Void
+    let updateTaskSide: (Task, TaskTimelineBlock.TimelineSide) -> Void
     let updateTaskBlockTime: (TaskBlock, Date, Date) -> Void
-    let updateTaskBlockSide: (TaskBlock, TimelineSide) -> Void
+    let updateTaskBlockSide: (TaskBlock, TaskTimelineBlock.TimelineSide) -> Void
     let handleTaskCollision: (Date, Date) -> Void
-    
     @EnvironmentObject private var timeSettings: TimeSettingsManager
-    @EnvironmentObject private var calendarManager: CalendarManager
+    
+    private var hourText: String {
+        return timeSettings.formatHour(hour)
+    }
     
     var body: some View {
         HStack(spacing: 0) {
-            // Work Tasks (Left Side)
             workTasksView
-                .frame(width: 80)
-            
-            // Central Timeline
             centralTimelineView
-                .frame(width: 80)
-            
-            // Personal Tasks (Right Side)
             personalTasksView
-                .frame(width: 80)
         }
-        .frame(height: 120)
+        .padding(.horizontal)
     }
     
     // MARK: - Work Tasks View
@@ -622,7 +501,7 @@ struct TimelineHourView: View {
     }
     
     private var workTaskBlocksList: some View {
-        ForEach(taskBlocks, id: \.id) { taskBlock in
+        ForEach(workTaskBlocks, id: \.id) { taskBlock in
             let blockTasks = getAllTasksForBlock(taskBlock).filter { $0.category == .work }
             let firstTask = blockTasks.first
             let lastTask = blockTasks.last
@@ -652,43 +531,37 @@ struct TimelineHourView: View {
         }
     }
     
+    private var workTaskBlocks: [TaskBlock] {
+        taskBlocks.filter { block in
+            let blockTasks = getTasksForBlock(block, hour)
+            return blockTasks.contains { $0.category == .work }
+        }
+    }
+    
     // MARK: - Central Timeline View
     private var centralTimelineView: some View {
-        ZStack(alignment: .top) {
-            // Background timeline line
-            Rectangle()
-                .fill(Color.white.opacity(0.3))
-                .frame(width: 2)
-                .frame(maxHeight: .infinity)
+        VStack {
+            Text(hourText)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.white)
+                .padding(.vertical, 4)
             
-            // Hour text integrated into timeline
-            VStack(spacing: 0) {
-                ForEach(0..<24, id: \.self) { hour in
-                    let hourText = timeSettings.formatHour(hour)
-                    
-                    ZStack {
-                        // Hour text positioned on the timeline
-                        Text(hourText)
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(.white)
-                            .background(
-                                Circle()
-                                    .fill(Color.black.opacity(0.3))
-                                    .frame(width: 24, height: 24)
-                            )
-                            .offset(x: -15) // Position to the left of timeline
-                    }
-                    .frame(height: 120) // Full hour height
-                }
-            }
-            
-            // Calendar events indicators
-            calendarEventsIndicators
+            ZStack(alignment: .top) {
+                // Background timeline
+                Rectangle()
+                    .fill(Color.white.opacity(0.3))
+                    .frame(width: 2)
+                    .frame(maxHeight: .infinity)
                 
-            // Current time indicator
-            currentTimeIndicator
+                // Calendar events indicators
+                calendarEventsIndicators
+                
+                // Current time indicator
+                currentTimeIndicator
+            }
         }
+        .frame(width: 60)
     }
     
     private var calendarEventsIndicators: some View {
@@ -735,7 +608,7 @@ struct TimelineHourView: View {
                                         .stroke(Color.white, lineWidth: 1)
                                 )
                         )
-                        .offset(y: 20) 
+                        .offset(y: 20)
                 }
             }
         }
@@ -782,7 +655,7 @@ struct TimelineHourView: View {
     }
     
     private var personalTaskBlocksList: some View {
-        ForEach(taskBlocks, id: \.id) { taskBlock in
+        ForEach(personalTaskBlocks, id: \.id) { taskBlock in
             let blockTasks = getAllTasksForBlock(taskBlock).filter { $0.category == .personal }
             let firstTask = blockTasks.first
             let lastTask = blockTasks.last
@@ -811,41 +684,38 @@ struct TimelineHourView: View {
             )
         }
     }
+    
+    private var personalTaskBlocks: [TaskBlock] {
+        taskBlocks.filter { block in
+            let blockTasks = getTasksForBlock(block, hour)
+            return blockTasks.contains { $0.category == .personal }
+        }
+    }
 }
+
 struct TaskTimelineBlock: View {
     let task: Task
     let side: TimelineSide
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     
+    enum TimelineSide {
+        case left, right
+    }
     
     private var taskHeight: CGFloat {
         let duration = task.endTime.timeIntervalSince(task.startTime)
         let minutes = duration / 60
-        // Full hour space: 120 points per hour, so each minute is 2 points
-        // Allow tasks to span multiple hours - no maximum height cap
-        return max(20, CGFloat(minutes) * 2.0)
-    }
-    
-    private var taskOffset: CGFloat {
-        // Calculate offset within the hour for tasks that start in this hour
-        let taskStartHour = Calendar.current.component(.hour, from: task.startTime)
-        let taskStartMinute = Calendar.current.component(.minute, from: task.startTime)
-        
-        // If task starts in this hour, offset by minutes within the hour
-        if taskStartHour == Calendar.current.component(.hour, from: Date()) {
-            return CGFloat(taskStartMinute) * 2.0 // 2 points per minute
-        }
-        
-        // If task spans across this hour, start at the top
-        return 0
+        // Each hour is 120 points, so each minute is 2 points
+        // Minimum height of 16 points (8 minutes), maximum of 120 points (1 hour)
+        return max(16, min(120, CGFloat(minutes) * 2))
     }
     
     private var taskColor: Color {
         switch task.priority {
-        case .urgent: return .red
-        case .high: return .orange
-        case .normal: return .green
-        case .low: return .blue
+        case .urgent: return .red.opacity(0.3)
+        case .high: return .orange.opacity(0.3)
+        case .normal: return .green.opacity(0.3)
+        case .low: return .blue.opacity(0.3)
         }
     }
     
@@ -890,7 +760,6 @@ struct TaskTimelineBlock: View {
                 )
         )
         .frame(maxWidth: 120, minHeight: taskHeight)
-        .offset(y: taskOffset) // Apply the calculated offset
         .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
         .overlay(
             // Lock icon for locked tasks
@@ -915,7 +784,7 @@ struct TaskTimelineBlock: View {
 struct TaskBlockTimelineView: View {
     let taskBlock: TaskBlock
     let tasks: [Task]
-    let side: TimelineSide
+    let side: TaskTimelineBlock.TimelineSide
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     
     private var blockHeight: CGFloat {
@@ -1013,6 +882,7 @@ struct TaskBlockTimelineView: View {
         )
     }
 }
+
 
 struct ScrollOffsetPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = 0

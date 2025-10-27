@@ -10,15 +10,15 @@ import AudioToolbox
 
 struct UnifiedDraggableTimelineItem<Content: View>: View {
     let content: Content
-    let side: TimelineSide
+    let side: TaskTimelineBlock.TimelineSide
     let isLocked: Bool
     let startTime: Date
     let endTime: Date
     let onTimeChanged: (Date, Date) -> Void
-    let onSideChanged: (TimelineSide) -> Void
+    let onSideChanged: (TaskTimelineBlock.TimelineSide) -> Void
     let onTaskCollision: ((Date, Date) -> Void)? // New parameter for collision detection
     
-    init(content: Content, side: TimelineSide, isLocked: Bool, startTime: Date, endTime: Date, onTimeChanged: @escaping (Date, Date) -> Void, onSideChanged: @escaping (TimelineSide) -> Void, onTaskCollision: ((Date, Date) -> Void)? = nil) {
+    init(content: Content, side: TaskTimelineBlock.TimelineSide, isLocked: Bool, startTime: Date, endTime: Date, onTimeChanged: @escaping (Date, Date) -> Void, onSideChanged: @escaping (TaskTimelineBlock.TimelineSide) -> Void, onTaskCollision: ((Date, Date) -> Void)? = nil) {
         self.content = content
         self.side = side
         self.isLocked = isLocked
@@ -33,20 +33,20 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
     @State private var isDragging: Bool = false
     @State private var currentHoverTime: Date? = nil
     @State private var showingSideChangeConfirmation = false
-    @State private var pendingSideChange: TimelineSide? = nil
+    @State private var pendingSideChange: TaskTimelineBlock.TimelineSide? = nil
     @State private var showGuidelines = false
     @State private var showingLockedAlert = false
     
-    private let minuteHeight: CGFloat = 2.0 // Full hour space: 120 points per hour / 60 minutes = 2 points per minute (including hour text)
+    private let minuteHeight: CGFloat = 2.0 // 120 points per hour / 60 minutes = 2 points per minute
     
     init(
         @ViewBuilder content: () -> Content,
-        side: TimelineSide,
+        side: TaskTimelineBlock.TimelineSide,
         isLocked: Bool,
         startTime: Date,
         endTime: Date,
         onTimeChanged: @escaping (Date, Date) -> Void,
-        onSideChanged: @escaping (TimelineSide) -> Void,
+        onSideChanged: @escaping (TaskTimelineBlock.TimelineSide) -> Void,
         onTaskCollision: ((Date, Date) -> Void)? = nil
     ) {
         self.content = content()
@@ -64,7 +64,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
             .offset(dragOffset)
             .scaleEffect(isDragging ? 1.05 : 1.0)
             .shadow(color: isDragging ? .black.opacity(0.3) : .clear, radius: 8, x: 0, y: 4)
-            .gesture(isLocked ? nil : dragGesture)
+            .gesture(dragGesture)
             .zIndex(isDragging ? 1000 : 0)
             .overlay(dragOverlay)
             .overlay(guidelinesOverlay)
@@ -110,7 +110,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                     if isLocked {
                         showingLockedAlert = true
                         AudioServicesPlaySystemSound(1521) // Error haptic
-                        return 
+                        return
                     }
                     
                     if let drag = drag {
@@ -121,10 +121,10 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                         let minuteTranslation = Int(verticalTranslation / minuteHeight)
                         
                         let newStartTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: startTime) ?? startTime
-                        let _ = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: endTime) ?? endTime
+                        let newEndTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: endTime) ?? endTime
                         
-                        // Snap to nearest minute for ultra-precise positioning
-                        currentHoverTime = snapToNearestMinute(date: newStartTime)
+                        // Snap to nearest 5-minute interval
+                        currentHoverTime = snapToNearestFiveMinutes(date: newStartTime)
                         
                         // Check if crossing to other side
                         if let newSide = determineSideFromPosition(drag.translation), newSide != side {
@@ -156,15 +156,12 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                         var finalNewStartTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: startTime) ?? startTime
                         var finalNewEndTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: endTime) ?? endTime
                         
-                        // Snap to nearest minute on drop for ultra-precise positioning
-                        if let snappedTime = snapToNearestMinute(date: finalNewStartTime) {
+                        // Snap to nearest 5-minute interval on drop
+                        if let snappedTime = snapToNearestFiveMinutes(date: finalNewStartTime) {
                             let duration = finalNewEndTime.timeIntervalSince(finalNewStartTime)
                             finalNewStartTime = snappedTime
                             finalNewEndTime = snappedTime.addingTimeInterval(duration)
                         }
-                        
-                        // Collision detection temporarily disabled
-                        // onTaskCollision?(finalNewStartTime, finalNewEndTime)
                         
                         // Check if side changed
                         if let newSide = determineSideFromPosition(drag.translation), newSide != side {
@@ -229,20 +226,15 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
         Group {
             if showGuidelines && isDragging {
                 VStack(spacing: 0) {
-                    // Create guidelines for every minute within the hour
-                    ForEach(0..<60, id: \.self) { minute in
+                    // Create guidelines for every 5 minutes within the hour
+                    ForEach(0..<12, id: \.self) { interval in
+                        let minute = interval * 5
                         let offset = CGFloat(minute) * minuteHeight
                         let isMajorMark = minute % 15 == 0 // 15, 30, 45 minute marks
-                        let isMinorMark = minute % 5 == 0 && minute % 15 != 0 // 5, 10, 20, 25, etc.
-                        let _ = minute % 5 != 0 // Individual minutes
                         
                         Rectangle()
-                            .fill(Color.white.opacity(
-                                isMajorMark ? 0.8 : 
-                                isMinorMark ? 0.5 : 
-                                0.2 // Very subtle for 1-minute marks
-                            ))
-                            .frame(height: isMajorMark ? 3 : isMinorMark ? 2 : 1)
+                            .fill(Color.white.opacity(isMajorMark ? 0.7 : 0.3))
+                            .frame(height: isMajorMark ? 2 : 1)
                             .offset(y: offset - 60) // Center around the hour mark
                     }
                 }
@@ -252,15 +244,15 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
         }
     }
     
-    private func snapToNearestMinute(date: Date) -> Date? {
+    private func snapToNearestFiveMinutes(date: Date) -> Date? {
         let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
         guard let hour = components.hour, let minute = components.minute else { return nil }
         
-        // Snap to exact minute for ultra-precise positioning
-        return Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: date)
+        let snappedMinute = (minute / 5) * 5
+        return Calendar.current.date(bySettingHour: hour, minute: snappedMinute, second: 0, of: date)
     }
     
-    private func determineSideFromPosition(_ translation: CGSize) -> TimelineSide? {
+    private func determineSideFromPosition(_ translation: CGSize) -> TaskTimelineBlock.TimelineSide? {
         // Only trigger side change when crossing the middle section (half screen width)
         // Use a threshold to prevent accidental side changes
         let screenWidth = UIScreen.main.bounds.width

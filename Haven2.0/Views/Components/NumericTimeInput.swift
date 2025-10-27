@@ -106,6 +106,7 @@ struct NumericTimeInput: View {
         
         // Create new date with the time
         let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month, .day], from: time)
         if let newDate = calendar.date(bySettingHour: hour24, minute: validMinute, second: 0, of: time) {
             time = newDate
         }
