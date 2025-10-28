@@ -47,22 +47,13 @@ struct AddTaskView: View {
                     TextField("Description (optional)", text: $taskDescription, axis: .vertical)
                         .lineLimit(3...6)
                     
-                    // Priority toggle
-                    HStack {
-                        Text("Priority")
-                            .font(.headline)
-                            .foregroundColor(.primary)
-                        
-                        Spacer()
-                        
-                        Picker("Priority", selection: $priority) {
-                            ForEach(PriorityType.allCases, id: \.self) { priority in
-                                Text(priority.rawValue.capitalized).tag(priority)
-                            }
+                    // Priority dropdown
+                    Picker("Priority", selection: $priority) {
+                        ForEach(PriorityType.allCases, id: \.self) { priority in
+                            Text(priority.rawValue.capitalized).tag(priority)
                         }
-                        .pickerStyle(.segmented)
-                        .frame(width: 200)
                     }
+                    .pickerStyle(.menu)
                 }
                 
                 Section("Task Type") {

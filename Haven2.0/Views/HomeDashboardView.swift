@@ -586,7 +586,7 @@ struct HomeDashboardView: View {
                 )
                 .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)
         )
-        .frame(width: 260) // Increased width for better spacing
+        .frame(width: 300) // Wider popup for better readability
     }
     
     // Helper function for progress bars
@@ -1409,20 +1409,23 @@ struct TaskCardView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(task.title)
                         .font(theme.bodyFont)
-                        .foregroundColor(theme.textPrimary)
+                        .fontWeight(.regular)
+                        .foregroundColor(.white)
                         .strikethrough(task.isComplete)
                         .opacity(task.isComplete ? 0.6 : 1.0)
                     
                     // Priority text
                     Text("Priority: \(task.priority.rawValue.capitalized)")
                         .font(.caption2)
+                        .fontWeight(.regular)
                         .foregroundColor(priorityColor)
                         .opacity(task.isComplete ? 0.6 : 1.0)
                     
                     if let description = task.taskDescription {
                         Text(description)
                             .font(.caption)
-                            .foregroundColor(theme.textSecondary)
+                            .fontWeight(.regular)
+                            .foregroundColor(.white.opacity(0.7))
                             .lineLimit(2)
                             .opacity(task.isComplete ? 0.6 : 1.0)
                     }
@@ -1444,6 +1447,7 @@ struct TaskCardView: View {
                 // Time display under tick icon
                 Text(timeRangeText)
                     .font(.caption2)
+                    .fontWeight(.regular)
                     .foregroundColor(theme.textSecondary)
                     .opacity(task.isComplete ? 0.6 : 1.0)
             }

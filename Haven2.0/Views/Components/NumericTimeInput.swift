@@ -26,7 +26,8 @@ struct NumericTimeInput: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.headline)
+                .font(.subheadline)
+                .fontWeight(.regular)
                 .foregroundColor(.primary)
             
             HStack(spacing: 12) {
