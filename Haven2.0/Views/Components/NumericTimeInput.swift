@@ -26,8 +26,7 @@ struct NumericTimeInput: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.subheadline)
-                .fontWeight(.regular)
+                .font(.headline)
                 .foregroundColor(.primary)
             
             HStack(spacing: 12) {
@@ -63,7 +62,7 @@ struct NumericTimeInput: View {
                         .fill(Color.gray.opacity(0.1))
                         .overlay(
                             RoundedRectangle(cornerRadius: 4)
-                                .stroke(isFocused ? Color.blue : Color.clear, lineWidth: 1)
+                                .stroke(isFocused ? Color.blue : Color.clear, lineWidth: 0.5)
                         )
                 )
                 .disabled(!isEnabled)

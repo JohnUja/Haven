@@ -586,7 +586,7 @@ struct HomeDashboardView: View {
                 )
                 .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)
         )
-        .frame(width: 300) // Wider popup for better readability
+        .frame(width: 500) // Max width for better spacing
     }
     
     // Helper function for progress bars
@@ -943,7 +943,7 @@ struct HomeDashboardView: View {
         HStack {
             Text("Tasks")
                 .font(.custom("Montserrat", size: 16).weight(.medium))
-                .foregroundColor(theme.textPrimary)
+                .foregroundColor(.white)
             
             Spacer()
             
@@ -978,7 +978,7 @@ struct HomeDashboardView: View {
         VStack(spacing: 0) {
             // Dividing line
             Rectangle()
-                .fill(theme.textSecondary.opacity(0.3))
+                .fill(Color.white.opacity(0.3))
                 .frame(height: 1)
                 .padding(.horizontal, 20)
             
@@ -1409,23 +1409,20 @@ struct TaskCardView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(task.title)
                         .font(theme.bodyFont)
-                        .fontWeight(.regular)
-                        .foregroundColor(.white)
+                        .foregroundColor(theme.textPrimary)
                         .strikethrough(task.isComplete)
                         .opacity(task.isComplete ? 0.6 : 1.0)
                     
                     // Priority text
                     Text("Priority: \(task.priority.rawValue.capitalized)")
                         .font(.caption2)
-                        .fontWeight(.regular)
                         .foregroundColor(priorityColor)
                         .opacity(task.isComplete ? 0.6 : 1.0)
                     
                     if let description = task.taskDescription {
                         Text(description)
                             .font(.caption)
-                            .fontWeight(.regular)
-                            .foregroundColor(.white.opacity(0.7))
+                            .foregroundColor(theme.textSecondary)
                             .lineLimit(2)
                             .opacity(task.isComplete ? 0.6 : 1.0)
                     }
@@ -1447,7 +1444,6 @@ struct TaskCardView: View {
                 // Time display under tick icon
                 Text(timeRangeText)
                     .font(.caption2)
-                    .fontWeight(.regular)
                     .foregroundColor(theme.textSecondary)
                     .opacity(task.isComplete ? 0.6 : 1.0)
             }

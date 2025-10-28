@@ -48,12 +48,33 @@ struct AddTaskView: View {
                         .lineLimit(3...6)
                     
                     // Priority dropdown
-                    Picker("Priority", selection: $priority) {
-                        ForEach(PriorityType.allCases, id: \.self) { priority in
-                            Text(priority.rawValue.capitalized).tag(priority)
+                    HStack {
+                        Text("Priority")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        
+                        Spacer()
+                        
+                        Menu {
+                            ForEach(PriorityType.allCases, id: \.self) { priorityOption in
+                                Button(action: { priority = priorityOption }) {
+                                    HStack {
+                                        Text(priorityOption.rawValue.capitalized)
+                                        if priority == priorityOption {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Text(priority.rawValue.capitalized)
+                                Image(systemName: "chevron.down")
+                                    .font(.caption)
+                            }
+                            .foregroundColor(.blue)
                         }
                     }
-                    .pickerStyle(.menu)
                 }
                 
                 Section("Task Type") {
