@@ -494,7 +494,7 @@ struct TimelineHourView: View {
                             handleTaskCollision(newStart, newEnd)
                         }
                     )
-                    .frame(maxWidth: group.count > 1 ? 60 : 120)
+                    .frame(maxWidth: group.count > 1 ? 60 : .infinity)
                 }
             }
         }
@@ -554,6 +554,9 @@ struct TimelineHourView: View {
                     .frame(width: 2)
                     .frame(maxHeight: .infinity)
                 
+                // 15/30/45 minute marks (always visible for precision)
+                minuteMarksOverlay
+                
                 // Calendar events indicators
                 calendarEventsIndicators
                 
@@ -562,6 +565,18 @@ struct TimelineHourView: View {
             }
         }
         .frame(width: 60)
+    }
+    
+    // Minute marks overlay - shows 15, 30, 45 minute intervals
+    private var minuteMarksOverlay: some View {
+        VStack(spacing: 0) {
+            ForEach([15, 30, 45], id: \.self) { minute in
+                Rectangle()
+                    .fill(Color.white.opacity(0.6))
+                    .frame(width: 6, height: 1)
+                    .offset(y: CGFloat(minute) * 2 - 60) // 2 points per minute, center at hour
+            }
+        }
     }
     
     private var calendarEventsIndicators: some View {
@@ -648,7 +663,7 @@ struct TimelineHourView: View {
                             handleTaskCollision(newStart, newEnd)
                         }
                     )
-                    .frame(maxWidth: group.count > 1 ? 60 : 120)
+                    .frame(maxWidth: group.count > 1 ? 60 : .infinity)
                 }
             }
         }
@@ -710,17 +725,19 @@ struct TaskTimelineBlock: View {
         return max(16, min(120, CGFloat(minutes) * 2))
     }
     
-    private var taskColor: Color {
+    // Priority-based outline color
+    private var priorityOutlineColor: Color {
         switch task.priority {
-        case .urgent: return .red.opacity(0.3)
-        case .high: return .orange.opacity(0.3)
-        case .normal: return .green.opacity(0.3)
-        case .low: return .blue.opacity(0.3)
+        case .urgent: return .red.opacity(0.9)
+        case .high: return .orange.opacity(0.9)
+        case .normal: return .green.opacity(0.9)
+        case .low: return .blue.opacity(0.9)
         }
     }
     
-    private var categoryColor: Color {
-        task.category.color()
+    // Category-based background color (with low saturation)
+    private var categoryBackgroundColor: Color {
+        task.category.color().opacity(0.7)
     }
     
     var body: some View {
@@ -741,7 +758,7 @@ struct TaskTimelineBlock: View {
             // Priority indicator
             HStack(spacing: 4) {
                 Circle()
-                    .fill(taskColor)
+                    .fill(priorityOutlineColor)
                     .frame(width: 6, height: 6)
                 
                 Text(task.priority.rawValue.capitalized)
@@ -753,13 +770,13 @@ struct TaskTimelineBlock: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(categoryColor.opacity(0.8))
+                .fill(categoryBackgroundColor)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(taskColor, lineWidth: 2)
+                        .stroke(priorityOutlineColor, lineWidth: 2)
                 )
         )
-        .frame(maxWidth: 120, minHeight: taskHeight)
+        .frame(minHeight: taskHeight)
         .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
         .overlay(
             // Lock icon for locked tasks

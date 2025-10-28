@@ -188,6 +188,7 @@ struct InfiniteDaySelector: View {
         // Haptic feedback whenever day position changes during scroll
         if let lastDay = lastHapticDay, !calendar.isDate(centeredDay, inSameDayAs: lastDay) {
             // Sharp metallic click sound (1057)
+            print("🎵 Playing haptic sound for day change")
             AudioServicesPlaySystemSound(1057)
             // Haptic vibration for the tactile feel
             AudioServicesPlaySystemSound(1520)
