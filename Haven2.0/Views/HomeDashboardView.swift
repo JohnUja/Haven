@@ -470,9 +470,19 @@ struct HomeDashboardView: View {
                     }
                 }
                 
-                // Completion Ring Popup
+                // Completion Ring Popup - Positioned below navigation bar
                 if showingCompletionRingPopup {
-                    ZStack {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            completionRingPopupView(theme: theme)
+                                .transition(.scale.combined(with: .opacity))
+                            Spacer()
+                        }
+                        Spacer()
+                    }
+                    .padding(.top, 70) // Position just below nav bar
+                    .background(
                         Color.black.opacity(0.3)
                             .ignoresSafeArea()
                             .onTapGesture {
@@ -480,10 +490,7 @@ struct HomeDashboardView: View {
                                     showingCompletionRingPopup = false
                                 }
                             }
-                        
-                        completionRingPopupView(theme: theme)
-                            .transition(.scale.combined(with: .opacity))
-                    }
+                    )
                 }
             }
         )
@@ -510,13 +517,21 @@ struct HomeDashboardView: View {
     
     @ViewBuilder
     private func popupContentView(user: User, completedCount: Int, totalCount: Int, progress: Double) -> some View {
-        HStack(spacing: 16) {
-            // Completion ring on the left
-            VStack(spacing: 6) {
-                ZStack {
-                    Circle()
-                        .stroke(Color.white.opacity(0.3), lineWidth: 2.5)
-                        .frame(width: 50, height: 50)
+        VStack(spacing: 12) {
+            // Header text
+            Text("\(completedCount) out of \(totalCount) tasks completed for the day")
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.white.opacity(0.9))
+                .multilineTextAlignment(.center)
+            
+            HStack(spacing: 12) {
+                // Completion ring on the left
+                VStack(spacing: 4) {
+                    ZStack {
+                        Circle()
+                            .stroke(Color.white.opacity(0.3), lineWidth: 2.5)
+                            .frame(width: 40, height: 40)
                     
                     Circle()
                         .trim(from: 0, to: CGFloat(progress))
@@ -548,26 +563,30 @@ struct HomeDashboardView: View {
                     .foregroundColor(.white.opacity(0.8))
             }
             
-            Divider()
-                .background(Color.white.opacity(0.3))
-                .frame(height: 50)
-            
-            // Progress bars on the right
-            VStack(spacing: 10) {
-                progressBarView(title: "XP", value: Double(user.currentXP), maxValue: Double(user.nextLevelXP), color: .purple)
-                progressBarView(title: "Crystals", value: Double(user.gamificationCurrency), maxValue: 100, color: .yellow)
+                Divider()
+                    .background(Color.white.opacity(0.3))
+                    .frame(height: 40)
+                
+                // Progress bars on the right (narrower)
+                VStack(spacing: 8) {
+                    progressBarView(title: "XP", value: Double(user.currentXP), maxValue: Double(user.nextLevelXP), color: .purple)
+                    progressBarView(title: "Crystals", value: Double(user.gamificationCurrency), maxValue: 100, color: .yellow)
+                    progressBarView(title: "Themes", value: 0, maxValue: 5, color: .cyan)
+                }
+                .frame(width: 120) // Narrower progress bars
             }
         }
-        .padding(16)
+        .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(Color.black.opacity(0.9))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: 12)
                         .stroke(Color.white.opacity(0.3), lineWidth: 1)
                 )
-                .shadow(color: .black.opacity(0.5), radius: 10, x: 0, y: 5)
+                .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)
         )
+        .frame(width: 260) // Increased width for better spacing
     }
     
     // Helper function for progress bars
