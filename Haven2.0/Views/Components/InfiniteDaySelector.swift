@@ -78,8 +78,9 @@ struct InfiniteDaySelector: View {
                                         withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.8)) {
                                             proxy.scrollTo(index, anchor: .center)
                                         }
-                                        // Haptic on tap
-                                        AudioServicesPlaySystemSound(1057)
+                                        // Haptic on tap - metallic click + vibration
+                                        AudioServicesPlaySystemSound(1057) // Sharp click sound
+                                        AudioServicesPlaySystemSound(1520) // Haptic vibration
                                     }
                                 )
                                 .id(index)
@@ -185,9 +186,10 @@ struct InfiniteDaySelector: View {
         guard index >= 0 && index < days.count else { return }
         let centeredDay = days[index]
         
-        // Haptic feedback whenever day position changes during scroll
+        // Haptic feedback whenever day position changes during scroll - metallic click + vibration
         if let lastDay = lastHapticDay, !calendar.isDate(centeredDay, inSameDayAs: lastDay) {
-            AudioServicesPlaySystemSound(1057)
+            AudioServicesPlaySystemSound(1057) // Sharp click sound
+            AudioServicesPlaySystemSound(1520) // Haptic vibration
             lastHapticDay = centeredDay
             selectedDate = centeredDay
             onDateChanged(centeredDay)
