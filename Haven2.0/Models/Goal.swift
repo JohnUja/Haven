@@ -36,7 +36,7 @@ final class Goal {
     var createdAt: Date
     var deadline: Date?
     var milestones: [GoalMilestone]
-    var timeCrystalsReward: Int
+    var timeCrystalsReward: Int = 10
     var themeReward: String?
     
     init(id: String = UUID().uuidString,

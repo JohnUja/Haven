@@ -187,7 +187,7 @@ struct TimelineView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Background gradient
+                // Timeline background - using secondary gradient for variety
                 LinearGradient(
                     colors: [.purple.opacity(0.8), .blue.opacity(0.6), .pink.opacity(0.4)],
                     startPoint: .topLeading,

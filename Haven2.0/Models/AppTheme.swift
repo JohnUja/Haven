@@ -20,8 +20,9 @@ protocol AppTheme {
     var textPrimary: Color { get }
     var textSecondary: Color { get }
     
-    // Background
-    var backgroundGradient: LinearGradient { get }
+    // Shared Backgrounds (used across all screens)
+    var primaryGradient: LinearGradient { get }
+    var secondaryGradient: LinearGradient { get }
     var particleColors: [Color] { get }
     
     // Fonts
@@ -46,11 +47,21 @@ struct DefaultTheme: AppTheme {
     let textPrimary = Color.primary
     let textSecondary = Color.secondary
     
-    let backgroundGradient = LinearGradient(
+    // Shared Backgrounds
+    let primaryGradient = LinearGradient(
+        colors: [
+            Color.purple.opacity(0.8),
+            Color.blue.opacity(0.6),
+            Color.pink.opacity(0.4)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    
+    let secondaryGradient = LinearGradient(
         colors: [
             Color(red: 0.95, green: 0.97, blue: 1.0),
-            Color(red: 0.98, green: 0.95, blue: 1.0),
-            Color(red: 0.97, green: 0.98, blue: 1.0)
+            Color(red: 0.98, green: 0.95, blue: 1.0)
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
@@ -78,7 +89,13 @@ struct EnergeticTheme: AppTheme {
     let textPrimary = Color.black
     let textSecondary = Color.gray
     
-    let backgroundGradient = LinearGradient(
+    let primaryGradient = LinearGradient(
+        colors: [Color.orange.opacity(0.9), Color.red.opacity(0.8), Color.yellow.opacity(0.7)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    
+    let secondaryGradient = LinearGradient(
         colors: [
             Color.yellow.opacity(0.8),
             Color.orange.opacity(0.9),
@@ -110,7 +127,13 @@ struct CalmTheme: AppTheme {
     let textPrimary = Color.primary
     let textSecondary = Color.secondary
     
-    let backgroundGradient = LinearGradient(
+    let primaryGradient = LinearGradient(
+        colors: [Color.cyan.opacity(0.8), Color.blue.opacity(0.7), Color.mint.opacity(0.6)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    
+    let secondaryGradient = LinearGradient(
         colors: [
             Color.blue.opacity(0.8),
             Color.cyan.opacity(0.6),

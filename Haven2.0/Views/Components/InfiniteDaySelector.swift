@@ -12,6 +12,17 @@ struct InfiniteDaySelector: View {
     @Binding var selectedDate: Date
     let onDateChanged: (Date) -> Void
     let hasEvents: (Date) -> Bool
+    let showMonthHeader: Bool
+    
+    init(selectedDate: Binding<Date>, 
+         onDateChanged: @escaping (Date) -> Void, 
+         hasEvents: @escaping (Date) -> Bool,
+         showMonthHeader: Bool = true) {
+        self._selectedDate = selectedDate
+        self.onDateChanged = onDateChanged
+        self.hasEvents = hasEvents
+        self.showMonthHeader = showMonthHeader
+    }
     
     @State private var days: [Date] = []
     @State private var lastHapticDay: Date?
@@ -21,8 +32,9 @@ struct InfiniteDaySelector: View {
     
     var body: some View {
         VStack(spacing: 12) {
-            // Month/Year Header - Smaller, on same line as Work/Personal
-            HStack {
+            // Month/Year Header - Conditionally shown
+            if showMonthHeader {
+                HStack {
                 Button(action: {
                     // Quick jump to today
                     selectedDate = Date()
@@ -39,8 +51,9 @@ struct InfiniteDaySelector: View {
                 }
                 
                 Spacer()
+                }
+                .padding(.horizontal, 16)
             }
-            .padding(.horizontal, 16)
             
             // Day Selector
             GeometryReader { geometry in

@@ -64,18 +64,14 @@ struct HomeDashboardView: View {
                 let task2Index = priorityOrder.firstIndex(of: task2.priority) ?? 2
                 return task1Index < task2Index
             }
-            sortedCompleted = oldCompleted.sorted { task1, task2 in
-                let task1Index = priorityOrder.firstIndex(of: task1.priority) ?? 2
-                let task2Index = priorityOrder.firstIndex(of: task2.priority) ?? 2
-                return task1Index < task2Index
-            } + recentlyCompleted.sorted { task1, task2 in
+            sortedCompleted = (recentlyCompleted + oldCompleted).sorted { task1, task2 in
                 let task1Index = priorityOrder.firstIndex(of: task1.priority) ?? 2
                 let task2Index = priorityOrder.firstIndex(of: task2.priority) ?? 2
                 return task1Index < task2Index
             }
         case .mostRecent:
             sortedIncomplete = incompleteTasks.sorted { $0.startTime > $1.startTime }
-            sortedCompleted = oldCompleted.sorted { $0.startTime > $1.startTime } + recentlyCompleted.sorted { $0.startTime > $1.startTime }
+            sortedCompleted = (recentlyCompleted + oldCompleted).sorted { $0.startTime > $1.startTime }
         case .timeSensitive:
             let now = Date()
             sortedIncomplete = incompleteTasks.sorted { task1, task2 in
@@ -83,11 +79,7 @@ struct HomeDashboardView: View {
                 let task2TimeUntil = task2.startTime.timeIntervalSince(now)
                 return abs(task1TimeUntil) < abs(task2TimeUntil)
             }
-            sortedCompleted = oldCompleted.sorted { task1, task2 in
-                let task1TimeUntil = task1.startTime.timeIntervalSince(now)
-                let task2TimeUntil = task2.startTime.timeIntervalSince(now)
-                return abs(task1TimeUntil) < abs(task2TimeUntil)
-            } + recentlyCompleted.sorted { task1, task2 in
+            sortedCompleted = (recentlyCompleted + oldCompleted).sorted { task1, task2 in
                 let task1TimeUntil = task1.startTime.timeIntervalSince(now)
                 let task2TimeUntil = task2.startTime.timeIntervalSince(now)
                 return abs(task1TimeUntil) < abs(task2TimeUntil)
@@ -96,9 +88,7 @@ struct HomeDashboardView: View {
             sortedIncomplete = incompleteTasks.sorted { task1, task2 in
                 task1.category.rawValue < task2.category.rawValue
             }
-            sortedCompleted = oldCompleted.sorted { task1, task2 in
-                task1.category.rawValue < task2.category.rawValue
-            } + recentlyCompleted.sorted { task1, task2 in
+            sortedCompleted = (recentlyCompleted + oldCompleted).sorted { task1, task2 in
                 task1.category.rawValue < task2.category.rawValue
             }
         }
@@ -126,13 +116,9 @@ struct HomeDashboardView: View {
                 theme.primaryGradient
                     .ignoresSafeArea()
                 
-                VStack(spacing: 0) {
-                    // Top Navigation Bar - Fixed at top
-                    topNavigationView(theme: theme)
-                        .padding(.top, 0)
-                        .frame(height: 60)
+                mainContentVStack(theme: theme)
                     
-                    // Add spacing after top nav
+                    // Add space after top nav
                     Spacer()
                         .frame(height: 20)
                     
@@ -140,15 +126,30 @@ struct HomeDashboardView: View {
                     centralTimeView(theme: theme)
                         .frame(height: 120)
                     
-                    // Add spacing after time
+                    // Add space after time display
                     Spacer()
-                        .frame(height: 20)
+                        .frame(height: 16)
                     
                     // Infinite Day Selector - Without duplicate month header
-                    daySelectorSection
+                    VStack(spacing: 12) {
+                        InfiniteDaySelector(
+                            selectedDate: $selectedDate,
+                            onDateChanged: { newDate in
+                                // Update when date changes
+                            },
+                            hasEvents: { date in
+                                // Check if date has events (can be enhanced later)
+                                false
+                            },
+                            showMonthHeader: false // Hide since we show it in top nav
+                        )
+                        .frame(height: 70)
+                    }
+                    .padding(.vertical, 8)
                     
-                    // Current Activity - Fixed persistent height
-                    currentActivityViewWithPersistentSpace(theme: theme)
+                    // Current Activity - Fixed height (persistent space)
+                    currentActivityView(theme: theme)
+                        .frame(height: 50)
                     
                     // Task Ordering - Fixed height, smaller
                     taskOrderingView(theme: theme)
@@ -469,18 +470,23 @@ struct HomeDashboardView: View {
                         .padding(.bottom, 100)
                     }
                 }
-                
-                // Completion Ring Popup
+            }
+        )
+        .overlay(
+            // Completion Ring Popup
+            Group {
                 if showingCompletionRingPopup {
                     ZStack {
+                        // Background overlay
                         Color.black.opacity(0.3)
                             .ignoresSafeArea()
                             .onTapGesture {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                                     showingCompletionRingPopup = false
                                 }
                             }
                         
+                        // Popup content
                         completionRingPopupView(theme: theme)
                             .transition(.scale.combined(with: .opacity))
                     }
@@ -489,115 +495,54 @@ struct HomeDashboardView: View {
         )
     }
     
-    // MARK: - Completion Ring Popup View
-    private func completionRingPopupView(theme: any AppTheme) -> some View {
-        let completedCount = selectedDateTasks.filter { $0.isComplete }.count
-        let totalCount = selectedDateTasks.count
-        let progress = totalCount > 0 ? Double(completedCount) / Double(totalCount) : 0.0
-        
-        // Guard clause to prevent type-checking errors
-        guard let user = currentUser else {
-            return AnyView(
-                Text("No user data")
-                    .foregroundColor(.white)
-                    .padding()
-                    .background(Color.black.opacity(0.9))
-            )
-        }
-        
-        return AnyView(popupContentView(user: user, completedCount: completedCount, totalCount: totalCount, progress: progress))
-    }
-    
-    @ViewBuilder
-    private func popupContentView(user: User, completedCount: Int, totalCount: Int, progress: Double) -> some View {
-        HStack(spacing: 16) {
-            // Completion ring on the left
-            VStack(spacing: 6) {
-                ZStack {
-                    Circle()
-                        .stroke(Color.white.opacity(0.3), lineWidth: 2.5)
-                        .frame(width: 50, height: 50)
-                    
-                    Circle()
-                        .trim(from: 0, to: CGFloat(progress))
-                        .stroke(
-                            LinearGradient(
-                                colors: [.green, .green.opacity(0.7)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
-                        )
-                        .frame(width: 50, height: 50)
-                        .rotationEffect(.degrees(-90))
-                        .animation(.easeInOut(duration: 0.5), value: progress)
-                    
-                    VStack(spacing: 0) {
-                        Text("\(completedCount)")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                        Text("/\(totalCount)")
-                            .font(.caption2)
-                            .foregroundColor(.white.opacity(0.7))
-                    }
-                }
-                
-                Text("\(Int(progress * 100))%")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.8))
-            }
+    // MARK: - Main Content
+    private func mainContentVStack(theme: any AppTheme) -> some View {
+        VStack(spacing: 0) {
+            // Top Navigation Bar - Fixed at top
+            topNavigationView(theme: theme)
+                .padding(.top, 0)
+                .frame(height: 60)
             
-            Divider()
-                .background(Color.white.opacity(0.3))
+            // Add space after top nav
+            Spacer()
+                .frame(height: 20)
+            
+            // Central Time Display - Fixed height
+            centralTimeView(theme: theme)
+                .frame(height: 120)
+            
+            // Add space after time display
+            Spacer()
+                .frame(height: 16)
+            
+            // Infinite Day Selector - Without duplicate month header
+            VStack(spacing: 12) {
+                InfiniteDaySelector(
+                    selectedDate: $selectedDate,
+                    onDateChanged: { newDate in
+                        // Update when date changes
+                    },
+                    hasEvents: { date in
+                        // Check if date has events (can be enhanced later)
+                        false
+                    },
+                    showMonthHeader: false
+                )
+                .frame(height: 70)
+            }
+            .padding(.vertical, 8)
+            
+            // Current Activity - Fixed height (persistent space)
+            currentActivityView(theme: theme)
                 .frame(height: 50)
             
-            // Progress bars on the right
-            VStack(spacing: 10) {
-                progressBarView(title: "XP", value: Double(user.currentXP), maxValue: Double(user.nextLevelXP), color: .purple)
-                progressBarView(title: "Crystals", value: Double(user.gamificationCurrency), maxValue: 100, color: .yellow)
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.black.opacity(0.9))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.5), radius: 10, x: 0, y: 5)
-        )
-    }
-    
-    // Helper function for progress bars
-    private func progressBarView(title: String, value: Double, maxValue: Double, color: Color) -> some View {
-        let progress = maxValue > 0 ? min(value / maxValue, 1.0) : 0.0
-        
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(title)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(.white.opacity(0.9))
-                Spacer()
-                Text("\(Int(value))/\(Int(maxValue))")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.7))
-            }
+            // Task Ordering - Fixed height, smaller
+            taskOrderingView(theme: theme)
+                .frame(height: 40)
             
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(color.opacity(0.2))
-                        .frame(height: 8)
-                    
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(color)
-                        .frame(width: geometry.size.width * CGFloat(progress), height: 8)
-                }
-            }
-            .frame(height: 8)
+            // Tasks Section - Flexible but contained
+            tasksSectionView(theme: theme)
+                .frame(maxHeight: .infinity)
         }
     }
     
@@ -672,40 +617,18 @@ struct HomeDashboardView: View {
         .padding(.horizontal, 20)
     }
     
-    // MARK: - Extracted Views (Performance Optimization)
-    
-    @ViewBuilder
-    private var daySelectorSection: some View {
-        VStack(spacing: 12) {
-            InfiniteDaySelector(
-                selectedDate: $selectedDate,
-                onDateChanged: { _ in },
-                hasEvents: { _ in false },
-                showMonthHeader: false
-            )
-            .frame(height: 70)
-        }
-        .padding(.vertical, 8)
-    }
-    
     // MARK: - Completion Ring
     private func completionRingView(theme: any AppTheme) -> some View {
         let completedCount = selectedDateTasks.filter { $0.isComplete }.count
         let totalCount = selectedDateTasks.count
         let progress = totalCount > 0 ? Double(completedCount) / Double(totalCount) : 0.0
         
-        return HStack(spacing: 6) {
-            // Task count text on the left
-            Text("\(completedCount)/\(totalCount)")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.white.opacity(0.8))
-            
-            // Completion ring
-            Button(action: {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                    showingCompletionRingPopup.toggle()
-                }
-            }) {
+        return Button(action: {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                showingCompletionRingPopup.toggle()
+            }
+        }) {
+            VStack(spacing: 4) {
                 ZStack {
                     // Outer ring (white/clear base)
                     Circle()
@@ -732,6 +655,11 @@ struct HomeDashboardView: View {
                         .fill(Color.white.opacity(0.3))
                         .frame(width: 4, height: 4)
                 }
+                
+                // Task count text underneath
+                Text("\(completedCount)/\(totalCount) tasks")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundColor(.white.opacity(0.8))
             }
         }
     }
@@ -853,7 +781,8 @@ struct HomeDashboardView: View {
     
     // MARK: - Current Activity
     private func currentActivityView(theme: any AppTheme) -> some View {
-        Group {
+        // Always reserve space, even if no current task
+        VStack {
             if let currentTask = getCurrentTask() {
                 HStack(spacing: 6) {
                     Circle()
@@ -878,44 +807,138 @@ struct HomeDashboardView: View {
                     RoundedRectangle(cornerRadius: 16)
                         .fill(theme.cardBackground.opacity(0.6))
                 )
+            } else {
+                // Empty space to maintain layout
+                Color.clear
+                    .frame(height: 50)
             }
         }
     }
     
-    // MARK: - Current Activity With Persistent Space
-    private func currentActivityViewWithPersistentSpace(theme: any AppTheme) -> some View {
-        ZStack {
-            // Always reserve the space with a transparent container
-            Rectangle()
-                .fill(Color.clear)
-                .frame(height: 50)
-            
-            // Show content only if there's a current task
-            if let currentTask = getCurrentTask() {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(Color.orange)
-                        .frame(width: 6, height: 6)
-                        .shadow(color: .orange.opacity(0.8), radius: 4)
-                        .overlay(
-                            Circle()
-                                .fill(Color.orange)
-                                .blur(radius: 3)
-                                .opacity(0.6)
-                        )
-                    
-                    Text("Working on: \(currentTask.title)")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(theme.textPrimary)
-                        .lineLimit(1)
+    // MARK: - Completion Ring Popup
+    private func completionRingPopupView(theme: any AppTheme) -> some View {
+        let completedCount = selectedDateTasks.filter { $0.isComplete }.count
+        let totalCount = selectedDateTasks.count
+        let progress = totalCount > 0 ? Double(completedCount) / Double(totalCount) : 0.0
+        
+        return VStack(spacing: 20) {
+            // Header
+            HStack {
+                Text("Today's Progress")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                Spacer()
+                Button(action: {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        showingCompletionRingPopup = false
+                    }
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(.white.opacity(0.6))
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(theme.cardBackground.opacity(0.6))
+            }
+            
+            // Bigger completion ring
+            ZStack {
+                Circle()
+                    .stroke(Color.white.opacity(0.2), lineWidth: 8)
+                    .frame(width: 120, height: 120)
+                
+                Circle()
+                    .trim(from: 0, to: CGFloat(progress))
+                    .stroke(
+                        LinearGradient(
+                            colors: [.green, .green.opacity(0.7)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                    )
+                    .frame(width: 120, height: 120)
+                    .rotationEffect(.degrees(-90))
+                
+                VStack(spacing: 4) {
+                    Text("\(Int(progress * 100))%")
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundColor(.white)
+                    Text("Complete")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                }
+            }
+            
+            // Progress bars
+            VStack(spacing: 12) {
+                // XP Progress
+                progressBarView(
+                    title: "Experience",
+                    value: 75,
+                    maxValue: 100,
+                    color: .blue,
+                    theme: theme
+                )
+                
+                // Time Crystals Progress
+                progressBarView(
+                    title: "Time Crystals",
+                    value: 45,
+                    maxValue: 100,
+                    color: .yellow,
+                    theme: theme
+                )
+                
+                // Theme Progress
+                progressBarView(
+                    title: "Energetic Theme",
+                    value: 60,
+                    maxValue: 100,
+                    color: .purple,
+                    theme: theme
                 )
             }
+        }
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.black.opacity(0.85))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                )
+        )
+        .padding(.horizontal, 40)
+    }
+    
+    private func progressBarView(title: String, value: Int, maxValue: Int, color: Color, theme: any AppTheme) -> some View {
+        let progress = Double(value) / Double(maxValue)
+        
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.white.opacity(0.8))
+            
+            ZStack(alignment: .leading) {
+                // Background
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.white.opacity(0.1))
+                    .frame(height: 8)
+                
+                // Progress fill
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(
+                        LinearGradient(
+                            colors: [color, color.opacity(0.7)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: CGFloat(progress * 200), height: 8)
+            }
+            
+            Text("\(value)/\(maxValue)")
+                .font(.system(size: 10, weight: .regular))
+                .foregroundColor(.white.opacity(0.6))
         }
     }
     
@@ -1365,6 +1388,8 @@ struct TaskCardView: View {
     let onEditTask: ((Task) -> Void)?
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var timeSettings: TimeSettingsManager
+    @State private var showCompletionAnimation = false
+    @State private var ringProgress: CGFloat = 0
     
     init(task: Task, theme: any AppTheme, onTaskCompleted: ((String) -> Void)? = nil, onEditTask: ((Task) -> Void)? = nil) {
         self.task = task
@@ -1433,9 +1458,9 @@ struct TaskCardView: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: theme.cardCornerRadius)
-                    .fill(theme.cardBackground)
+                    .fill(task.category.color().opacity(0.15))
                     .overlay(
-                        // Category ring + current task highlighting
+                        // Category ring
                         RoundedRectangle(cornerRadius: theme.cardCornerRadius)
                             .stroke(
                                 task.category.color(),
@@ -1463,6 +1488,23 @@ struct TaskCardView: View {
                         }
                     )
                     .shadow(color: theme.primaryColor.opacity(0.1), radius: theme.shadowRadius)
+                
+                // Completion ring animation
+                if showCompletionAnimation {
+                    RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                        .stroke(
+                            AngularGradient(
+                                colors: [.green, .blue, .purple, .pink, .green],
+                                center: .center,
+                                startAngle: .degrees(0),
+                                endAngle: .degrees(360)
+                            ),
+                            lineWidth: 3
+                        )
+                        .opacity(ringProgress)
+                        .scaleEffect(1.05)
+                        .animation(.easeInOut(duration: 1.5), value: ringProgress)
+                }
             }
         )
         .opacity(task.isComplete ? 0.7 : 1.0)
@@ -1556,6 +1598,9 @@ struct TaskCardView: View {
                 if task.isComplete {
                     onTaskCompleted?(task.id)
                     
+                    // Trigger completion animation
+                    triggerCompletionAnimation()
+                    
                     // Play completion sound and vibration - better "dinggg" sound
                     AudioServicesPlaySystemSound(1057) // Glass sound (more satisfying "dinggg")
                     AudioServicesPlaySystemSound(1520) // Haptic feedback
@@ -1574,6 +1619,25 @@ struct TaskCardView: View {
         // For normal tasks, allow completion anytime after start time
         return now >= task.startTime
     }
+    
+        private func triggerCompletionAnimation() {
+            showCompletionAnimation = true
+            
+            // Ring animation that traverses the circumference
+            withAnimation(.easeInOut(duration: 2.0)) {
+                ringProgress = 1.0
+            }
+            
+            // Hide animation after completion
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                withAnimation(.easeOut(duration: 0.5)) {
+                    ringProgress = 0
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    showCompletionAnimation = false
+                }
+            }
+        }
 }
 
 
