@@ -20,6 +20,7 @@ final class TaskBlock {
     var createdDate: Date
     var isLocked: Bool = false // New: For routine blocks that can't be moved
     var isRecurring: Bool = false
+    var recurrenceSeriesID: String? // Link occurrences of a recurring block series
     
     init(id: String = UUID().uuidString,
          userID: String,

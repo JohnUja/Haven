@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AudioToolbox
+import UIKit
 
 struct InfiniteDaySelector: View {
     @Binding var selectedDate: Date
@@ -27,6 +28,8 @@ struct InfiniteDaySelector: View {
     @State private var days: [Date] = []
     @State private var lastHapticDay: Date?
     @State private var isInitializing = false
+    @State private var impactGenerator: UIImpactFeedbackGenerator? = UIImpactFeedbackGenerator(style: .rigid)
+    @State private var selectionGenerator: UISelectionFeedbackGenerator? = UISelectionFeedbackGenerator()
     
     private let calendar = Calendar.current
     
@@ -123,6 +126,9 @@ struct InfiniteDaySelector: View {
         }
         .onAppear {
             initializeDays()
+            // Prepare haptic generator for immediate response
+            impactGenerator?.prepare()
+            selectionGenerator?.prepare()
         }
     }
     
@@ -185,16 +191,18 @@ struct InfiniteDaySelector: View {
         guard index >= 0 && index < days.count else { return }
         let centeredDay = days[index]
         
-        // Haptic feedback whenever day position changes during scroll
+        // Haptic feedback + metallic click whenever day position changes during scroll
         if let lastDay = lastHapticDay, !calendar.isDate(centeredDay, inSameDayAs: lastDay) {
-            // Sharp metallic click sound (1057)
-            print("🎵 Playing haptic sound for day change")
+            // Metallic click sound + dual haptics
             AudioServicesPlaySystemSound(1057)
-            // Haptic vibration for the tactile feel
-            AudioServicesPlaySystemSound(1520)
+            impactGenerator?.impactOccurred(intensity: 0.9)
+            selectionGenerator?.selectionChanged()
             lastHapticDay = centeredDay
             selectedDate = centeredDay
             onDateChanged(centeredDay)
+            // Re-prime the generator to keep the latency low for the next tick
+            impactGenerator?.prepare()
+            selectionGenerator?.prepare()
         } else if lastHapticDay == nil {
             lastHapticDay = centeredDay
         }

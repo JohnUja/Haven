@@ -33,6 +33,9 @@ struct AddTaskView: View {
     @State private var recurrenceType: RecurrenceType = .daily
     @State private var recurrenceEndDate = Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date()
     @State private var isFlexibleTask = false
+    @State private var showLockScopeDialog = false
+    @State private var pendingLockValue = false
+    @State private var applyLockToSeries: Bool? = nil
     
     private var currentUser: User? {
         users.first
@@ -165,7 +168,17 @@ struct AddTaskView: View {
                 }
                 
                 Section("Settings") {
-                    Toggle("Lock task", isOn: $isLocked)
+                    Toggle("Lock task", isOn: Binding(
+                        get: { isLocked },
+                        set: { newValue in
+                            if isRecurring {
+                                pendingLockValue = newValue
+                                showLockScopeDialog = true
+                            } else {
+                                isLocked = newValue
+                            }
+                        }
+                    ))
                 }
             }
             .navigationTitle("Add Task")
@@ -187,6 +200,35 @@ struct AddTaskView: View {
         }
         .onAppear {
             setupInitialTimes()
+        }
+        .confirmationDialog(
+            isLocked ? "Unlock Scope" : "Lock Scope",
+            isPresented: $showLockScopeDialog,
+            titleVisibility: .visible
+        ) {
+            if pendingLockValue { // locking
+                Button("Lock only this task") {
+                    isLocked = true
+                    applyLockToSeries = false
+                }
+                Button("Lock all in series") {
+                    isLocked = true
+                    applyLockToSeries = true
+                }
+            } else { // unlocking
+                Button("Unlock only this task") {
+                    isLocked = false
+                    applyLockToSeries = false
+                }
+                Button("Unlock all in series") {
+                    isLocked = false
+                    applyLockToSeries = true
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                // revert the toggle
+                pendingLockValue = isLocked
+            }
         }
     }
     
@@ -236,6 +278,7 @@ struct AddTaskView: View {
         let calendar = Calendar.current
         var currentDate = startTime
         let endDate = recurrenceEndDate
+        let seriesID = UUID().uuidString
         
         while currentDate <= endDate {
             // Check if we should create a task for this date based on recurrence type
@@ -248,10 +291,19 @@ struct AddTaskView: View {
                     endTime: isFlexibleTask ? currentDate : (hasEndTime ? calendar.date(byAdding: .hour, value: 1, to: currentDate) ?? currentDate : currentDate),
                     priority: priority,
                     category: category,
-                    taskBlockID: taskBlockID
+                    taskBlockID: taskBlockID,
+                    recurrenceSeriesID: seriesID
                 )
                 
-                task.isLocked = isLocked
+                if let applyToSeries = applyLockToSeries {
+                    if applyToSeries {
+                        task.isLocked = pendingLockValue
+                    } else {
+                        task.isLocked = (currentDate == startTime) ? pendingLockValue : false
+                    }
+                } else {
+                    task.isLocked = isLocked
+                }
                 modelContext.insert(task)
             }
             

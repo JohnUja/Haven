@@ -374,132 +374,7 @@ struct HomeDashboardView: View {
         .onAppear {
             startTimeTimer()
         }
-        .overlay(
-            // Move to Day Selection
-            Group {
-                if let task = showingMoveToDay {
-                    ZStack {
-                        Color.black.opacity(0.3)
-                            .ignoresSafeArea()
-                            .onTapGesture {
-                                showingMoveToDay = nil
-                            }
-                        
-                        VStack(spacing: 16) {
-                            Text("Move Task to Day")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                            
-                            Text("Select a day to move this task to:")
-                                .font(.caption)
-                                .foregroundColor(.white.opacity(0.8))
-                            
-                            // Day selection (simplified - just show next 7 days)
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
-                                ForEach(0..<7, id: \.self) { dayOffset in
-                                    let targetDate = Calendar.current.date(byAdding: .day, value: dayOffset, to: selectedDate) ?? selectedDate
-                                    let isToday = Calendar.current.isDate(targetDate, inSameDayAs: selectedDate)
-                                    
-                                    Button(action: {
-                                        moveTaskToDay(task, to: targetDate)
-                                        showingMoveToDay = nil
-                                    }) {
-                                        VStack(spacing: 4) {
-                                            Text(dayOffset == 0 ? "Today" : "\(dayOffset)")
-                                                .font(.caption)
-                                                .fontWeight(isToday ? .bold : .regular)
-                                            
-                                            Text(targetDate, format: .dateTime.weekday(.abbreviated))
-                                                .font(.caption2)
-                                        }
-                                        .foregroundColor(.white)
-                                        .padding(8)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .fill(isToday ? Color.blue : Color.white.opacity(0.2))
-                                        )
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, 20)
-                            
-                            Button("Cancel") {
-                                showingMoveToDay = nil
-                            }
-                            .foregroundColor(.white)
-                            .padding(.top, 8)
-                        }
-                        .padding(20)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(Color.black.opacity(0.8))
-                        )
-                        .padding(.horizontal, 40)
-                    }
-                }
-                
-                if let taskBlock = showingMoveToDayBlock {
-                    ZStack {
-                        Color.black.opacity(0.3)
-                            .ignoresSafeArea()
-                            .onTapGesture {
-                                showingMoveToDayBlock = nil
-                            }
-                        
-                        VStack(spacing: 16) {
-                            Text("Move Task Block to Day")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                            
-                            Text("Select a day to move this task block to:")
-                                .font(.caption)
-                                .foregroundColor(.white.opacity(0.8))
-                            
-                            // Day selection (simplified - just show next 7 days)
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
-                                ForEach(0..<7, id: \.self) { dayOffset in
-                                    let targetDate = Calendar.current.date(byAdding: .day, value: dayOffset, to: selectedDate) ?? selectedDate
-                                    let isToday = Calendar.current.isDate(targetDate, inSameDayAs: selectedDate)
-                                    
-                                    Button(action: {
-                                        moveTaskBlockToDay(taskBlock, to: targetDate)
-                                        showingMoveToDayBlock = nil
-                                    }) {
-                                        VStack(spacing: 4) {
-                                            Text(dayOffset == 0 ? "Today" : "\(dayOffset)")
-                                                .font(.caption)
-                                                .fontWeight(isToday ? .bold : .regular)
-                                            
-                                            Text(targetDate, format: .dateTime.weekday(.abbreviated))
-                                                .font(.caption2)
-                                        }
-                                        .foregroundColor(.white)
-                                        .padding(8)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .fill(isToday ? Color.blue : Color.white.opacity(0.2))
-                                        )
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, 20)
-                            
-                            Button("Cancel") {
-                                showingMoveToDayBlock = nil
-                            }
-                            .foregroundColor(.white)
-                            .padding(.top, 8)
-                        }
-                        .padding(20)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(Color.black.opacity(0.8))
-                        )
-                        .padding(.horizontal, 40)
-                    }
-                }
-            }
-        )
+        // Removed legacy black overlay selector to avoid double calendars during Move actions
         .overlay(
             // Undo Move Notification
             Group {
@@ -1419,6 +1294,7 @@ struct FloatingActionMenu: View {
     let onDelete: () -> Void
     let onUnlock: () -> Void
     let onDismiss: () -> Void
+    @Environment(\..modelContext) private var modelContext
     
     init(task: Task? = nil, taskBlock: [Task]? = nil, theme: any AppTheme, blockLocked: Bool? = nil, onEdit: @escaping () -> Void, onChangeCategory: @escaping () -> Void, onAddToGoal: @escaping () -> Void, onMove: @escaping () -> Void, onDelete: @escaping () -> Void, onUnlock: @escaping () -> Void, onDismiss: @escaping () -> Void) {
         self.task = task
@@ -1541,6 +1417,7 @@ struct FloatingActionMenu: View {
                     .background(theme.cardBackground)
                     .cornerRadius(12)
                 }
+                // Removed series-wide lock options from task quick menu per request
             } else if taskBlock != nil {
                 // For blocks: show Lock/Unlock button and Move button
                 Button(action: onUnlock) {

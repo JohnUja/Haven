@@ -25,6 +25,7 @@ final class Task {
     var color: String? // New: Custom color for task
     var completionAnimation: Bool // New: For cross-out animation
     var isLocked: Bool = false // New: For routine tasks that can't be moved
+    var recurrenceSeriesID: String? // New: Link occurrences of a recurring series
     
     init(id: String = UUID().uuidString,
          userID: String,
@@ -37,7 +38,8 @@ final class Task {
          isComplete: Bool = false,
          goalID: String? = nil,
          taskBlockID: String? = nil,
-         color: String? = nil) {
+         color: String? = nil,
+         recurrenceSeriesID: String? = nil) {
         self.id = id
         self.userID = userID
         self.title = title
@@ -51,6 +53,7 @@ final class Task {
         self.taskBlockID = taskBlockID
         self.color = color
         self.completionAnimation = false
+        self.recurrenceSeriesID = recurrenceSeriesID
     }
 }
 

@@ -21,10 +21,15 @@ struct EditBlockView: View {
     @State private var priority: PriorityType
     @State private var isLocked: Bool
     @State private var isRecurring: Bool
+    @State private var recurrenceType: RecurrenceType = .daily
+    @State private var recurrenceEndDate: Date = Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date()
     @State private var newStartTime: Date
     @State private var showingDeleteAlert = false
     @State private var showingTimeOverlapAlert = false
     @State private var overlappingTasks: [Task] = []
+    @State private var localTasksInBlock: [Task] = [] // Local copy for immediate UI updates
+    @State private var showLockScopeDialog = false
+    @State private var pendingLockValue: Bool = false
     
     init(taskBlock: TaskBlock, tasksInBlock: [Task], allTasks: [Task]) {
         self.taskBlock = taskBlock
@@ -69,12 +74,33 @@ struct EditBlockView: View {
                 }
                 
                 Section("Settings") {
-                    Toggle("Lock block", isOn: $isLocked)
+                    Toggle("Lock block", isOn: Binding(
+                        get: { isLocked },
+                        set: { newValue in
+                            // If part of recurrence, show scope dialog; otherwise just toggle
+                            if taskBlock.recurrenceSeriesID != nil {
+                                pendingLockValue = newValue
+                                showLockScopeDialog = true
+                            } else {
+                                isLocked = newValue
+                            }
+                        }
+                    ))
                     Toggle("Make recurring", isOn: $isRecurring)
+                    if isRecurring {
+                        Picker("Repeat", selection: $recurrenceType) {
+                            ForEach(RecurrenceType.allCases, id: \.self) { type in
+                                Text(type.displayName).tag(type)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        DatePicker("End date", selection: $recurrenceEndDate, displayedComponents: [.date])
+                            .datePickerStyle(.compact)
+                    }
                 }
 
                 Section("Subtasks") {
-                    ForEach(tasksInBlock, id: \.id) { task in
+                    ForEach(localTasksInBlock, id: \.id) { task in
                         HStack {
                             TextField("Title", text: Binding(
                                 get: { task.title },
@@ -85,7 +111,9 @@ struct EditBlockView: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                             Button(action: {
+                                // Remove from model and local list immediately
                                 task.taskBlockID = nil
+                                localTasksInBlock.removeAll { $0.id == task.id }
                                 try? modelContext.save()
                             }) {
                                 Image(systemName: "minus.circle.fill").foregroundColor(.red)
@@ -119,6 +147,47 @@ struct EditBlockView: View {
                         saveChanges()
                     }
                     .disabled(title.isEmpty)
+                }
+            }
+            .onAppear {
+                // Initialize local tasks for live UI updates
+                localTasksInBlock = tasksInBlock
+            }
+        }
+        .confirmationDialog(
+            isLocked ? "Unlock Scope" : "Lock Scope",
+            isPresented: $showLockScopeDialog,
+            titleVisibility: .visible
+        ) {
+            if let seriesID = taskBlock.recurrenceSeriesID {
+                if pendingLockValue {
+                    Button("Lock only this block") {
+                        isLocked = true
+                        taskBlock.isLocked = true
+                        try? modelContext.save()
+                    }
+                    Button("Lock all in series") {
+                        isLocked = true
+                        taskBlock.isLocked = true
+                        lockSeriesBlocks(seriesID: seriesID, lock: true, modelContext: modelContext)
+                        lockSeriesTasks(seriesID: seriesID, lock: true, modelContext: modelContext)
+                    }
+                } else {
+                    Button("Unlock only this block") {
+                        isLocked = false
+                        taskBlock.isLocked = false
+                        try? modelContext.save()
+                    }
+                    Button("Unlock all in series") {
+                        isLocked = false
+                        taskBlock.isLocked = false
+                        lockSeriesBlocks(seriesID: seriesID, lock: false, modelContext: modelContext)
+                        lockSeriesTasks(seriesID: seriesID, lock: false, modelContext: modelContext)
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    // Revert toggle to current model value
+                    isLocked = taskBlock.isLocked
                 }
             }
         }
@@ -173,7 +242,7 @@ struct EditBlockView: View {
         if abs(timeDifference) > 60 { // Only check if changed by more than 1 minute
             // Calculate new times for all tasks
             var newTaskTimes: [(Task, Date, Date)] = []
-            for task in tasksInBlock {
+            for task in localTasksInBlock {
                 let newStart = task.startTime.addingTimeInterval(timeDifference)
                 let newEnd = task.endTime.addingTimeInterval(timeDifference)
                 newTaskTimes.append((task, newStart, newEnd))
@@ -259,7 +328,8 @@ struct EditBlockView: View {
 
 extension EditBlockView {
     private func addSubtask() {
-        guard let lastEnd = tasksInBlock.sorted(by: { $0.endTime < $1.endTime }).last?.endTime else { return }
+        let sortedTasks = localTasksInBlock.sorted(by: { $0.endTime < $1.endTime })
+        guard let lastEnd = sortedTasks.last?.endTime ?? tasksInBlock.sorted(by: { $0.endTime < $1.endTime }).last?.endTime else { return }
         let newTask = Task(userID: taskBlock.userID,
                            title: "New Task",
                            startTime: lastEnd,
@@ -269,6 +339,7 @@ extension EditBlockView {
                            isComplete: false,
                            taskBlockID: taskBlock.id)
         modelContext.insert(newTask)
+        localTasksInBlock.append(newTask) // Immediate UI update
         try? modelContext.save()
     }
 }

@@ -26,6 +26,8 @@ struct EditTaskView: View {
     @State private var showingDeleteAlert = false
     @State private var showingTimeOverlapAlert = false
     @State private var overlappingTasks: [Task] = []
+    @State private var showLockScopeDialog = false
+    @State private var pendingLockValue: Bool = false
     
     init(task: Task, allTasks: [Task]? = nil) {
         self.task = task
@@ -78,7 +80,18 @@ struct EditTaskView: View {
                 }
                 
                 Section("Settings") {
-                    Toggle("Lock task", isOn: $isLocked)
+                    Toggle("Lock task", isOn: Binding(
+                        get: { isLocked },
+                        set: { newValue in
+                            // If part of recurrence, show scope dialog; otherwise just toggle
+                            if task.recurrenceSeriesID != nil {
+                                pendingLockValue = newValue
+                                showLockScopeDialog = true
+                            } else {
+                                isLocked = newValue
+                            }
+                        }
+                    ))
                 }
                 
                 Section {
@@ -140,6 +153,41 @@ struct EditTaskView: View {
                 Text("The selected time overlaps with: \(taskTitles)\(moreText). Do you want to proceed?")
             } else {
                 Text("The selected time overlaps with another task. Do you want to proceed?")
+            }
+        }
+        .confirmationDialog(
+            isLocked ? "Unlock Scope" : "Lock Scope",
+            isPresented: $showLockScopeDialog,
+            titleVisibility: .visible
+        ) {
+            if let seriesID = task.recurrenceSeriesID {
+                if pendingLockValue {
+                    Button("Lock only this task") {
+                        isLocked = true
+                        task.isLocked = true
+                        try? modelContext.save()
+                    }
+                    Button("Lock all in series") {
+                        isLocked = true
+                        task.isLocked = true
+                        lockSeriesTasks(seriesID: seriesID, lock: true, modelContext: modelContext)
+                    }
+                } else {
+                    Button("Unlock only this task") {
+                        isLocked = false
+                        task.isLocked = false
+                        try? modelContext.save()
+                    }
+                    Button("Unlock all in series") {
+                        isLocked = false
+                        task.isLocked = false
+                        lockSeriesTasks(seriesID: seriesID, lock: false, modelContext: modelContext)
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    // Revert toggle to current model value
+                    isLocked = task.isLocked
+                }
             }
         }
     }

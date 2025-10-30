@@ -26,6 +26,9 @@ struct AddBlockView: View {
     @State private var endTime = Date().addingTimeInterval(3600) // 1 hour later
     @State private var recurrenceType: RecurrenceType = .daily
     @State private var recurrenceEndDate = Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date()
+    @State private var showLockScopeDialog = false
+    @State private var pendingLockValue = false
+    @State private var applyLockToSeries: Bool? = nil
     
     private let availableColors = ["red", "orange", "yellow", "green", "blue", "purple", "pink", "mint", "cyan", "indigo", "brown"]
     
@@ -75,7 +78,17 @@ struct AddBlockView: View {
                             Text(p.rawValue.capitalized).tag(p)
                         }
                     }
-                    Toggle("Lock block", isOn: $isLocked)
+                    Toggle("Lock block", isOn: Binding(
+                        get: { isLocked },
+                        set: { newValue in
+                            if isRecurring {
+                                pendingLockValue = newValue
+                                showLockScopeDialog = true
+                            } else {
+                                isLocked = newValue
+                            }
+                        }
+                    ))
                 }
 
                 Section("Recurrence") {
@@ -138,6 +151,34 @@ struct AddBlockView: View {
                 }
             }
         }
+        .confirmationDialog(
+            isLocked ? "Unlock Scope" : "Lock Scope",
+            isPresented: $showLockScopeDialog,
+            titleVisibility: .visible
+        ) {
+            if pendingLockValue { // locking
+                Button("Lock only this block") {
+                    isLocked = true
+                    applyLockToSeries = false
+                }
+                Button("Lock all in series") {
+                    isLocked = true
+                    applyLockToSeries = true
+                }
+            } else { // unlocking
+                Button("Unlock only this block") {
+                    isLocked = false
+                    applyLockToSeries = false
+                }
+                Button("Unlock all in series") {
+                    isLocked = false
+                    applyLockToSeries = true
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingLockValue = isLocked
+            }
+        }
     }
     
     private func addSubtask() {
@@ -196,6 +237,7 @@ struct AddBlockView: View {
     }
 
     private func createRecurringBlocks(user: User) {
+        let seriesID = UUID().uuidString
         var occurrenceStart = startTime
         while occurrenceStart <= recurrenceEndDate {
             if shouldCreateBlockForDate(occurrenceStart) {
@@ -210,8 +252,13 @@ struct AddBlockView: View {
                     color: selectedColor,
                     priority: selectedPriority
                 )
-                block.isLocked = isLocked
+                if let applyToSeries = applyLockToSeries {
+                    block.isLocked = applyToSeries ? pendingLockValue : pendingLockValue // block itself reflects selection
+                } else {
+                    block.isLocked = isLocked
+                }
                 block.isRecurring = true
+                block.recurrenceSeriesID = seriesID
                 modelContext.insert(block)
                 createSubtasks(for: block, user: user, start: occurrenceStart, end: occurrenceEnd)
             }
@@ -257,9 +304,19 @@ struct AddBlockView: View {
                 priority: selectedPriority,
                 category: .personal,
                 isComplete: false,
-                taskBlockID: block.id
+                taskBlockID: block.id,
+                recurrenceSeriesID: block.recurrenceSeriesID
             )
-            t.isLocked = isLocked
+            if let applyToSeries = applyLockToSeries {
+                if applyToSeries {
+                    t.isLocked = pendingLockValue
+                } else {
+                    // only first subtask (start of block) follows the user's toggle
+                    t.isLocked = (idx == 0) ? pendingLockValue : false
+                }
+            } else {
+                t.isLocked = isLocked
+            }
             modelContext.insert(t)
         }
     }
