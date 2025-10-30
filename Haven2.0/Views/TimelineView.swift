@@ -202,40 +202,22 @@ struct TimelineView: View {
                     
                     // Timeline Content
                     ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(hourRange, id: \.self) { hour in
-                                TimelineHourView(
-                                    hour: hour,
-                                    tasks: tasksForHour(hour),
-                                    taskBlocks: taskBlocksForHour(hour),
-                                    calendarEvents: calendarEventsForHour(hour),
-                                    selectedDate: selectedDate,
-                                    currentTime: currentTime,
-                                    scrollBasedTime: scrollBasedTime,
-                                    scrollOffset: scrollOffset,
-                                    getTasksForBlock: getTasksForBlock,
-                                    getAllTasksForBlock: getAllTasksForBlock,
-                                    getOverlappingTasks: getOverlappingTasks,
-                                    updateTaskTime: updateTaskTime,
-                                    updateTaskSide: updateTaskSide,
-                                    updateTaskBlockTime: updateTaskBlockTime,
-                                    updateTaskBlockSide: updateTaskBlockSide,
-                                    handleTaskCollision: handleTaskCollision
-                                )
-                                .frame(height: 120)
-                            }
-                        }
-                        .background(
-                            GeometryReader { proxy in
-                                Color.clear
-                                    .preference(key: ScrollOffsetPreferenceKey.self, value: proxy.frame(in: .named("scroll")).minY)
-                            }
+                        ContinuousTimelineView(
+                            tasks: selectedDateTasks,
+                            taskBlocks: taskBlocksForSelectedDate,
+                            calendarEvents: calendarManager.getEventsForDate(selectedDate),
+                            selectedDate: selectedDate,
+                            currentTime: currentTime,
+                            getTasksForBlock: getTasksForBlock,
+                            getAllTasksForBlock: getAllTasksForBlock,
+                            getOverlappingTasks: getOverlappingTasks,
+                            updateTaskTime: updateTaskTime,
+                            updateTaskSide: updateTaskSide,
+                            updateTaskBlockTime: updateTaskBlockTime,
+                            updateTaskBlockSide: updateTaskBlockSide,
+                            handleTaskCollision: handleTaskCollision
                         )
-                    }
-                    .coordinateSpace(name: "scroll")
-                    .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-                        scrollOffset = value
-                        print("Scroll offset changed to: \(value)")
+                        .frame(height: 24 * 120) // 24 hours * 120 points per hour
                     }
                 }
             }
@@ -356,6 +338,14 @@ struct TimelineView: View {
     private func calendarEventsForHour(_ hour: Int) -> [EKEvent] {
         calendarManager.getEventsForDate(selectedDate).filter { event in
             Calendar.current.component(.hour, from: event.startDate) == hour
+        }
+    }
+    
+    private var taskBlocksForSelectedDate: [TaskBlock] {
+        taskBlocks.filter { taskBlock in
+            // Check if any task in this block falls within the selected date
+            let blockTasks = selectedDateTasks.filter { $0.taskBlockID == taskBlock.id }
+            return !blockTasks.isEmpty
         }
     }
     
@@ -721,8 +711,8 @@ struct TaskTimelineBlock: View {
         let duration = task.endTime.timeIntervalSince(task.startTime)
         let minutes = duration / 60
         // Each hour is 120 points, so each minute is 2 points
-        // Minimum height of 16 points (8 minutes), maximum of 120 points (1 hour)
-        return max(16, min(120, CGFloat(minutes) * 2))
+        // Minimum height of 20 points (10 minutes)
+        return max(20, CGFloat(minutes) * 2)
     }
     
     // Priority-based outline color
@@ -768,18 +758,18 @@ struct TaskTimelineBlock: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, minHeight: taskHeight, alignment: side == .left ? .leading : .trailing)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(categoryBackgroundColor)
+                .fill(categoryBackgroundColor.opacity(0.8)) // LESS TRANSPARENT
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(priorityOutlineColor, lineWidth: 2)
+                        .stroke(priorityOutlineColor.opacity(0.7), lineWidth: 2)
                 )
         )
-        .frame(minHeight: taskHeight)
         .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
         .overlay(
-            // Lock icon for locked tasks
+            // Lock icon for locked tasks - BOTTOM RIGHT CORNER
             Group {
                 if task.isLocked {
                     Image(systemName: "lock.fill")
@@ -790,10 +780,10 @@ struct TaskTimelineBlock: View {
                             Circle()
                                 .fill(Color.black.opacity(0.6))
                         )
-                        .offset(x: 50, y: -20) // Top-right corner
+                        .offset(x: -8, y: -8) // Bottom-right corner - within element space
                 }
             },
-            alignment: .topTrailing
+            alignment: .bottomTrailing
         )
     }
 }
@@ -805,13 +795,16 @@ struct TaskBlockTimelineView: View {
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     
     private var blockHeight: CGFloat {
-        let totalDuration = tasks.reduce(0) { total, task in
-            total + task.endTime.timeIntervalSince(task.startTime)
+        // Calculate from first task start to last task end
+        guard let firstTask = tasks.sorted(by: { $0.startTime < $1.startTime }).first,
+              let lastTask = tasks.sorted(by: { $0.endTime < $1.endTime }).last else {
+            return 40
         }
-        let minutes = totalDuration / 60
+        let duration = lastTask.endTime.timeIntervalSince(firstTask.startTime)
+        let minutes = duration / 60
         // Each hour is 120 points, so each minute is 2 points
-        // Minimum height of 30 points, maximum of 100 points per hour
-        return max(30, min(100, CGFloat(minutes) * 2))
+        // Minimum height of 30 points
+        return max(30, CGFloat(minutes) * 2)
     }
     
     private var blockColor: Color {
@@ -870,15 +863,15 @@ struct TaskBlockTimelineView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, minHeight: blockHeight, alignment: side == .left ? .leading : .trailing)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(categoryColor.opacity(0.9))
+                .fill(categoryColor.opacity(0.8)) // LESS TRANSPARENT
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(blockColor, lineWidth: 3)
+                        .stroke(blockColor.opacity(0.7), lineWidth: 3)
                 )
         )
-        .frame(maxWidth: 120, minHeight: blockHeight)
         .shadow(color: .black.opacity(0.4), radius: 3, x: 0, y: 2)
         .overlay(
             // Lock icon for locked task blocks
@@ -892,21 +885,14 @@ struct TaskBlockTimelineView: View {
                             Circle()
                                 .fill(Color.black.opacity(0.6))
                         )
-                        .offset(x: 50, y: -20) // Top-right corner
+                        .offset(x: -8, y: -8) // Bottom-right corner - within element space
                 }
             },
-            alignment: .topTrailing
+            alignment: .bottomTrailing
         )
     }
 }
 
-
-struct ScrollOffsetPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
 
 #Preview {
     TimelineView()

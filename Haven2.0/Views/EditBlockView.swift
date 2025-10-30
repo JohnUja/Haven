@@ -1,0 +1,275 @@
+//
+//  EditBlockView.swift
+//  Haven2.0
+//
+//  Created to edit task blocks
+//
+
+import SwiftUI
+import SwiftData
+
+struct EditBlockView: View {
+    let taskBlock: TaskBlock
+    let tasksInBlock: [Task]
+    let allTasks: [Task] // All tasks to check for overlaps
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var timeSettings: TimeSettingsManager
+    
+    @State private var title: String
+    @State private var blockDescription: String
+    @State private var priority: PriorityType
+    @State private var isLocked: Bool
+    @State private var isRecurring: Bool
+    @State private var newStartTime: Date
+    @State private var showingDeleteAlert = false
+    @State private var showingTimeOverlapAlert = false
+    @State private var overlappingTasks: [Task] = []
+    
+    init(taskBlock: TaskBlock, tasksInBlock: [Task], allTasks: [Task]) {
+        self.taskBlock = taskBlock
+        self.tasksInBlock = tasksInBlock
+        self.allTasks = allTasks
+        
+        // Calculate current block start time (from earliest task)
+        let earliestTask = tasksInBlock.sorted(by: { $0.startTime < $1.startTime }).first
+        let currentStartTime = earliestTask?.startTime ?? Date()
+        
+        self._title = State(initialValue: taskBlock.title)
+        self._blockDescription = State(initialValue: taskBlock.blockDescription ?? "")
+        self._priority = State(initialValue: taskBlock.priority)
+        self._isLocked = State(initialValue: taskBlock.isLocked)
+        self._isRecurring = State(initialValue: taskBlock.isRecurring)
+        self._newStartTime = State(initialValue: currentStartTime)
+    }
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Block Details") {
+                    TextField("Block Title", text: $title)
+                    
+                    TextField("Description (Optional)", text: $blockDescription, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+                
+                Section("Time") {
+                    DatePicker("Start Time", selection: $newStartTime, displayedComponents: [.hourAndMinute, .date])
+                    Text("Moving the block start time will adjust all tasks within it by the same amount.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Section("Priority") {
+                    Picker("Priority", selection: $priority) {
+                        ForEach(PriorityType.allCases, id: \.self) { priority in
+                            Text(priority.rawValue.capitalized).tag(priority)
+                        }
+                    }
+                }
+                
+                Section("Settings") {
+                    Toggle("Lock block", isOn: $isLocked)
+                    Toggle("Make recurring", isOn: $isRecurring)
+                }
+
+                Section("Subtasks") {
+                    ForEach(tasksInBlock, id: \.id) { task in
+                        HStack {
+                            TextField("Title", text: Binding(
+                                get: { task.title },
+                                set: { task.title = $0 }
+                            ))
+                            Spacer()
+                            Text("\(timeSettings.formatTime(task.startTime)) - \(timeSettings.formatTime(task.endTime))")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Button(action: {
+                                task.taskBlockID = nil
+                                try? modelContext.save()
+                            }) {
+                                Image(systemName: "minus.circle.fill").foregroundColor(.red)
+                            }
+                        }
+                    }
+                    Button(action: { addSubtask() }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "plus.circle.fill").foregroundColor(.green)
+                            Text("Add Subtask").foregroundColor(.green)
+                        }
+                    }
+                }
+                
+                Section {
+                    Button("Delete Block", role: .destructive) {
+                        showingDeleteAlert = true
+                    }
+                }
+            }
+            .navigationTitle("Edit Block")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") {
+                        saveChanges()
+                    }
+                    .disabled(title.isEmpty)
+                }
+            }
+        }
+        .alert("Delete Block", isPresented: $showingDeleteAlert) {
+            Button("Delete", role: .destructive) {
+                deleteBlock()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Are you sure you want to delete this block? All tasks within it will be deleted. This action cannot be undone.")
+        }
+        .alert("Time Overlap Detected", isPresented: $showingTimeOverlapAlert) {
+            Button("Proceed", role: .destructive) {
+                // Save changes despite overlap
+                applyTimeChange()
+                taskBlock.title = title
+                taskBlock.blockDescription = blockDescription.isEmpty ? nil : blockDescription
+                taskBlock.priority = priority
+                taskBlock.isLocked = isLocked
+                taskBlock.isRecurring = isRecurring
+                do {
+                    try modelContext.save()
+                    dismiss()
+                } catch {
+                    print("Failed to save block: \(error.localizedDescription)")
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                // Reset start time
+                let earliestTask = tasksInBlock.sorted(by: { $0.startTime < $1.startTime }).first
+                newStartTime = earliestTask?.startTime ?? Date()
+            }
+        } message: {
+            if !overlappingTasks.isEmpty {
+                let taskTitles = overlappingTasks.prefix(3).map { $0.title }.joined(separator: ", ")
+                let moreText = overlappingTasks.count > 3 ? " and \(overlappingTasks.count - 3) more" : ""
+                Text("Moving the block will cause overlaps with: \(taskTitles)\(moreText). Do you want to proceed?")
+            } else {
+                Text("Moving the block will cause overlaps with other tasks. Do you want to proceed?")
+            }
+        }
+    }
+    
+    private func saveChanges() {
+        // Calculate time difference if start time changed
+        let earliestTask = tasksInBlock.sorted(by: { $0.startTime < $1.startTime }).first
+        guard let earliestTask = earliestTask else { return }
+        
+        let currentStartTime = earliestTask.startTime
+        let timeDifference = newStartTime.timeIntervalSince(currentStartTime)
+        
+        if abs(timeDifference) > 60 { // Only check if changed by more than 1 minute
+            // Calculate new times for all tasks
+            var newTaskTimes: [(Task, Date, Date)] = []
+            for task in tasksInBlock {
+                let newStart = task.startTime.addingTimeInterval(timeDifference)
+                let newEnd = task.endTime.addingTimeInterval(timeDifference)
+                newTaskTimes.append((task, newStart, newEnd))
+            }
+            
+            // Check for overlaps
+            let overlapping = findOverlappingTasks(newTaskTimes: newTaskTimes)
+            if !overlapping.isEmpty {
+                overlappingTasks = overlapping
+                showingTimeOverlapAlert = true
+                return // Don't save yet, wait for user confirmation
+            }
+        }
+        
+        // No overlaps - save normally
+        applyTimeChange()
+        taskBlock.title = title
+        taskBlock.blockDescription = blockDescription.isEmpty ? nil : blockDescription
+        taskBlock.priority = priority
+        taskBlock.isLocked = isLocked
+        taskBlock.isRecurring = isRecurring
+        
+        do {
+            try modelContext.save()
+            dismiss()
+        } catch {
+            print("Failed to save block: \(error.localizedDescription)")
+        }
+    }
+    
+    private func applyTimeChange() {
+        let earliestTask = tasksInBlock.sorted(by: { $0.startTime < $1.startTime }).first
+        guard let earliestTask = earliestTask else { return }
+        
+        let currentStartTime = earliestTask.startTime
+        let timeDifference = newStartTime.timeIntervalSince(currentStartTime)
+        
+        // Apply time change to all tasks in the block
+        for task in tasksInBlock {
+            task.startTime = task.startTime.addingTimeInterval(timeDifference)
+            task.endTime = task.endTime.addingTimeInterval(timeDifference)
+        }
+    }
+    
+    private func findOverlappingTasks(newTaskTimes: [(Task, Date, Date)]) -> [Task] {
+        var overlapping: [Task] = []
+        
+        for (task, newStart, newEnd) in newTaskTimes {
+            // Check against all tasks not in this block
+            let conflicts = allTasks.filter { otherTask in
+                // Don't check against tasks in this block
+                if tasksInBlock.contains(where: { $0.id == otherTask.id }) {
+                    return false
+                }
+                // Check if times overlap
+                return newStart < otherTask.endTime && otherTask.startTime < newEnd
+            }
+            overlapping.append(contentsOf: conflicts)
+        }
+        
+        // Remove duplicates
+        return Array(Set(overlapping.map { $0.id })).compactMap { id in
+            allTasks.first(where: { $0.id == id })
+        }
+    }
+    
+    private func deleteBlock() {
+        // Delete all tasks in the block
+        for task in tasksInBlock {
+            modelContext.delete(task)
+        }
+        // Delete the block
+        modelContext.delete(taskBlock)
+        
+        do {
+            try modelContext.save()
+            dismiss()
+        } catch {
+            print("Failed to delete block: \(error.localizedDescription)")
+        }
+    }
+}
+
+extension EditBlockView {
+    private func addSubtask() {
+        guard let lastEnd = tasksInBlock.sorted(by: { $0.endTime < $1.endTime }).last?.endTime else { return }
+        let newTask = Task(userID: taskBlock.userID,
+                           title: "New Task",
+                           startTime: lastEnd,
+                           endTime: lastEnd.addingTimeInterval(15 * 60),
+                           priority: priority,
+                           category: .personal,
+                           isComplete: false,
+                           taskBlockID: taskBlock.id)
+        modelContext.insert(newTask)
+        try? modelContext.save()
+    }
+}
+

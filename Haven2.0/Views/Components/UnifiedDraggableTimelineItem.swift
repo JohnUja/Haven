@@ -17,8 +17,10 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
     let onTimeChanged: (Date, Date) -> Void
     let onSideChanged: (TaskTimelineBlock.TimelineSide) -> Void
     let onTaskCollision: ((Date, Date) -> Void)? // New parameter for collision detection
+    let onDragStateChanged: ((Bool) -> Void)? // New parameter for drag state
+    let onTap: (() -> Void)? // New parameter for tap gesture
     
-    init(content: Content, side: TaskTimelineBlock.TimelineSide, isLocked: Bool, startTime: Date, endTime: Date, onTimeChanged: @escaping (Date, Date) -> Void, onSideChanged: @escaping (TaskTimelineBlock.TimelineSide) -> Void, onTaskCollision: ((Date, Date) -> Void)? = nil) {
+    init(content: Content, side: TaskTimelineBlock.TimelineSide, isLocked: Bool, startTime: Date, endTime: Date, onTimeChanged: @escaping (Date, Date) -> Void, onSideChanged: @escaping (TaskTimelineBlock.TimelineSide) -> Void, onTaskCollision: ((Date, Date) -> Void)? = nil, onDragStateChanged: ((Bool) -> Void)? = nil, onTap: (() -> Void)? = nil) {
         self.content = content
         self.side = side
         self.isLocked = isLocked
@@ -27,6 +29,8 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
         self.onTimeChanged = onTimeChanged
         self.onSideChanged = onSideChanged
         self.onTaskCollision = onTaskCollision
+        self.onDragStateChanged = onDragStateChanged
+        self.onTap = onTap
     }
     
     @State private var dragOffset: CGSize = .zero
@@ -36,6 +40,8 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
     @State private var pendingSideChange: TaskTimelineBlock.TimelineSide? = nil
     @State private var showGuidelines = false
     @State private var showingLockedAlert = false
+    @State private var didDrag: Bool = false
+    @EnvironmentObject private var timeSettings: TimeSettingsManager
     
     private let minuteHeight: CGFloat = 2.0 // 120 points per hour / 60 minutes = 2 points per minute
     
@@ -47,7 +53,9 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
         endTime: Date,
         onTimeChanged: @escaping (Date, Date) -> Void,
         onSideChanged: @escaping (TaskTimelineBlock.TimelineSide) -> Void,
-        onTaskCollision: ((Date, Date) -> Void)? = nil
+        onTaskCollision: ((Date, Date) -> Void)? = nil,
+        onDragStateChanged: ((Bool) -> Void)? = nil,
+        onTap: (() -> Void)? = nil
     ) {
         self.content = content()
         self.side = side
@@ -57,37 +65,56 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
         self.onTimeChanged = onTimeChanged
         self.onSideChanged = onSideChanged
         self.onTaskCollision = onTaskCollision
+        self.onDragStateChanged = onDragStateChanged
+        self.onTap = onTap
     }
     
     var body: some View {
-        content
-            .offset(dragOffset)
-            .scaleEffect(isDragging ? 1.05 : 1.0)
-            .shadow(color: isDragging ? .black.opacity(0.3) : .clear, radius: 8, x: 0, y: 4)
-            .gesture(dragGesture)
-            .zIndex(isDragging ? 1000 : 0)
-            .overlay(dragOverlay)
-            .overlay(guidelinesOverlay)
-            .alert("Move Item", isPresented: $showingSideChangeConfirmation) {
-                Button("Cancel", role: .cancel) {
-                    pendingSideChange = nil
-                }
-                Button("Move to \(pendingSideChange == .left ? "Work" : "Personal")") {
-                    if let newSide = pendingSideChange {
-                        onSideChanged(newSide)
-                    }
-                    pendingSideChange = nil
-                }
-            } message: {
+        ZStack {
+            content
+                .offset(dragOffset)
+                .scaleEffect(isDragging ? 1.05 : 1.0)
+                .shadow(color: isDragging ? .black.opacity(0.3) : .clear, radius: 8, x: 0, y: 4)
+                .simultaneousGesture(
+                    TapGesture()
+                        .onEnded { _ in
+                            // Only trigger tap if there was no drag
+                            if !didDrag, let tapHandler = onTap {
+                                tapHandler()
+                            }
+                            didDrag = false // Reset for next interaction
+                        }
+                )
+                .gesture(dragGesture)
+                .zIndex(isDragging ? 1000 : 0)
+            
+            // Floating time indicator at timeline level (positioned at the top of the task)
+            if isDragging, let hoverTime = currentHoverTime {
+                floatingTimeIndicator
+                    .zIndex(1001)
+            }
+        }
+        // Guidelines are now handled in ContinuousTimelineView
+        .alert("Move Item", isPresented: $showingSideChangeConfirmation) {
+            Button("Cancel", role: .cancel) {
+                pendingSideChange = nil
+            }
+            Button("Move to \(pendingSideChange == .left ? "Work" : "Personal")") {
                 if let newSide = pendingSideChange {
-                    Text("Do you want to move this item to \(newSide == .left ? "Work" : "Personal") side?")
+                    onSideChanged(newSide)
                 }
+                pendingSideChange = nil
             }
-            .alert("Item Locked", isPresented: $showingLockedAlert) {
-                Button("OK") { }
-            } message: {
-                Text("This item is locked and cannot be moved. Unlock it from the home screen to move it.")
+        } message: {
+            if let newSide = pendingSideChange {
+                Text("Do you want to move this item to \(newSide == .left ? "Work" : "Personal") side?")
             }
+        }
+        .alert("Item Locked", isPresented: $showingLockedAlert) {
+            Button("OK") { }
+        } message: {
+            Text("This item is locked and cannot be moved. Unlock it from the home screen to move it.")
+        }
     }
     
     private var dragGesture: some Gesture {
@@ -101,6 +128,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             isDragging = true
                             showGuidelines = true
+                            onDragStateChanged?(true) // Notify parent
                         }
                         AudioServicesPlaySystemSound(1519) // Haptic feedback
                     }
@@ -114,6 +142,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                     }
                     
                     if let drag = drag {
+                        didDrag = true // Mark that a drag occurred
                         dragOffset = drag.translation
                         
                         // Calculate potential new time based on drag
@@ -123,7 +152,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                         let newStartTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: startTime) ?? startTime
                         let newEndTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: endTime) ?? endTime
                         
-                        // Snap to nearest 5-minute interval
+                        // Snap to nearest 5-minute interval for ultra precision
                         currentHoverTime = snapToNearestFiveMinutes(date: newStartTime)
                         
                         // Check if crossing to other side
@@ -146,6 +175,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                         isDragging = false
                         dragOffset = .zero
                         showGuidelines = false
+                        onDragStateChanged?(false) // Notify parent
                     }
                     
                     if let drag = drag {
@@ -156,7 +186,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                         var finalNewStartTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: startTime) ?? startTime
                         var finalNewEndTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: endTime) ?? endTime
                         
-                        // Snap to nearest 5-minute interval on drop
+                        // Snap to nearest 5-minute interval on drop for ultra precision
                         if let snappedTime = snapToNearestFiveMinutes(date: finalNewStartTime) {
                             let duration = finalNewEndTime.timeIntervalSince(finalNewStartTime)
                             finalNewStartTime = snappedTime
@@ -174,6 +204,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                     }
                     
                     currentHoverTime = nil
+                    didDrag = false // Reset for next interaction
                     AudioServicesPlaySystemSound(1520) // Haptic feedback
                     
                 default:
@@ -182,64 +213,77 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                         isDragging = false
                         dragOffset = .zero
                         showGuidelines = false
+                        onDragStateChanged?(false) // Notify parent
                     }
                 }
             }
     }
     
-    private var dragOverlay: some View {
-        Group {
-            if isDragging, let hoverTime = currentHoverTime {
-                VStack {
-                    Text("\(hoverTime, format: .dateTime.hour().minute())")
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(
-                            Capsule()
-                                .fill(Color.white.opacity(0.9))
-                                .shadow(radius: 2)
-                        )
+    // Floating time indicator - acts as a "leveler" showing exact position on timeline
+    private var floatingTimeIndicator: some View {
+        HStack {
+            Spacer()
+            
+            if let hoverTime = currentHoverTime {
+                VStack(spacing: 4) {
+                    // Time display with FIXED WIDTH
+                    Text(timeSettings.formatTime(hoverTime))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.black)
-                        .offset(y: dragOffset.height - 30)
+                        .frame(width: 120) // FIXED WIDTH - never changes
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.white.opacity(0.95))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.white.opacity(0.8), lineWidth: 1.5)
+                                )
+                        )
+                        .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
                     
+                    // Side change indicator (if applicable)
                     if let pendingSide = pendingSideChange {
                         Text("Move to \(pendingSide == .left ? "Work" : "Personal")?")
-                            .font(.caption2)
-                            .fontWeight(.medium)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(
-                                Capsule()
-                                    .fill(pendingSide == .left ? Color.blue.opacity(0.8) : Color.purple.opacity(0.8))
-                            )
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundColor(.white)
-                            .offset(y: dragOffset.height - 10)
+                            .frame(width: 120) // FIXED WIDTH - matches time display
+                            .padding(.vertical, 4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(pendingSide == .left ? Color.blue.opacity(0.9) : Color.green.opacity(0.9))
+                            )
                     }
                 }
+                .offset(y: dragOffset.height - 40) // Position above the task
+                .padding(.trailing, 16)
             }
+            
+            Spacer()
         }
+        .allowsHitTesting(false)
     }
     
     private var guidelinesOverlay: some View {
-        Group {
+        GeometryReader { geometry in
             if showGuidelines && isDragging {
-                VStack(spacing: 0) {
-                    // Create guidelines for every 5 minutes within the hour
-                    ForEach(0..<12, id: \.self) { interval in
-                        let minute = interval * 5
-                        let offset = CGFloat(minute) * minuteHeight
-                        let isMajorMark = minute % 15 == 0 // 15, 30, 45 minute marks
+                // Dynamic guidelines spanning the entire 24-hour timeline
+                ZStack(alignment: .top) {
+                    // Draw 5-minute interval guidelines for all 24 hours (288 intervals)
+                    ForEach(0..<288, id: \.self) { interval in
+                        let minute = (interval * 5) % 60
+                        let hour = interval / 12
+                        let yPosition = CGFloat(hour) * 120 + CGFloat(minute) * 2
+                        let isMajorMark = minute % 15 == 0
                         
                         Rectangle()
-                            .fill(Color.white.opacity(isMajorMark ? 0.7 : 0.3))
-                            .frame(height: isMajorMark ? 2 : 1)
-                            .offset(y: offset - 60) // Center around the hour mark
+                            .fill(Color.white.opacity(isMajorMark ? 0.6 : 0.25))
+                            .frame(width: geometry.size.width * 0.8, height: isMajorMark ? 2 : 1)
+                            .position(x: geometry.size.width / 2, y: yPosition)
                     }
                 }
-                .frame(width: 2)
-                .offset(x: 0) // Position in the center of the timeline
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(false)
             }
         }
     }
@@ -248,7 +292,17 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
         let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
         guard let hour = components.hour, let minute = components.minute else { return nil }
         
+        // Snap to nearest 5-minute interval (0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55)
         let snappedMinute = (minute / 5) * 5
+        return Calendar.current.date(bySettingHour: hour, minute: snappedMinute, second: 0, of: date)
+    }
+    
+    private func snapToNearestFifteenMinutes(date: Date) -> Date? {
+        let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        guard let hour = components.hour, let minute = components.minute else { return nil }
+        
+        // Snap to nearest 15-minute interval (0, 15, 30, 45)
+        let snappedMinute = (minute / 15) * 15
         return Calendar.current.date(bySettingHour: hour, minute: snappedMinute, second: 0, of: date)
     }
     

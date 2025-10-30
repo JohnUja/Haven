@@ -12,10 +12,11 @@ struct NumericTimeInput: View {
     let title: String
     let isEnabled: Bool
     
-    @State private var hourText = ""
-    @State private var minuteText = ""
+    @State private var selectedHour = 1
+    @State private var selectedMinute = 0
     @State private var isAM = true
-    @FocusState private var isFocused: Bool
+    @State private var availableHours: [Int] = Array(1...12)
+    @State private var availableMinutes: [Int] = Array(0...59)
     
     init(time: Binding<Date>, title: String, isEnabled: Bool = true) {
         self._time = time
@@ -25,47 +26,48 @@ struct NumericTimeInput: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Title with lighter font weight to match section labels
             Text(title)
-                .font(.headline)
-                .foregroundColor(.primary)
+                .font(.system(size: 14, weight: .regular))
+                .foregroundColor(.secondary)
             
             HStack(spacing: 12) {
-                // Time input field
+                // Wheel picker for hours and minutes
                 HStack(spacing: 4) {
-                    TextField("12", text: $hourText)
-                        .keyboardType(.numberPad)
-                        .focused($isFocused)
-                        .multilineTextAlignment(.center)
-                        .frame(width: 40)
-                        .onChange(of: hourText) { _, newValue in
-                            updateTime()
+                    Picker("", selection: $selectedHour) {
+                        ForEach(availableHours, id: \.self) { hour in
+                            Text("\(hour)")
+                                .font(.system(size: 20, weight: .regular))
+                                .tag(hour)
                         }
+                    }
+                    .pickerStyle(.wheel)
+                    .frame(width: 60, height: 100)
+                    .clipped()
+                    .disabled(!isEnabled)
+                    .onChange(of: selectedHour) { _, _ in
+                        updateTimeFromSelection()
+                        updateAvailableMinutes()
+                    }
                     
                     Text(":")
-                        .font(.title2)
-                        .fontWeight(.medium)
+                        .font(.system(size: 20, weight: .regular))
                     
-                    TextField("00", text: $minuteText)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.center)
-                        .frame(width: 40)
-                        .onChange(of: minuteText) { _, newValue in
-                            updateTime()
+                    Picker("", selection: $selectedMinute) {
+                        ForEach(availableMinutes, id: \.self) { minute in
+                            Text(String(format: "%02d", minute))
+                                .font(.system(size: 20, weight: .regular))
+                                .tag(minute)
                         }
+                    }
+                    .pickerStyle(.wheel)
+                    .frame(width: 60, height: 100)
+                    .clipped()
+                    .disabled(!isEnabled)
+                    .onChange(of: selectedMinute) { _, _ in
+                        updateTimeFromSelection()
+                    }
                 }
-                .font(.title3)
-                .fontWeight(.medium)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-                .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.gray.opacity(0.1))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4)
-                                .stroke(isFocused ? Color.blue : Color.clear, lineWidth: 0.5)
-                        )
-                )
-                .disabled(!isEnabled)
                 
                 // AM/PM toggle
                 Picker("AM/PM", selection: $isAM) {
@@ -74,41 +76,39 @@ struct NumericTimeInput: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 80)
-                .padding(.vertical, 4)
-                .onChange(of: isAM) { _, _ in
-                    updateTime()
-                }
                 .disabled(!isEnabled)
+                .onChange(of: isAM) { _, _ in
+                    updateTimeFromSelection()
+                    updateAvailableMinutes()
+                }
             }
         }
         .onAppear {
             updateDisplayFromTime()
+            updateAvailableMinutes()
         }
         .onChange(of: time) { _, _ in
             updateDisplayFromTime()
+            updateAvailableMinutes()
         }
     }
     
-    private func updateTime() {
-        guard let hour = Int(hourText), let minute = Int(minuteText) else { return }
-        
-        // Validate hour (1-12)
-        let validHour = max(1, min(12, hour))
-        let validMinute = max(0, min(59, minute))
-        
+    private func updateTimeFromSelection() {
         // Convert to 24-hour format
-        var hour24 = validHour
-        if !isAM && validHour != 12 {
-            hour24 = validHour + 12
-        } else if isAM && validHour == 12 {
+        var hour24 = selectedHour
+        if !isAM && selectedHour != 12 {
+            hour24 = selectedHour + 12
+        } else if isAM && selectedHour == 12 {
             hour24 = 0
         }
         
         // Create new date with the time
         let calendar = Calendar.current
-        let components = calendar.dateComponents([.year, .month, .day], from: time)
-        if let newDate = calendar.date(bySettingHour: hour24, minute: validMinute, second: 0, of: time) {
-            time = newDate
+        if let newDate = calendar.date(bySettingHour: hour24, minute: selectedMinute, second: 0, of: time) {
+            // Smart time validation
+            if let validatedDate = validateTime(newDate) {
+                time = validatedDate
+            }
         }
     }
     
@@ -125,9 +125,66 @@ struct NumericTimeInput: View {
             hour12 = hour - 12
         }
         
-        hourText = String(hour12)
-        minuteText = String(format: "%02d", minute)
+        selectedHour = hour12
+        selectedMinute = minute
         isAM = hour < 12
+    }
+    
+    private func validateTime(_ date: Date) -> Date? {
+        let now = Date()
+        let calendar = Calendar.current
+        
+        // Only validate if it's today
+        guard calendar.isDate(date, inSameDayAs: now) else {
+            return date
+        }
+        
+        let components = calendar.dateComponents([.hour, .minute], from: now)
+        let currentHour = components.hour ?? 0
+        let currentMinute = components.minute ?? 0
+        
+        let dateComponents = calendar.dateComponents([.hour, .minute], from: date)
+        let dateHour = dateComponents.hour ?? 0
+        let dateMinute = dateComponents.minute ?? 0
+        
+        // Check if the selected time is in the past
+        if dateHour < currentHour || (dateHour == currentHour && dateMinute < currentMinute) {
+            // Round to nearest hour
+            let nextHour = currentHour + 1
+            return calendar.date(bySettingHour: nextHour, minute: 0, second: 0, of: date)
+        }
+        
+        return date
+    }
+    
+    private func updateAvailableMinutes() {
+        let now = Date()
+        let calendar = Calendar.current
+        
+        // Only restrict if it's today
+        guard calendar.isDate(time, inSameDayAs: now) else {
+            availableMinutes = Array(0...59)
+            return
+        }
+        
+        let components = calendar.dateComponents([.hour, .minute], from: now)
+        let currentHour = components.hour ?? 0
+        let currentMinute = components.minute ?? 0
+        
+        // Convert selected hour to 24-hour format
+        var hour24 = selectedHour
+        if !isAM && selectedHour != 12 {
+            hour24 = selectedHour + 12
+        } else if isAM && selectedHour == 12 {
+            hour24 = 0
+        }
+        
+        // If selected hour matches current hour, restrict minutes
+        if hour24 == currentHour {
+            availableMinutes = Array(currentMinute...59)
+        } else {
+            availableMinutes = Array(0...59)
+        }
     }
 }
 

@@ -33,6 +33,8 @@ class TimeSettingsManager: ObservableObject {
         timezone = newTimezone
         UserDefaults.standard.set(newTimezone.identifier, forKey: "timezone")
     }
+
+    // Popup appearance uses default system styling (white) with no setting
     
     func formatTime(_ date: Date) -> String {
         let formatter = DateFormatter()
@@ -82,17 +84,13 @@ class TimeSettingsManager: ObservableObject {
     }
     
     func formatHour(_ hour: Int) -> String {
-        let formatter = DateFormatter()
-        formatter.timeZone = timezone
-        
         if use24HourFormat {
-            formatter.dateFormat = "HH:mm"
+            return String(format: "%02d:00", hour)
         } else {
-            formatter.dateFormat = "h:mm a"
+            let displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour)
+            let ampm = hour < 12 ? "AM" : "PM"
+            return String(format: "%d:00 %@", displayHour, ampm)
         }
-        
-        let date = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) ?? Date()
-        return formatter.string(from: date)
     }
 }
 

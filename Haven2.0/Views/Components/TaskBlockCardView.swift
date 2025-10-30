@@ -70,6 +70,23 @@ struct TaskBlockCardView: View {
         return .blue
     }
     
+    private func colorFromString(_ colorString: String) -> Color {
+        switch colorString {
+        case "red": return .red
+        case "orange": return .orange
+        case "yellow": return .yellow
+        case "green": return .green
+        case "blue": return .blue
+        case "purple": return .purple
+        case "pink": return .pink
+        case "mint": return .mint
+        case "cyan": return .cyan
+        case "indigo": return .indigo
+        case "brown": return .brown
+        default: return .blue
+        }
+    }
+    
     private var timeRangeText: String {
         guard !tasks.isEmpty else { return "" }
         
@@ -111,60 +128,63 @@ struct TaskBlockCardView: View {
                             Text(blockTitle)
                                 .font(theme.bodyFont)
                                 .fontWeight(.semibold)
-                                .foregroundColor(theme.textPrimary)
+                                .foregroundColor(.white) // WHITE TEXT
+                                .strikethrough(isBlockComplete) // CROSS OUT WHEN COMPLETE
+                                .opacity(isBlockComplete ? 0.6 : 1.0)
                             
                             Spacer()
                             
                             Text("\(completedCount)/\(tasks.count)")
                                 .font(.caption)
-                                .foregroundColor(theme.textSecondary)
+                                .foregroundColor(.white.opacity(0.8)) // WHITE TEXT
                         }
                         
-                            // Priority text for the block
+                            // Priority text for the block - MATCH PRIORITY COLOR
                             HStack {
                                 Text("Priority: \(blockPriorityText)")
-                                    .font(.caption2)
-                                    .foregroundColor(blockPriorityColor)
+                                    .font(.system(size: 11, weight: .regular))
+                                    .foregroundColor(blockPriorityColor) // MATCH PRIORITY COLOR (Green/Blue/Orange/Red)
                                 Spacer()
                             }
                         
                         // Progress bar
                         ProgressView(value: Double(completedCount), total: Double(tasks.count))
-                            .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+                            .progressViewStyle(LinearProgressViewStyle(tint: .white.opacity(0.5))) // WHITE PROGRESS BAR
                             .scaleEffect(y: 0.5)
                         
                         // Time range for the block
                         HStack {
                             Text(timeRangeText)
                                 .font(.caption2)
-                                .foregroundColor(theme.textSecondary)
+                                .foregroundColor(.white.opacity(0.7)) // WHITE TEXT
                             Spacer()
                         }
                     }
                     
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.caption)
-                        .foregroundColor(theme.textSecondary)
+                        .foregroundColor(.white.opacity(0.7)) // WHITE TEXT
                 }
                 .padding(16)
                 .background(
                     ZStack {
-                        RoundedRectangle(cornerRadius: theme.cardCornerRadius)
-                            .fill(isBlockComplete ? theme.cardBackground.opacity(0.5) : theme.cardBackground)
+                        // MUCH PALER category color background with HIGH transparency - use taskBlock color if available
+                        let backgroundColor = taskBlock.map { colorFromString($0.color).opacity(0.25) } ?? blockCategoryColor.opacity(0.25)
+                        RoundedRectangle(cornerRadius: 12) // REDUCED corner radius
+                            .fill(isBlockComplete ? backgroundColor.opacity(0.3) : backgroundColor)
                             .overlay(
-                                // Category color ring
-                                RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                                // Subtle category color stroke - Original + 1px
+                                RoundedRectangle(cornerRadius: 12)
                                     .stroke(
-                                        blockCategoryColor,
+                                        taskBlock.map { colorFromString($0.color).opacity(0.6) } ?? blockCategoryColor.opacity(0.6),
                                         lineWidth: 1.5
                                     )
-                                    .opacity(0.6)
                             )
-                            .shadow(color: theme.primaryColor.opacity(0.1), radius: theme.shadowRadius)
+                            .shadow(color: theme.primaryColor.opacity(0.05), radius: theme.shadowRadius)
                         
                         // Simple completion highlight
                         if isBlockComplete {
-                            RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                            RoundedRectangle(cornerRadius: 12)
                                 .stroke(Color.green, lineWidth: 2)
                                 .opacity(0.8)
                         }
@@ -173,33 +193,31 @@ struct TaskBlockCardView: View {
                 .opacity(isBlockComplete ? 0.7 : 1.0)
             }
             .buttonStyle(PlainButtonStyle())
-            .onLongPressGesture {
-                onEditBlock?(tasks)
-            }
             
             // Expanded subtasks
             if isExpanded && !tasks.isEmpty {
+                let blockColorForSubtasks = taskBlock.map { colorFromString($0.color) } ?? blockCategoryColor
                 VStack(spacing: 8) {
                     ForEach(tasks, id: \.id) { task in
                         HStack(spacing: 12) {
-                            // Indent for subtask
+                            // Indent for subtask - MATCH BLOCK COLOR
                             Rectangle()
-                                .fill(Color.blue.opacity(0.3))
+                                .fill(blockColorForSubtasks.opacity(0.5))
                                 .frame(width: 2, height: 20)
                             
-                            // Task content
+                            // Task content - LABELS MATCH BLOCK COLOR
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(task.title)
                                     .font(theme.bodyFont)
                                     .fontWeight(.medium)
-                                    .foregroundColor(theme.textPrimary)
+                                    .foregroundColor(.white)
                                     .strikethrough(task.isComplete)
                                     .opacity(task.isComplete ? 0.6 : 1.0)
                                 
                                 if let description = task.taskDescription {
                                     Text(description)
                                         .font(.caption)
-                                        .foregroundColor(theme.textSecondary)
+                                        .foregroundColor(.white.opacity(0.7))
                                         .lineLimit(2)
                                         .opacity(task.isComplete ? 0.6 : 1.0)
                                 }
@@ -240,10 +258,15 @@ struct TaskBlockCardView: View {
                 .padding(.bottom, 16)
             }
         }
-        .onLongPressGesture {
-            // Long press to edit task block
-            onEditBlock?(tasks)
-        }
+        .contentShape(Rectangle())
+        .highPriorityGesture(
+            LongPressGesture(minimumDuration: 0.3)
+                .onEnded { _ in
+                    AudioServicesPlaySystemSound(1520)
+                    AudioServicesPlaySystemSound(1057)
+                    onEditBlock?(tasks)
+                }
+        )
     }
     
 }

@@ -19,6 +19,7 @@ final class TaskBlock {
     var isComplete: Bool
     var createdDate: Date
     var isLocked: Bool = false // New: For routine blocks that can't be moved
+    var isRecurring: Bool = false
     
     init(id: String = UUID().uuidString,
          userID: String,

@@ -50,7 +50,7 @@ struct AddTaskView: View {
                     // Priority dropdown
                     HStack {
                         Text("Priority")
-                            .font(.headline)
+                            .font(.system(size: 14, weight: .regular))
                             .foregroundColor(.primary)
                         
                         Spacer()
@@ -111,7 +111,7 @@ struct AddTaskView: View {
                 Section("Category") {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Category")
-                            .font(.headline)
+                            .font(.system(size: 14, weight: .regular))
                             .foregroundColor(.primary)
                         
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 12) {

@@ -18,9 +18,14 @@ struct AddBlockView: View {
     @State private var blockTitle = ""
     @State private var blockDescription = ""
     @State private var selectedColor = "blue"
+    @State private var selectedPriority: PriorityType = .normal
+    @State private var isLocked = false
+    @State private var isRecurring = false
     @State private var subtasks = ["Task 1", "Task 2", "Task 3"]
     @State private var startTime = Date()
     @State private var endTime = Date().addingTimeInterval(3600) // 1 hour later
+    @State private var recurrenceType: RecurrenceType = .daily
+    @State private var recurrenceEndDate = Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date()
     
     private let availableColors = ["red", "orange", "yellow", "green", "blue", "purple", "pink", "mint", "cyan", "indigo", "brown"]
     
@@ -61,6 +66,29 @@ struct AddBlockView: View {
                             }
                             .buttonStyle(PlainButtonStyle())
                         }
+                    }
+                }
+                
+                Section("Priority & Settings") {
+                    Picker("Priority", selection: $selectedPriority) {
+                        ForEach(PriorityType.allCases, id: \.self) { p in
+                            Text(p.rawValue.capitalized).tag(p)
+                        }
+                    }
+                    Toggle("Lock block", isOn: $isLocked)
+                }
+
+                Section("Recurrence") {
+                    Toggle("Make this a recurring block", isOn: $isRecurring)
+                    if isRecurring {
+                        Picker("Repeat", selection: $recurrenceType) {
+                            ForEach(RecurrenceType.allCases, id: \.self) { type in
+                                Text(type.displayName).tag(type)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        DatePicker("End date", selection: $recurrenceEndDate, displayedComponents: [.date])
+                            .datePickerStyle(.compact)
                     }
                 }
                 
@@ -140,45 +168,99 @@ struct AddBlockView: View {
     
     private func saveBlock() {
         guard let user = currentUser else { return }
-        
-        // Create the task block
-        let taskBlock = TaskBlock(
-            userID: user.id,
-            title: blockTitle,
-            blockDescription: blockDescription.isEmpty ? nil : blockDescription,
-            color: selectedColor
-        )
-        
-        modelContext.insert(taskBlock)
-        
-        // Create the subtasks
-        for (index, subtaskTitle) in subtasks.enumerated() {
-            if !subtaskTitle.isEmpty {
-                // Calculate time for each subtask within the block duration
-                let taskDuration = endTime.timeIntervalSince(startTime) / Double(subtasks.count)
-                let taskStartTime = startTime.addingTimeInterval(taskDuration * Double(index))
-                let taskEndTime = taskStartTime.addingTimeInterval(taskDuration)
-                
-                let task = Task(
-                    userID: user.id,
-                    title: subtaskTitle,
-                    taskDescription: nil,
-                    startTime: taskStartTime,
-                    endTime: taskEndTime,
-                    priority: .normal,
-                    category: .personal,
-                    isComplete: false,
-                    taskBlockID: taskBlock.id
-                )
-                modelContext.insert(task)
-            }
+        if isRecurring {
+            createRecurringBlocks(user: user)
+        } else {
+            createSingleBlock(user: user)
         }
-        
         do {
             try modelContext.save()
             dismiss()
         } catch {
             print("Error saving block: \(error)")
+        }
+    }
+
+    private func createSingleBlock(user: User) {
+        let taskBlock = TaskBlock(
+            userID: user.id,
+            title: blockTitle,
+            blockDescription: blockDescription.isEmpty ? nil : blockDescription,
+            color: selectedColor,
+            priority: selectedPriority
+        )
+        taskBlock.isLocked = isLocked
+        taskBlock.isRecurring = false
+        modelContext.insert(taskBlock)
+        createSubtasks(for: taskBlock, user: user, start: startTime, end: endTime)
+    }
+
+    private func createRecurringBlocks(user: User) {
+        var occurrenceStart = startTime
+        while occurrenceStart <= recurrenceEndDate {
+            if shouldCreateBlockForDate(occurrenceStart) {
+                let calendar = Calendar.current
+                let endComponents = calendar.dateComponents([.hour, .minute], from: endTime)
+                let occurrenceEnd = calendar.date(bySettingHour: endComponents.hour ?? 0, minute: endComponents.minute ?? 0, second: 0, of: occurrenceStart) ?? occurrenceStart.addingTimeInterval(3600)
+
+                let block = TaskBlock(
+                    userID: (currentUser?.id ?? ""),
+                    title: blockTitle,
+                    blockDescription: blockDescription.isEmpty ? nil : blockDescription,
+                    color: selectedColor,
+                    priority: selectedPriority
+                )
+                block.isLocked = isLocked
+                block.isRecurring = true
+                modelContext.insert(block)
+                createSubtasks(for: block, user: user, start: occurrenceStart, end: occurrenceEnd)
+            }
+
+            switch recurrenceType {
+            case .daily:
+                occurrenceStart = Calendar.current.date(byAdding: .day, value: 1, to: occurrenceStart) ?? occurrenceStart
+            case .weekdays:
+                occurrenceStart = Calendar.current.date(byAdding: .day, value: 1, to: occurrenceStart) ?? occurrenceStart
+                while Calendar.current.isDateInWeekend(occurrenceStart) {
+                    occurrenceStart = Calendar.current.date(byAdding: .day, value: 1, to: occurrenceStart) ?? occurrenceStart
+                }
+            case .weekly:
+                occurrenceStart = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: occurrenceStart) ?? occurrenceStart
+            case .custom:
+                occurrenceStart = Calendar.current.date(byAdding: .day, value: 1, to: occurrenceStart) ?? occurrenceStart
+            }
+        }
+    }
+
+    private func shouldCreateBlockForDate(_ date: Date) -> Bool {
+        switch recurrenceType {
+        case .daily: return true
+        case .weekdays: return !Calendar.current.isDateInWeekend(date)
+        case .weekly:
+            return Calendar.current.component(.weekday, from: date) == Calendar.current.component(.weekday, from: startTime)
+        case .custom: return true
+        }
+    }
+
+    private func createSubtasks(for block: TaskBlock, user: User, start: Date, end: Date) {
+        let count = max(subtasks.count, 1)
+        let slice = end.timeIntervalSince(start) / Double(count)
+        for (idx, title) in subtasks.enumerated() where !title.isEmpty {
+            let s = start.addingTimeInterval(slice * Double(idx))
+            let e = s.addingTimeInterval(slice)
+            let t = Task(
+                userID: user.id,
+                title: title,
+                taskDescription: nil,
+                startTime: s,
+                endTime: e,
+                priority: selectedPriority,
+                category: .personal,
+                isComplete: false,
+                taskBlockID: block.id
+            )
+            t.isLocked = isLocked
+            modelContext.insert(t)
         }
     }
 }

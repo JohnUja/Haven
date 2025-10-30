@@ -35,6 +35,11 @@ struct HomeDashboardView: View {
     @State private var originalTaskDates: [String: Date] = [:]
     @State private var originalBlockDates: [String: [Date]] = [:]
     @State private var showingCompletionRingPopup = false
+    @State private var showingCategoryChange: Task? = nil
+    @State private var showingEditBlock: (taskBlock: TaskBlock, tasks: [Task])? = nil
+    @State private var showingBlockColorPicker: TaskBlock? = nil
+    @State private var pendingDeleteBlockTasks: [Task]? = nil
+    @State private var showDeleteBlockAlert: Bool = false
     
     private var currentUser: User? {
         users.first
@@ -174,7 +179,75 @@ struct HomeDashboardView: View {
                 .presentationDetents([.medium])
         }
         .sheet(item: $showingEditTask) { task in
-            EditTaskView(task: task)
+            EditTaskView(task: task, allTasks: tasks)
+        }
+        .sheet(item: $showingCategoryChange) { task in
+            CategoryChangeView(task: task, onCategoryChanged: { newCategory in
+                task.category = newCategory
+                try? modelContext.save()
+                showingCategoryChange = nil
+            }, onCancel: {
+                showingCategoryChange = nil
+            })
+            .presentationDetents([.medium])
+        }
+        .sheet(item: $showingMoveToDay) { task in
+            MoveTaskCalendarView(task: task, onDateSelected: { date in
+                moveTaskToDay(task, to: date)
+                showingMoveToDay = nil
+            }, onCancel: {
+                showingMoveToDay = nil
+            })
+            .presentationDetents([.medium])
+        }
+        .sheet(isPresented: Binding(
+            get: { showingMoveToDayBlock != nil },
+            set: { if !$0 { showingMoveToDayBlock = nil } }
+        )) {
+            if let taskBlock = showingMoveToDayBlock {
+                MoveTaskBlockCalendarView(taskBlock: taskBlock, onDateSelected: { date in
+                    moveTaskBlockToDay(taskBlock, to: date)
+                    showingMoveToDayBlock = nil
+                }, onCancel: {
+                    showingMoveToDayBlock = nil
+                })
+                .presentationDetents([.medium])
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { showingEditBlock != nil },
+            set: { if !$0 { showingEditBlock = nil } }
+        )) {
+            if let editBlock = showingEditBlock {
+                EditBlockView(
+                    taskBlock: editBlock.taskBlock,
+                    tasksInBlock: editBlock.tasks,
+                    allTasks: tasks
+                )
+            }
+        }
+        .sheet(item: $showingBlockColorPicker) { block in
+            BlockColorPickerView(taskBlock: block, onSelected: { newColor in
+                block.color = newColor
+                try? modelContext.save()
+                showingBlockColorPicker = nil
+            }, onCancel: {
+                showingBlockColorPicker = nil
+            })
+            .presentationDetents([.medium])
+        }
+        .alert("Delete Task Block?", isPresented: $showDeleteBlockAlert) {
+            Button("Delete Block + Tasks", role: .destructive) {
+                if let blockTasks = pendingDeleteBlockTasks {
+                    deleteTaskBlock(blockTasks)
+                }
+                pendingDeleteBlockTasks = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDeleteBlockTasks = nil
+            }
+        } message: {
+            Text("This will delete the task block and all tasks inside it.")
         }
         .overlay(
             // Floating Action Menu
@@ -198,7 +271,7 @@ struct HomeDashboardView: View {
                             },
                             onChangeCategory: {
                                 showingFloatingMenu = nil
-                                // TODO: Implement category change
+                                showingCategoryChange = task
                             },
                             onAddToGoal: {
                                 showingFloatingMenu = nil
@@ -210,7 +283,7 @@ struct HomeDashboardView: View {
                             },
                             onDelete: {
                                 showingFloatingMenu = nil
-                                // TODO: Implement delete task
+                                deleteTask(task)
                             },
                             onUnlock: {
                                 showingFloatingMenu = nil
@@ -236,20 +309,40 @@ struct HomeDashboardView: View {
                             }
                         
                         // Floating menu for task block
+                        // Resolve the TaskBlock object and locked state
+                        let _blockObj: TaskBlock? = {
+                            if let firstTask = taskBlock.first,
+                               let blockID = firstTask.taskBlockID {
+                                return taskBlocks.first(where: { $0.id == blockID })
+                            }
+                            return nil
+                        }()
+
                         FloatingActionMenu(
                             taskBlock: taskBlock,
                             theme: themeManager.currentTheme,
+                            blockLocked: _blockObj?.isLocked ?? false,
                             onEdit: {
                                 showingFloatingMenuForBlock = nil
-                                // TODO: Implement edit task block
+                                // Find the TaskBlock for these tasks
+                                if let firstTask = taskBlock.first,
+                                   let blockID = firstTask.taskBlockID,
+                                   let taskBlockObj = taskBlocks.first(where: { $0.id == blockID }) {
+                                    showingEditBlock = (taskBlockObj, taskBlock)
+                                }
                             },
                             onChangeCategory: {
+                                // Repurposed as Change Color for blocks
                                 showingFloatingMenuForBlock = nil
-                                // TODO: Implement category change
+                                if let firstTask = taskBlock.first,
+                                   let blockID = firstTask.taskBlockID,
+                                   let taskBlockObj = taskBlocks.first(where: { $0.id == blockID }) {
+                                    showingBlockColorPicker = taskBlockObj
+                                }
                             },
                             onAddToGoal: {
+                                // Hidden for blocks (no-op)
                                 showingFloatingMenuForBlock = nil
-                                // TODO: Implement add to goal
                             },
                             onMove: {
                                 showingFloatingMenuForBlock = nil
@@ -257,15 +350,17 @@ struct HomeDashboardView: View {
                             },
                             onDelete: {
                                 showingFloatingMenuForBlock = nil
-                                // TODO: Implement delete task block
+                                pendingDeleteBlockTasks = taskBlock
+                                showDeleteBlockAlert = true
                             },
                             onUnlock: {
                                 showingFloatingMenuForBlock = nil
-                                // Toggle lock status for all tasks in block
-                                for task in taskBlock {
-                                    task.isLocked.toggle()
+                                if let firstTask = taskBlock.first,
+                                   let blockID = firstTask.taskBlockID,
+                                   let taskBlockObj = taskBlocks.first(where: { $0.id == blockID }) {
+                                    taskBlockObj.isLocked.toggle()
+                                    try? modelContext.save()
                                 }
-                                try? modelContext.save()
                             },
                             onDismiss: {
                                 showingFloatingMenuForBlock = nil
@@ -1116,6 +1211,56 @@ struct HomeDashboardView: View {
         }
     }
     
+    // MARK: - Move Task Calendar View
+    private func moveTaskCalendarView(task: Task) -> some View {
+        @State var targetDate = task.startTime
+        
+        return NavigationView {
+            MonthCalendarView(selectedDate: Binding(
+                get: { targetDate },
+                set: { newDate in
+                    targetDate = newDate
+                    moveTaskToDay(task, to: newDate)
+                    showingMoveToDay = nil
+                }
+            ))
+            .navigationTitle("Move Task")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Cancel") {
+                        showingMoveToDay = nil
+                    }
+                }
+            }
+        }
+    }
+    
+    // MARK: - Move Task Block Calendar View
+    private func moveTaskBlockCalendarView(taskBlock: [Task]) -> some View {
+        @State var targetDate = taskBlock.first?.startTime ?? Date()
+        
+        return NavigationView {
+            MonthCalendarView(selectedDate: Binding(
+                get: { targetDate },
+                set: { newDate in
+                    targetDate = newDate
+                    moveTaskBlockToDay(taskBlock, to: newDate)
+                    showingMoveToDayBlock = nil
+                }
+            ))
+            .navigationTitle("Move Task Block")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Cancel") {
+                        showingMoveToDayBlock = nil
+                    }
+                }
+            }
+        }
+    }
+    
     // MARK: - Helper Functions
     private func getCurrentTask() -> Task? {
         let now = Date()
@@ -1158,9 +1303,11 @@ struct HomeDashboardView: View {
         // Show undo notification
         showingUndoMove = task
         
-        // Auto-hide undo after 10 seconds
+        try? modelContext.save()
+        
+        // Auto-hide undo after 5 seconds
         undoMoveTimer?.invalidate()
-        undoMoveTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { _ in
+        undoMoveTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
             showingUndoMove = nil
             originalTaskDates.removeValue(forKey: task.id)
         }
@@ -1190,9 +1337,11 @@ struct HomeDashboardView: View {
         // Show undo notification
         showingUndoMoveBlock = taskBlock
         
-        // Auto-hide undo after 10 seconds
+        try? modelContext.save()
+        
+        // Auto-hide undo after 5 seconds
         undoMoveTimer?.invalidate()
-        undoMoveTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { _ in
+        undoMoveTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
             showingUndoMoveBlock = nil
             originalBlockDates.removeValue(forKey: blockId)
         }
@@ -1242,6 +1391,19 @@ struct HomeDashboardView: View {
         // Clean up
         originalBlockDates.removeValue(forKey: blockId)
     }
+    
+    // MARK: - Delete Functions
+    private func deleteTask(_ task: Task) {
+        modelContext.delete(task)
+        try? modelContext.save()
+    }
+    
+    private func deleteTaskBlock(_ tasks: [Task]) {
+        for task in tasks {
+            modelContext.delete(task)
+        }
+        try? modelContext.save()
+    }
 }
 
 // MARK: - Floating Action Menu
@@ -1249,6 +1411,7 @@ struct FloatingActionMenu: View {
     let task: Task?
     let taskBlock: [Task]?
     let theme: any AppTheme
+    let blockLocked: Bool?
     let onEdit: () -> Void
     let onChangeCategory: () -> Void
     let onAddToGoal: () -> Void
@@ -1257,10 +1420,11 @@ struct FloatingActionMenu: View {
     let onUnlock: () -> Void
     let onDismiss: () -> Void
     
-    init(task: Task? = nil, taskBlock: [Task]? = nil, theme: any AppTheme, onEdit: @escaping () -> Void, onChangeCategory: @escaping () -> Void, onAddToGoal: @escaping () -> Void, onMove: @escaping () -> Void, onDelete: @escaping () -> Void, onUnlock: @escaping () -> Void, onDismiss: @escaping () -> Void) {
+    init(task: Task? = nil, taskBlock: [Task]? = nil, theme: any AppTheme, blockLocked: Bool? = nil, onEdit: @escaping () -> Void, onChangeCategory: @escaping () -> Void, onAddToGoal: @escaping () -> Void, onMove: @escaping () -> Void, onDelete: @escaping () -> Void, onUnlock: @escaping () -> Void, onDismiss: @escaping () -> Void) {
         self.task = task
         self.taskBlock = taskBlock
         self.theme = theme
+        self.blockLocked = blockLocked
         self.onEdit = onEdit
         self.onChangeCategory = onChangeCategory
         self.onAddToGoal = onAddToGoal
@@ -1280,41 +1444,59 @@ struct FloatingActionMenu: View {
                     Text("Edit")
                         .font(.caption)
                 }
-                .foregroundColor(theme.textPrimary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(theme.cardBackground)
-                .cornerRadius(12)
+                .foregroundColor(.white) // WHITE text for contrast
+                .padding(.horizontal, 10) // SMALLER padding
+                .padding(.vertical, 6) // SMALLER padding
+                .background(Color.gray.opacity(0.8)) // METALLIC GREY button background
+                .cornerRadius(10) // SMALLER corner radius
             }
             
-            // Change Category
-            Button(action: onChangeCategory) {
-                VStack(spacing: 4) {
-                    Image(systemName: "tag")
-                        .font(.title2)
-                    Text("Category")
-                        .font(.caption)
+            // Change Category for tasks OR Change Color for blocks
+            if task != nil {
+                Button(action: onChangeCategory) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "tag")
+                            .font(.title2)
+                        Text("Category")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.white) // WHITE text for contrast
+                    .padding(.horizontal, 10) // SMALLER padding
+                    .padding(.vertical, 6) // SMALLER padding
+                    .background(Color.gray.opacity(0.8)) // METALLIC GREY button background
+                    .cornerRadius(10) // SMALLER corner radius
                 }
-                .foregroundColor(theme.textPrimary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(theme.cardBackground)
-                .cornerRadius(12)
+            } else if taskBlock != nil {
+                Button(action: onChangeCategory) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "paintpalette")
+                            .font(.title2)
+                        Text("Color")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.gray.opacity(0.8))
+                    .cornerRadius(10)
+                }
             }
             
-            // Add to Goal
-            Button(action: onAddToGoal) {
-                VStack(spacing: 4) {
-                    Image(systemName: "target")
-                        .font(.title2)
-                    Text("Goal")
-                        .font(.caption)
+            // Add to Goal - hide for blocks
+            if task != nil {
+                Button(action: onAddToGoal) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "target")
+                            .font(.title2)
+                        Text("Goal")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.gray.opacity(0.8))
+                    .cornerRadius(10)
                 }
-                .foregroundColor(theme.textPrimary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(theme.cardBackground)
-                .cornerRadius(12)
             }
             
             // Move or Unlock (conditional)
@@ -1327,12 +1509,53 @@ struct FloatingActionMenu: View {
                             .font(.caption)
                     }
                     .foregroundColor(.orange)
+                    .padding(.horizontal, 10) // SMALLER padding
+                    .padding(.vertical, 6) // SMALLER padding
+                    .background(Color.gray.opacity(0.8)) // METALLIC GREY button background
+                    .cornerRadius(10) // SMALLER corner radius
+                }
+            } else if let t = task { // unlocked task: show Lock + Move
+                Button(action: onUnlock) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "lock")
+                            .font(.title2)
+                        Text("Lock")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.gray.opacity(0.8))
+                    .cornerRadius(10)
+                }
+                Button(action: onMove) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.title2)
+                        Text("Move")
+                            .font(.caption)
+                    }
+                    .foregroundColor(theme.textPrimary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(theme.cardBackground)
                     .cornerRadius(12)
                 }
-            } else {
+            } else if taskBlock != nil {
+                // For blocks: show Lock/Unlock button and Move button
+                Button(action: onUnlock) {
+                    VStack(spacing: 4) {
+                        Image(systemName: (blockLocked ?? false) ? "lock.open" : "lock")
+                            .font(.title2)
+                        Text((blockLocked ?? false) ? "Unlock" : "Lock")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.gray.opacity(0.8))
+                    .cornerRadius(10)
+                }
                 Button(action: onMove) {
                     VStack(spacing: 4) {
                         Image(systemName: "arrow.up.arrow.down")
@@ -1357,21 +1580,21 @@ struct FloatingActionMenu: View {
                         .font(.caption)
                 }
                 .foregroundColor(.red)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(theme.cardBackground)
-                .cornerRadius(12)
+                .padding(.horizontal, 10) // SMALLER padding
+                .padding(.vertical, 6) // SMALLER padding
+                .background(Color.gray.opacity(0.8)) // METALLIC GREY button background
+                .cornerRadius(10) // SMALLER corner radius
             }
         }
-        .padding(16)
+        .padding(12) // SMALLER padding
         .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(theme.cardBackground)
-                .shadow(color: theme.primaryColor.opacity(0.3), radius: 15, x: 0, y: 5)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 20)
-                .stroke(theme.primaryColor.opacity(0.4), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 16) // SMALLER corner radius
+                .fill(Color.gray.opacity(0.9)) // METALLIC GREY background
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.gray.opacity(0.6), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.3), radius: 10, x: 0, y: 5)
         )
     }
 }
@@ -1407,22 +1630,22 @@ struct TaskCardView: View {
             
                 // Task content
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(task.title)
+                            Text(task.title)
                         .font(theme.bodyFont)
-                        .foregroundColor(theme.textPrimary)
+                        .foregroundColor(.white) // WHITE TEXT
                         .strikethrough(task.isComplete)
                         .opacity(task.isComplete ? 0.6 : 1.0)
                     
-                    // Priority text
+                    // Priority text - MATCH PRIORITY COLOR
                     Text("Priority: \(task.priority.rawValue.capitalized)")
-                        .font(.caption2)
-                        .foregroundColor(priorityColor)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundColor(priorityColor) // MATCH PRIORITY COLOR (Green/Blue/Orange/Red)
                         .opacity(task.isComplete ? 0.6 : 1.0)
                     
                     if let description = task.taskDescription {
                         Text(description)
                             .font(.caption)
-                            .foregroundColor(theme.textSecondary)
+                            .foregroundColor(.white.opacity(0.7)) // WHITE TEXT
                             .lineLimit(2)
                             .opacity(task.isComplete ? 0.6 : 1.0)
                     }
@@ -1444,23 +1667,23 @@ struct TaskCardView: View {
                 // Time display under tick icon
                 Text(timeRangeText)
                     .font(.caption2)
-                    .foregroundColor(theme.textSecondary)
+                    .foregroundColor(.white.opacity(0.7)) // WHITE TEXT
                     .opacity(task.isComplete ? 0.6 : 1.0)
             }
         }
         .padding(16)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: theme.cardCornerRadius)
-                    .fill(theme.cardBackground)
+                // MUCH PALER category color background with HIGH transparency
+                RoundedRectangle(cornerRadius: 12) // REDUCED corner radius from theme.cardCornerRadius
+                    .fill(task.category.color().opacity(0.25)) // LESS TRANSPARENT background
                     .overlay(
-                        // Category ring + current task highlighting
-                        RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                        // Subtle category color stroke - Original + 1px
+                        RoundedRectangle(cornerRadius: 12)
                             .stroke(
-                                task.category.color(),
+                                task.category.color().opacity(0.6),
                                 lineWidth: 1.5
                             )
-                            .opacity(0.6)
                     )
                     .overlay(
                         // Current task indicator - subtle pulsing dot
@@ -1481,7 +1704,7 @@ struct TaskCardView: View {
                             Spacer()
                         }
                     )
-                    .shadow(color: theme.primaryColor.opacity(0.1), radius: theme.shadowRadius)
+                    .shadow(color: theme.primaryColor.opacity(0.05), radius: theme.shadowRadius)
             }
         )
         .opacity(task.isComplete ? 0.7 : 1.0)
@@ -1504,6 +1727,9 @@ struct TaskCardView: View {
             alignment: .topTrailing
         )
         .onLongPressGesture {
+            // Haptic feedback on long press
+            AudioServicesPlaySystemSound(1520) // Haptic vibration
+            AudioServicesPlaySystemSound(1057) // Click sound
             // Long press to show floating menu
             onEditTask?(task)
         }
@@ -1595,6 +1821,173 @@ struct TaskCardView: View {
     }
 }
 
+// MARK: - Move Task Calendar Views
+struct MoveTaskCalendarView: View {
+    let task: Task
+    let onDateSelected: (Date) -> Void
+    let onCancel: () -> Void
+    @State private var targetDate: Date
+    
+    init(task: Task, onDateSelected: @escaping (Date) -> Void, onCancel: @escaping () -> Void) {
+        self.task = task
+        self.onDateSelected = onDateSelected
+        self.onCancel = onCancel
+        self._targetDate = State(initialValue: task.startTime)
+    }
+    
+    var body: some View {
+        NavigationView {
+            MonthCalendarView(selectedDate: Binding(
+                get: { targetDate },
+                set: { newDate in
+                    targetDate = newDate
+                    onDateSelected(newDate)
+                }
+            ))
+            .navigationTitle("Move Task")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Cancel") {
+                        onCancel()
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct MoveTaskBlockCalendarView: View {
+    let taskBlock: [Task]
+    let onDateSelected: (Date) -> Void
+    let onCancel: () -> Void
+    @State private var targetDate: Date
+    
+    init(taskBlock: [Task], onDateSelected: @escaping (Date) -> Void, onCancel: @escaping () -> Void) {
+        self.taskBlock = taskBlock
+        self.onDateSelected = onDateSelected
+        self.onCancel = onCancel
+        self._targetDate = State(initialValue: taskBlock.first?.startTime ?? Date())
+    }
+    
+    var body: some View {
+        NavigationView {
+            MonthCalendarView(selectedDate: Binding(
+                get: { targetDate },
+                set: { newDate in
+                    targetDate = newDate
+                    onDateSelected(newDate)
+                }
+            ))
+            .navigationTitle("Move Task Block")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Cancel") {
+                        onCancel()
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Block Color Picker View
+struct BlockColorPickerView: View {
+    let taskBlock: TaskBlock
+    let onSelected: (String) -> Void
+    let onCancel: () -> Void
+    
+    private let availableColors = ["red", "orange", "yellow", "green", "blue", "purple", "pink", "mint", "cyan", "indigo", "brown"]
+    
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(availableColors, id: \.self) { color in
+                    Button(action: { onSelected(color) }) {
+                        HStack(spacing: 12) {
+                            Circle()
+                                .fill(colorFromString(color))
+                                .frame(width: 24, height: 24)
+                            Text(color.capitalized)
+                                .foregroundColor(.primary)
+                            Spacer()
+                            if color == taskBlock.color { Image(systemName: "checkmark").foregroundColor(.blue) }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Change Block Color")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Cancel") { onCancel() }
+                }
+            }
+        }
+    }
+    
+    private func colorFromString(_ colorString: String) -> Color {
+        switch colorString {
+        case "red": return .red
+        case "orange": return .orange
+        case "yellow": return .yellow
+        case "green": return .green
+        case "blue": return .blue
+        case "purple": return .purple
+        case "pink": return .pink
+        case "mint": return .mint
+        case "cyan": return .cyan
+        case "indigo": return .indigo
+        case "brown": return .brown
+        default: return .blue
+        }
+    }
+}
+// MARK: - Category Change View
+struct CategoryChangeView: View {
+    let task: Task
+    let onCategoryChanged: (TaskCategory) -> Void
+    let onCancel: () -> Void
+    
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(TaskCategory.allCases, id: \.self) { category in
+                    Button(action: {
+                        onCategoryChanged(category)
+                    }) {
+                        HStack {
+                            Image(systemName: category.icon)
+                                .foregroundColor(category.color())
+                                .frame(width: 30)
+                            
+                            Text(category.displayName)
+                                .foregroundColor(.primary)
+                            
+                            Spacer()
+                            
+                            if task.category == category {
+                                Image(systemName: "checkmark")
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+            .navigationTitle("Change Category")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Cancel") {
+                        onCancel()
+                    }
+                }
+            }
+        }
+    }
+}
 
 #Preview {
     HomeDashboardView()

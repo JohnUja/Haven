@@ -268,6 +268,7 @@ struct DayCenterController: View {
     }
 }
 
+
 #Preview {
     ZStack {
         Color.black.ignoresSafeArea()
