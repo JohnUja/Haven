@@ -16,7 +16,93 @@ struct MonthCalendarView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Days of week header
+            // Month/Year Navigation Header - Fixed height
+            HStack {
+                // Previous month button
+                Button(action: {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        currentMonth = calendar.date(byAdding: .month, value: -1, to: currentMonth) ?? currentMonth
+                    }
+                }) {
+                    Image(systemName: "chevron.left")
+                        .font(.title3)
+                        .foregroundColor(.primary)
+                        .padding(8)
+                }
+                
+                Spacer()
+                
+                // Month/Year Display with navigation
+                VStack(spacing: 4) {
+                    // Year picker (tap to change year)
+                    Menu {
+                        let currentYear = calendar.component(.year, from: currentMonth)
+                        ForEach((currentYear - 5)...(currentYear + 5), id: \.self) { year in
+                            Button("\(year)") {
+                                if let newDate = calendar.date(bySetting: .year, value: year, of: currentMonth) {
+                                    withAnimation {
+                                        currentMonth = newDate
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        Text(calendar.component(.year, from: currentMonth).description)
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                    }
+                    
+                    // Month picker (tap to change month)
+                    Menu {
+                        ForEach(1...12, id: \.self) { month in
+                            Button(monthName(for: month)) {
+                                if let newDate = calendar.date(bySetting: .month, value: month, of: currentMonth) {
+                                    withAnimation {
+                                        currentMonth = newDate
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        Text(monthName(for: calendar.component(.month, from: currentMonth)))
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                    }
+                }
+                
+                Spacer()
+                
+                // Next month button
+                Button(action: {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        currentMonth = calendar.date(byAdding: .month, value: 1, to: currentMonth) ?? currentMonth
+                    }
+                }) {
+                    Image(systemName: "chevron.right")
+                        .font(.title3)
+                        .foregroundColor(.primary)
+                        .padding(8)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 12)
+            .frame(height: 60) // Fixed height to prevent shifting
+            .background(Color(.systemGray6))
+            .onAppear {
+                // Sync calendar month with selected date when view appears
+                currentMonth = selectedDate
+            }
+            .onChange(of: selectedDate) { _, newDate in
+                // Sync calendar month when selectedDate changes from day scroller
+                let calendar = Calendar.current
+                if !calendar.isDate(newDate, equalTo: currentMonth, toGranularity: .month) {
+                    currentMonth = newDate
+                }
+            }
+            
+            // Days of week header - Fixed height
             HStack {
                 ForEach(dayOfWeekHeaders, id: \.self) { day in
                     Text(day)
@@ -27,13 +113,16 @@ struct MonthCalendarView: View {
                 }
             }
             .padding(.horizontal)
-            .padding(.bottom, 8)
+            .padding(.vertical, 8)
+            .frame(height: 30) // Fixed height
             
-            // Calendar grid
+            // Calendar grid - Fixed height
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
                 ForEach(calendarDays, id: \.self) { date in
                     if let date = date {
-                        Button(action: { selectedDate = date }) {
+                        Button(action: { 
+                            selectedDate = date
+                        }) {
                             Text("\(calendar.component(.day, from: date))")
                                 .font(.subheadline)
                                 .fontWeight(.medium)
@@ -41,7 +130,7 @@ struct MonthCalendarView: View {
                                 .frame(width: 32, height: 32)
                                 .background(backgroundForDate(date))
                         }
-                        .disabled(!calendar.isDate(date, equalTo: currentMonth, toGranularity: .month))
+                        .opacity(calendar.isDate(date, equalTo: currentMonth, toGranularity: .month) ? 1.0 : 0.3)
                     } else {
                         Text("")
                             .frame(width: 32, height: 32)
@@ -49,7 +138,31 @@ struct MonthCalendarView: View {
                 }
             }
             .padding(.horizontal)
+            .padding(.bottom)
+            .frame(height: 240) // Fixed height for grid (6 rows * 40px)
         }
+        .onAppear {
+            // Sync calendar month with selected date
+            currentMonth = selectedDate
+        }
+        .onChange(of: selectedDate) { _, newDate in
+            // Update calendar month when selectedDate changes externally
+            let newMonth = calendar.date(bySetting: .day, value: 1, of: newDate) ?? newDate
+            if !calendar.isDate(newMonth, equalTo: currentMonth, toGranularity: .month) {
+                withAnimation {
+                    currentMonth = newMonth
+                }
+            }
+        }
+    }
+    
+    private func monthName(for month: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM"
+        if let date = calendar.date(bySetting: .month, value: month, of: Date()) {
+            return formatter.string(from: date)
+        }
+        return "Month"
     }
     
     private var dayOfWeekHeaders: [String] {

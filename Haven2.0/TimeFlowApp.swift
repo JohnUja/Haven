@@ -7,14 +7,58 @@
 
 import SwiftUI
 import SwiftData
+import FirebaseCore
+import FirebaseAuth
+import GoogleSignIn
 
 @main
 struct TimeFlowApp: App {
+    @StateObject private var authService = FirebaseAuthService.shared
     @State private var themeManager = ThemeManager()
     @StateObject private var timeSettings = TimeSettingsManager()
     @StateObject private var calendarManager = CalendarManager()
     
     var sharedModelContainer: ModelContainer = createModelContainer()
+    
+    init() {
+        // Initialize Firebase FIRST, before anything else
+        FirebaseApp.configure()
+        
+        // DEBUG: Connect to Firebase Emulator Suite if running locally
+        #if DEBUG
+        // Connect to local emulator (comment out if testing against production)
+        // Uncomment the lines below to use Firebase Emulator:
+        /*
+        Auth.auth().useEmulator(withHost: "localhost", port: 9099)
+        print("DEBUG: Connected to Firebase Auth Emulator on localhost:9099")
+        */
+        #endif
+        
+        // Configure Google Sign-In
+        if let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
+           let plist = NSDictionary(contentsOfFile: path),
+           let clientID = plist["CLIENT_ID"] as? String {
+            GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
+            print("Google Sign-In configured with client ID: \(clientID)")
+        } else {
+            print("WARNING: GoogleService-Info.plist not found or CLIENT_ID missing")
+        }
+        
+        // DEBUG: Clear guest auth on launch for testing
+        #if DEBUG
+        if let user = Auth.auth().currentUser, user.isAnonymous {
+            print("DEBUG: Clearing guest auth on launch for testing")
+            _Concurrency.Task { @MainActor in
+                do {
+                    try Auth.auth().signOut()
+                    print("DEBUG: Guest auth cleared")
+                } catch {
+                    print("DEBUG: Error clearing guest auth: \(error)")
+                }
+            }
+        }
+        #endif
+    }
     
     static func createModelContainer() -> ModelContainer {
         let schema = Schema([
@@ -24,6 +68,7 @@ struct TimeFlowApp: App {
             Goal.self,
             GoalMilestone.self,
             Theme.self,
+            DailyRoutine.self,
         ])
         
         do {
@@ -59,10 +104,27 @@ struct TimeFlowApp: App {
 
     var body: some Scene {
         WindowGroup {
-            MainTabView()
-                .environment(themeManager)
-                .environmentObject(timeSettings)
-                .environmentObject(calendarManager)
+            Group {
+                if authService.isAuthenticated {
+                    MainTabView()
+                        .environment(themeManager)
+                        .environmentObject(timeSettings)
+                        .environmentObject(calendarManager)
+                        .environmentObject(authService)
+                        .environmentObject(DeveloperModeService.shared)
+                } else {
+                    FirebaseAuthenticationView()
+                        .environmentObject(authService)
+                        .environmentObject(DeveloperModeService.shared)
+                }
+            }
+            .onOpenURL { url in
+                // Handle Google Sign-In URL callbacks
+                GIDSignIn.sharedInstance.handle(url)
+            }
+            .onChange(of: authService.isAuthenticated) { _, isAuthenticated in
+                print("TimeFlowApp: Auth state changed - authenticated: \(isAuthenticated)")
+            }
         }
         .modelContainer(sharedModelContainer)
     }

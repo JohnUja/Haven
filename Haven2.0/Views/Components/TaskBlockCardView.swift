@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import AudioToolbox
+import FirebaseAuth
 
 struct TaskBlockCardView: View {
     let tasks: [Task]
@@ -18,7 +19,11 @@ struct TaskBlockCardView: View {
     let onRemoveSubtask: ((Task) -> Void)?
     
     @State private var isExpanded = false
-    
+    @Environment(\.modelContext) private var modelContext
+    @Query private var goals: [Goal]
+    @Query private var users: [User]
+    @Query private var allTasks: [Task]
+
     init(tasks: [Task], taskBlock: TaskBlock? = nil, theme: any AppTheme, onEditBlock: (([Task]) -> Void)? = nil, onAddSubtask: (() -> Void)? = nil, onRemoveSubtask: ((Task) -> Void)? = nil) {
         self.tasks = tasks
         self.taskBlock = taskBlock
@@ -227,13 +232,117 @@ struct TaskBlockCardView: View {
                             
                             // Completion checkbox
                                 Button(action: {
+                                    guard let user = users.first else { return }
+                                    
                                     withAnimation(.easeInOut(duration: 0.3)) {
+                                        let wasComplete = task.isComplete
                                         task.isComplete.toggle()
                                         
                                         // Simple completion feedback
                                         if task.isComplete && isBlockComplete {
                                             AudioServicesPlaySystemSound(1104) // Tink sound
                                             AudioServicesPlaySystemSound(1520) // Haptic feedback
+                                        }
+                                        
+                                        // Gamification rewards (only when completing, not uncompleting, and not already rewarded)
+                                        if task.isComplete && !wasComplete && !task.hasBeenRewarded {
+                                            let goal = goals.first(where: { $0.id == task.goalID })
+                                            let momentumBonus = GamificationService.getMomentumBonus(user: user)
+                                            let baseRewards = GamificationService.calculateTaskRewards(
+                                                task: task,
+                                                goal: goal,
+                                                momentumBonus: momentumBonus
+                                            )
+                                            
+                                            // Add time-based rewards
+                                            let timeBasedRewards = GamificationService.calculateTimeBasedTaskRewards(task: task)
+                                            let rewards = (
+                                                crystals: baseRewards.crystals + timeBasedRewards.crystals,
+                                                xp: baseRewards.xp + timeBasedRewards.xp,
+                                                score: baseRewards.score
+                                            )
+                                            
+                                            // Apply rewards
+                                            user.gamificationCurrency += rewards.crystals
+                                            user.currentXP += rewards.xp
+                                            
+                                            // Mark as rewarded
+                                            task.hasBeenRewarded = true
+                                            
+                                            // Check for level up (will be handled by parent view)
+                                            _ = LevelService.checkLevelUp(user: user, newXP: user.currentXP)
+                                            
+                                            // Update productivity score
+                                            GamificationService.resetWeeklyScores(user: user)
+                                            user.weeklyProductivityScore += rewards.score
+                                            
+                                            // Update momentum
+                                            GamificationService.updateMomentumDays(user: user, tasks: allTasks)
+                                            
+                                            // Check for bonuses (similar to TaskCardView)
+                                            let calendar = Calendar.current
+                                            let today = calendar.startOfDay(for: Date())
+                                            let todayCompletedTasks = allTasks.filter { t in
+                                                t.id != task.id &&
+                                                calendar.isDate(t.startTime, inSameDayAs: today) && t.isComplete
+                                            }
+                                            
+                                            if todayCompletedTasks.isEmpty {
+                                                let bonus = GamificationService.calculateFirstTaskBonus()
+                                                user.gamificationCurrency += bonus.crystals
+                                                user.currentXP += bonus.xp
+                                            } else if todayCompletedTasks.count == 4 {
+                                                let bonus = GamificationService.calculateDailyTaskBonus(completedTasks: 5)
+                                                user.gamificationCurrency += bonus.crystals
+                                                user.currentXP += bonus.xp
+                                            }
+                                            
+                                            // Goal/milestone bonuses
+                                            if let goal = goal {
+                                                if goal.status == .completed && goal.currentValue == goal.effectiveTargetValue(tasks: allTasks.filter { $0.goalID == goal.id }) {
+                                                    let bonus = GamificationService.calculateGoalCompletionBonus()
+                                                    user.gamificationCurrency += bonus.crystals
+                                                    user.currentXP += bonus.xp
+                                                    user.weeklyProductivityScore += bonus.score
+                                                } else if let milestoneID = task.milestoneID,
+                                                          let milestone = goal.milestones.first(where: { $0.id == milestoneID }),
+                                                          milestone.isComplete {
+                                                    let bonus = GamificationService.calculateMilestoneCompletionBonus()
+                                                    user.gamificationCurrency += bonus.crystals
+                                                    user.currentXP += bonus.xp
+                                                    user.weeklyProductivityScore += bonus.score
+                                                }
+                                            }
+                                            
+                                            try? modelContext.save()
+                                            
+                                            // Sync to Firestore (background, non-blocking)
+                                            syncUserStatsToFirestore(user: user)
+                                            
+                                            // Check if entire block is complete - give block reward
+                                            let allBlockTasksComplete = tasks.allSatisfy { $0.isComplete }
+                                            if allBlockTasksComplete {
+                                                let blockRewards = GamificationService.calculateTaskBlockRewards(tasks: tasks)
+                                                user.gamificationCurrency += blockRewards.crystals
+                                                user.currentXP += blockRewards.xp
+                                                user.weeklyProductivityScore += blockRewards.crystals // Use crystals as score bonus
+                                                try? modelContext.save()
+                                                
+                                                // Sync to Firestore (background, non-blocking)
+                                                syncUserStatsToFirestore(user: user)
+                                            }
+                                        }
+                                        
+                                        // Update goal progress if linked
+                                        if task.goalID != nil {
+                                            GoalProgressUpdater.handleTaskToggle(task, context: modelContext, goals: goals)
+                                            
+                                            // Delay reflection prompt until animations complete (3 seconds)
+                                            if task.isComplete {
+                                                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                                                    // Reflection prompt handled by parent view
+                                                }
+                                            }
                                         }
                                     }
                                 }) {
@@ -280,4 +389,41 @@ struct TaskBlockCardView: View {
     
     return TaskBlockCardView(tasks: sampleTasks, theme: DefaultTheme())
         .padding()
+}
+
+// MARK: - Firestore Sync Helper
+extension TaskBlockCardView {
+    private func syncUserStatsToFirestore(user: User) {
+        guard let uid = Auth.auth().currentUser?.uid, !uid.isEmpty else {
+            // Not logged in or guest - don't sync
+            return
+        }
+        
+        // Sync in background (non-blocking)
+        _createConcurrencyTaskAsync {
+            do {
+                try await FirestoreService.shared.syncGamificationStats(
+                    uid: uid,
+                    level: user.level,
+                    currentXP: user.currentXP,
+                    nextLevelXP: user.nextLevelXP,
+                    crystals: user.gamificationCurrency,
+                    momentumDays: user.momentumDays,
+                    lastMomentumUpdate: user.lastMomentumUpdate,
+                    weeklyProductivityScore: user.weeklyProductivityScore,
+                    weeklyResetDate: user.weeklyResetDate
+                )
+                
+                // Sync theme unlocks
+                try await FirestoreService.shared.syncThemeUnlocks(
+                    uid: uid,
+                    ownedThemeIDs: user.ownedThemeIDs,
+                    activeThemeID: user.activeThemeID
+                )
+            } catch {
+                print("FirestoreService: Failed to sync user stats: \(error)")
+                // Don't show error to user - background sync can fail silently
+            }
+        }
+    }
 }

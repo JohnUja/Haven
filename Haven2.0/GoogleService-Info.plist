@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>603837311377-5oibt7uancmodcgogrleoruhbd6ph6ce.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.603837311377-5oibt7uancmodcgogrleoruhbd6ph6ce</string>
+	<key>API_KEY</key>
+	<string>AIzaSyCghKksR-VQf3GsE6MpeL4x1Yw3ECgNhZM</string>
+	<key>GCM_SENDER_ID</key>
+	<string>603837311377</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.jithaven.app</string>
+	<key>PROJECT_ID</key>
+	<string>haven-1b740</string>
+	<key>STORAGE_BUCKET</key>
+	<string>haven-1b740.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:603837311377:ios:91c3133ff924e339175230</string>
+</dict>
+</plist>

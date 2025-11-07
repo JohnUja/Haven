@@ -16,6 +16,7 @@ struct TimelineView: View {
     @EnvironmentObject private var calendarManager: CalendarManager
     @Query private var tasks: [Task]
     @Query private var taskBlocks: [TaskBlock]
+    @Query private var goals: [Goal]
     @State private var selectedDate = Date()
     @State private var scrollOffset: CGFloat = 0
     @State private var timer: Timer?
@@ -26,7 +27,9 @@ struct TimelineView: View {
     private var selectedDateTasks: [Task] {
         let calendar = Calendar.current
         let filteredTasks = tasks.filter { task in
-            calendar.isDate(task.startTime, inSameDayAs: selectedDate)
+            calendar.isDate(task.startTime, inSameDayAs: selectedDate) &&
+            // Filter out tasks from paused goals
+            !(task.goalID != nil && goals.first(where: { $0.id == task.goalID })?.status == .paused)
         }.sorted { $0.startTime < $1.startTime }
         
         // Debug: Print what we're looking for vs what we found
@@ -64,8 +67,32 @@ struct TimelineView: View {
     }
     
     private func updateTaskSide(_ task: Task, _ newSide: TaskTimelineBlock.TimelineSide) {
-        // Update task category based on side
-        task.category = newSide == .left ? .work : .personal
+        // Map category to the appropriate side while preserving visual color
+        // Store original color if not already set
+        if task.color == nil {
+            task.color = task.category.rawValue // Store original category for color reference
+        }
+        
+        // Update category to match the side for filtering purposes
+        // Work-side categories: .work, .fixed, .growth, .reading
+        // Personal-side categories: .personal, .flexible, .hobbies, .selfCare, .leisure, .skinCare
+        switch newSide {
+        case .left: // Work side
+            // If current category is personal-side, change to work-side category
+            if task.category == .personal || task.category == .flexible || 
+               task.category == .hobbies || task.category == .selfCare || 
+               task.category == .leisure || task.category == .skinCare {
+                task.category = .work
+            }
+            // Otherwise keep original work-side category
+        case .right: // Personal side
+            // If current category is work-side, change to personal-side category
+            if task.category == .work || task.category == .fixed || 
+               task.category == .growth || task.category == .reading {
+                task.category = .personal
+            }
+            // Otherwise keep original personal-side category
+        }
         
         do {
             try modelContext.save()
@@ -237,6 +264,8 @@ struct TimelineView: View {
             InfiniteDaySelector(
                 selectedDate: $selectedDate,
                 onDateChanged: { newDate in
+                    // Persist selected date
+                    DatePersistenceService.shared.saveSelectedDate(newDate)
                     calendarManager.loadCalendarEvents(for: newDate)
                 },
                 hasEvents: { date in
@@ -460,7 +489,10 @@ struct TimelineHourView: View {
     }
     
     private var workTasksList: some View {
-        let workTasks = tasks.filter { $0.category == .work && $0.taskBlockID == nil }
+        let workTasks = tasks.filter { 
+            $0.taskBlockID == nil && 
+            ($0.category == .work || $0.category == .fixed || $0.category == .growth || $0.category == .reading)
+        }
         let overlappingWorkGroups = getOverlappingTasks(workTasks)
         
         return ForEach(Array(overlappingWorkGroups.enumerated()), id: \.offset) { index, group in
@@ -629,7 +661,12 @@ struct TimelineHourView: View {
     }
     
     private var personalTasksList: some View {
-        let personalTasks = tasks.filter { $0.category == .personal && $0.taskBlockID == nil }
+        let personalTasks = tasks.filter { 
+            $0.taskBlockID == nil && 
+            ($0.category == .personal || $0.category == .flexible || 
+             $0.category == .hobbies || $0.category == .selfCare || 
+             $0.category == .leisure || $0.category == .skinCare)
+        }
         let overlappingPersonalGroups = getOverlappingTasks(personalTasks)
         
         return ForEach(Array(overlappingPersonalGroups.enumerated()), id: \.offset) { index, group in
@@ -725,9 +762,15 @@ struct TaskTimelineBlock: View {
         }
     }
     
-    // Category-based background color (with low saturation)
+    // Category-based background color - ALWAYS uses task's original category color, regardless of which side (work/personal) it's on
     private var categoryBackgroundColor: Color {
-        task.category.color().opacity(0.7)
+        // If task.color is set, it contains the original category name - use that for color
+        if let originalCategoryString = task.color,
+           let originalCategory = TaskCategory(rawValue: originalCategoryString) {
+            return originalCategory.color().opacity(0.7)
+        }
+        // Otherwise use current category color
+        return task.category.color().opacity(0.7)
     }
     
     var body: some View {

@@ -21,6 +21,17 @@ final class User {
     var activeThemeID: String
     var calendarSyncToken: String?
     
+    // Gamification additions
+    var weeklyProductivityScore: Int
+    var weeklyResetDate: Date?
+    var momentumDays: Int
+    var lastMomentumUpdate: Date?
+    var moodJarCompletions: Int // Track rewards earned via mood jar
+    
+    // Relationship to mood entries
+    @Relationship(deleteRule: .cascade, inverse: \MoodEntry.user)
+    var moodHistory: [MoodEntry]?
+    
     init(id: String = UUID().uuidString, 
          email: String, 
          name: String, 
@@ -30,7 +41,12 @@ final class User {
          gamificationCurrency: Int = 0, 
          ownedThemeIDs: [String] = ["default"], 
          activeThemeID: String = "default", 
-         calendarSyncToken: String? = nil) {
+         calendarSyncToken: String? = nil,
+         weeklyProductivityScore: Int = 0,
+         weeklyResetDate: Date? = nil,
+         momentumDays: Int = 0,
+         lastMomentumUpdate: Date? = nil,
+         moodJarCompletions: Int = 0) {
         self.id = id
         self.email = email
         self.name = name
@@ -41,5 +57,11 @@ final class User {
         self.ownedThemeIDs = ownedThemeIDs
         self.activeThemeID = activeThemeID
         self.calendarSyncToken = calendarSyncToken
+        self.weeklyProductivityScore = weeklyProductivityScore
+        self.weeklyResetDate = weeklyResetDate
+        self.momentumDays = momentumDays
+        self.lastMomentumUpdate = lastMomentumUpdate
+        self.moodJarCompletions = moodJarCompletions
+        self.moodHistory = []
     }
 }

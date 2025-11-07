@@ -56,6 +56,7 @@ struct TimelineShape: Shape {
 }
 
 struct ContinuousTimelineView: View {
+    @EnvironmentObject private var timeSettings: TimeSettingsManager
     let tasks: [Task]
     let taskBlocks: [TaskBlock]
     let calendarEvents: [EKEvent]
@@ -70,7 +71,6 @@ struct ContinuousTimelineView: View {
     let updateTaskBlockSide: (TaskBlock, TaskTimelineBlock.TimelineSide) -> Void
     let handleTaskCollision: (Date, Date) -> Void
     
-    @EnvironmentObject private var timeSettings: TimeSettingsManager
     @Environment(\.modelContext) private var modelContext
     @State private var scrollOffset: CGFloat = 0
     @State private var isAnyTaskDragging: Bool = false
@@ -187,16 +187,17 @@ struct ContinuousTimelineView: View {
                     )
             }
             
-            // Current time indicator (if today) - positioned on the timeline
+            // Current time indicator (if today) - positioned on the timeline with green pulsing ring
             if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
                 let currentHour = Calendar.current.component(.hour, from: currentTime)
                 let currentMinute = Calendar.current.component(.minute, from: currentTime)
                 let currentPosition = CGFloat(currentHour) * pointsPerHour + CGFloat(currentMinute) * pointsPerMinute + 10 // Match hour label offset
                 
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 8, height: 8)
-                    .position(x: 30, y: currentPosition)
+                TimelineTimeIndicatorView(
+                    position: CGPoint(x: 30, y: currentPosition),
+                    currentTime: currentTime
+                )
+                .environmentObject(timeSettings)
             }
         }
         .frame(width: 60, height: totalHeight)

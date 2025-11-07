@@ -15,12 +15,46 @@ final class GoalMilestone {
     var title: String
     var targetValue: Int
     var isComplete: Bool
+    var deadline: Date?
     
-    init(id: String = UUID().uuidString, title: String, targetValue: Int, isComplete: Bool = false) {
+    init(id: String = UUID().uuidString, title: String, targetValue: Int, isComplete: Bool = false, deadline: Date? = nil) {
         self.id = id
         self.title = title
         self.targetValue = targetValue
         self.isComplete = isComplete
+        self.deadline = deadline
+    }
+}
+
+enum GoalStatus: String, CaseIterable, Codable {
+    case active
+    case paused
+    case completed
+    case atRisk
+}
+
+enum GoalPriority: String, CaseIterable, Codable {
+    case low = "Low"
+    case normal = "Normal"
+    case high = "High"
+    case critical = "Critical"
+    
+    var order: Int {
+        switch self {
+        case .low: return 0
+        case .normal: return 1
+        case .high: return 2
+        case .critical: return 3
+        }
+    }
+    
+    var color: Color {
+        switch self {
+        case .low: return .blue
+        case .normal: return .green
+        case .high: return .orange
+        case .critical: return .red
+        }
     }
 }
 
@@ -29,11 +63,14 @@ final class Goal {
     var id: String
     var userID: String
     var title: String
+    var goalDescription: String?
     var category: GoalCategory
+    var priority: GoalPriority?
     var targetValue: Int
     var currentValue: Int
-    var isComplete: Bool
+    var status: GoalStatus
     var createdAt: Date
+    var startDate: Date
     var deadline: Date?
     var milestones: [GoalMilestone]
     var timeCrystalsReward: Int = 10
@@ -42,11 +79,14 @@ final class Goal {
     init(id: String = UUID().uuidString,
          userID: String,
          title: String,
+         goalDescription: String? = nil,
          category: GoalCategory,
+         priority: GoalPriority = .normal,
          targetValue: Int,
          currentValue: Int = 0,
-         isComplete: Bool = false,
+         status: GoalStatus = .active,
          createdAt: Date = Date(),
+         startDate: Date = Date(),
          deadline: Date? = nil,
          milestones: [GoalMilestone] = [],
          timeCrystalsReward: Int = 10,
@@ -54,20 +94,44 @@ final class Goal {
         self.id = id
         self.userID = userID
         self.title = title
+        self.goalDescription = goalDescription
         self.category = category
+        self.priority = priority
         self.targetValue = targetValue
         self.currentValue = currentValue
-        self.isComplete = isComplete
+        self.status = status
         self.createdAt = createdAt
+        self.startDate = startDate
         self.deadline = deadline
         self.milestones = milestones
         self.timeCrystalsReward = timeCrystalsReward
         self.themeReward = themeReward
     }
     
-    func progressPercentage() -> Double {
-        guard targetValue > 0 else { return 0 }
-        return min(Double(currentValue) / Double(targetValue), 1.0)
+    // Auto-calculate target from linked tasks (milestone tasks if using milestones, otherwise direct goal tasks)
+    func effectiveTargetValue(tasks: [Task]) -> Int {
+        // If using milestones, count all tasks in milestones
+        if !milestones.isEmpty {
+            return tasks.filter { task in
+                task.goalID == self.id && task.milestoneID != nil
+            }.count
+        } else {
+            // Otherwise count tasks linked directly to goal
+            return tasks.filter { task in
+                task.goalID == self.id && task.milestoneID == nil
+            }.count
+        }
+    }
+    
+    func progressPercentage(tasks: [Task] = []) -> Double {
+        let effectiveTarget = tasks.isEmpty ? targetValue : effectiveTargetValue(tasks: tasks)
+        guard effectiveTarget > 0 else { return 0 }
+        return min(Double(currentValue) / Double(effectiveTarget), 1.0)
+    }
+    
+    // Safe accessor for priority (handles existing goals without priority)
+    var effectivePriority: GoalPriority {
+        return priority ?? .normal
     }
 }
 
@@ -100,16 +164,16 @@ enum GoalCategory: String, CaseIterable, Codable {
     
     var icon: String {
         switch self {
-        case .health: return "heart.fill"
+        case .health: return "heart.circle.fill"
         case .work: return "briefcase.fill"
-        case .learning: return "book.fill"
-        case .personal: return "person.fill"
+        case .learning: return "graduationcap.fill"
+        case .personal: return "heart.text.square.fill"
         case .financial: return "dollarsign.circle.fill"
-        case .fitness: return "figure.run"
+        case .fitness: return "figure.strengthtraining.traditional"
         case .creative: return "paintbrush.fill"
         case .social: return "person.2.fill"
-        case .spiritual: return "leaf.fill"
-        case .productivity: return "chart.line.uptrend.xyaxis"
+        case .spiritual: return "leaf.circle.fill"
+        case .productivity: return "target"
         }
     }
     

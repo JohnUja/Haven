@@ -8,6 +8,7 @@
 import SwiftUI
 import AudioToolbox
 import UIKit
+import AVFoundation
 
 struct InfiniteDaySelector: View {
     @Binding var selectedDate: Date
@@ -27,9 +28,15 @@ struct InfiniteDaySelector: View {
     
     @State private var days: [Date] = []
     @State private var lastHapticDay: Date?
+    @State private var lastHapticIndex: Int?
     @State private var isInitializing = false
     @State private var impactGenerator: UIImpactFeedbackGenerator? = UIImpactFeedbackGenerator(style: .rigid)
     @State private var selectionGenerator: UISelectionFeedbackGenerator? = UISelectionFeedbackGenerator()
+    
+    // Lazy loading constants
+    private let initialLoadCount = 15 // Load 15 days on each side initially
+    private let loadMoreThreshold = 5 // Load more when within 5 days of edge
+    private let maxDaysToLoad = 30 // Maximum days to load on each side at once
     
     private let calendar = Calendar.current
     
@@ -76,13 +83,20 @@ struct InfiniteDaySelector: View {
                                     hasEvents: hasEvents(day),
                                     width: slotWidth,
                                     onTap: {
+                                        // Update haptic tracking
+                                        lastHapticIndex = index
+                                        lastHapticDay = day
+                                        
                                         selectedDate = day
                                         onDateChanged(day)
                                         withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.8)) {
                                             proxy.scrollTo(index, anchor: .center)
                                         }
-                                        // Haptic on tap
-                                        AudioServicesPlaySystemSound(1057)
+                                        // Haptic on tap - use time picker sound
+                                        HapticSoundPlayer.shared.playTimePickerSound()
+                                        
+                                        // Check if we need to load more days
+                                        checkAndLoadMoreDays(currentIndex: index)
                                     }
                                 )
                                 .id(index)
@@ -139,21 +153,115 @@ struct InfiniteDaySelector: View {
     }
     
     private func initializeDays() {
+        // Lazy loading: Start with only 15 days on each side of today
         let today = Date()
-        days = (-200...200).compactMap { offset in
-            calendar.date(byAdding: .day, value: offset, to: today)
-        }
-        // Always set selectedDate to today on initial load
+        loadDaysAround(date: today, range: initialLoadCount)
         selectedDate = today
     }
     
+    // Lazy loading: Load days around a specific date
+    private func loadDaysAround(date: Date, range: Int) {
+        let newDays = (-range...range).compactMap { offset in
+            calendar.date(byAdding: .day, value: offset, to: date)
+        }
+        
+        // Merge with existing days, avoiding duplicates
+        var daySet = Set(days.map { calendar.startOfDay(for: $0) })
+        var mergedDays = days
+        
+        for newDay in newDays {
+            let dayStart = calendar.startOfDay(for: newDay)
+            if !daySet.contains(dayStart) {
+                mergedDays.append(newDay)
+                daySet.insert(dayStart)
+            }
+        }
+        
+        // Sort days
+        days = mergedDays.sorted()
+    }
+    
+    // Check if we need to load more days
+    private func checkAndLoadMoreDays(currentIndex: Int) {
+        let totalDays = days.count
+        let distanceFromStart = currentIndex
+        let distanceFromEnd = totalDays - currentIndex - 1
+        
+        // Load more if we're within threshold of the edge
+        if distanceFromStart < loadMoreThreshold {
+            if let firstDay = days.first {
+                // Always load 15 more days before the first day
+                loadDaysAround(date: firstDay, range: 15)
+            }
+        } else if distanceFromEnd < loadMoreThreshold {
+            if let lastDay = days.last {
+                // Always load 15 more days after the last day
+                loadDaysAround(date: lastDay, range: 15)
+            }
+        }
+    }
+    
     private func initializePosition(proxy: ScrollViewProxy) {
-        let todayIndex = 200
-        guard todayIndex < days.count else { return }
+        // Ensure days array is initialized
+        guard !days.isEmpty else {
+            // If days is empty, initialize it first
+            initializeDays()
+            // Wait a moment for days to be populated, then retry
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                initializePosition(proxy: proxy)
+            }
+            return
+        }
+        
+        // Find today's index in the loaded days
+        let today = calendar.startOfDay(for: Date())
+        guard let todayIndex = days.firstIndex(where: { calendar.isDate($0, inSameDayAs: today) }) else {
+            // If today not found, find the closest day
+            guard let closestDay = days.enumerated().min(by: { abs($0.element.timeIntervalSince(today)) < abs($1.element.timeIntervalSince(today)) }) else {
+                // If no closest day found (shouldn't happen if days is not empty), use first day
+                guard let firstDay = days.first else {
+                    // Last resort: reinitialize
+                    initializeDays()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        initializePosition(proxy: proxy)
+                    }
+                    return
+                }
+                isInitializing = true
+                selectedDate = firstDay
+                lastHapticDay = firstDay
+                lastHapticIndex = 0
+                onDateChanged(firstDay)
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    proxy.scrollTo(0, anchor: .center)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        isInitializing = false
+                    }
+                }
+                return
+            }
+            
+            let closestIndex = closestDay.offset
+            isInitializing = true
+            selectedDate = days[closestIndex]
+            lastHapticDay = days[closestIndex]
+            lastHapticIndex = closestIndex
+            onDateChanged(days[closestIndex])
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                proxy.scrollTo(closestIndex, anchor: .center)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    isInitializing = false
+                }
+            }
+            return
+        }
         
         isInitializing = true
         selectedDate = days[todayIndex]
         lastHapticDay = days[todayIndex]
+        lastHapticIndex = todayIndex
         onDateChanged(days[todayIndex]) // Load the timeline for today
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
@@ -166,12 +274,31 @@ struct InfiniteDaySelector: View {
     }
     
     private func resetToToday(proxy: ScrollViewProxy) {
-        let todayIndex = 200
-        guard todayIndex < days.count else { return }
+        // Find today's index in the loaded days
+        let today = calendar.startOfDay(for: Date())
+        guard let todayIndex = days.firstIndex(where: { calendar.isDate($0, inSameDayAs: today) }) else {
+            // If today not in loaded days, load it and reset
+            loadDaysAround(date: today, range: initialLoadCount)
+            if let newTodayIndex = days.firstIndex(where: { calendar.isDate($0, inSameDayAs: today) }) {
+                isInitializing = true
+                selectedDate = days[newTodayIndex]
+                lastHapticDay = days[newTodayIndex]
+                lastHapticIndex = newTodayIndex
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    proxy.scrollTo(newTodayIndex, anchor: .center)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        isInitializing = false
+                    }
+                }
+            }
+            return
+        }
         
         isInitializing = true
         selectedDate = days[todayIndex]
         lastHapticDay = days[todayIndex]
+        lastHapticIndex = todayIndex
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             proxy.scrollTo(todayIndex, anchor: .center)
@@ -191,19 +318,22 @@ struct InfiniteDaySelector: View {
         guard index >= 0 && index < days.count else { return }
         let centeredDay = days[index]
         
-        // Haptic feedback + metallic click whenever day position changes during scroll
-        if let lastDay = lastHapticDay, !calendar.isDate(centeredDay, inSameDayAs: lastDay) {
-            // Metallic click sound + dual haptics
-            AudioServicesPlaySystemSound(1057)
-            impactGenerator?.impactOccurred(intensity: 0.9)
-            selectionGenerator?.selectionChanged()
+        // CRITICAL FIX: Play haptic feedback on EVERY index change
+        // This ensures if user swipes 20 days, they hear feedback 20 times
+        if let lastIndex = lastHapticIndex, lastIndex != index {
+            // Position changed - play feedback IMMEDIATELY (no delay)
+            HapticSoundPlayer.shared.playTimePickerSound()
+            
+            lastHapticIndex = index
             lastHapticDay = centeredDay
             selectedDate = centeredDay
             onDateChanged(centeredDay)
-            // Re-prime the generator to keep the latency low for the next tick
-            impactGenerator?.prepare()
-            selectionGenerator?.prepare()
-        } else if lastHapticDay == nil {
+            
+            // Check if we need to load more days (lazy loading)
+            checkAndLoadMoreDays(currentIndex: index)
+        } else if lastHapticIndex == nil {
+            // First time - set initial values
+            lastHapticIndex = index
             lastHapticDay = centeredDay
         }
     }
@@ -226,12 +356,40 @@ struct DayCell: View {
                 .foregroundColor(.white.opacity(0.7))
             
             ZStack {
-                // Show yellow ring for today ONLY if NOT selected (green replaces it when selected)
-                if isToday && !isSelected {
+                // Gradual transition: Show yellow ring for today ONLY if NOT selected
+                // When selected, smoothly transition from yellow to green
+                if isToday {
+                    if isSelected {
+                        // Today is selected - show green ring with smooth transition
+                        Circle()
+                            .stroke(Color.green.opacity(0.9), lineWidth: 3)
+                            .frame(width: 32, height: 32)
+                            .shadow(color: .green.opacity(0.5), radius: 5)
+                            .transition(.asymmetric(
+                                insertion: .scale.combined(with: .opacity),
+                                removal: .opacity
+                            ))
+                    } else {
+                        // Today is not selected - show yellow ring
+                        Circle()
+                            .stroke(Color.yellow.opacity(0.9), lineWidth: 3)
+                            .frame(width: 32, height: 32)
+                            .shadow(color: .yellow.opacity(0.3), radius: 3)
+                            .transition(.asymmetric(
+                                insertion: .scale.combined(with: .opacity),
+                                removal: .opacity
+                            ))
+                    }
+                } else if isSelected {
+                    // Selected day (not today) - show green ring with transition
                     Circle()
-                        .stroke(Color.yellow.opacity(0.9), lineWidth: 3)
+                        .stroke(Color.green.opacity(0.9), lineWidth: 3)
                         .frame(width: 32, height: 32)
-                        .shadow(color: .yellow.opacity(0.3), radius: 3)
+                        .shadow(color: .green.opacity(0.5), radius: 5)
+                        .transition(.asymmetric(
+                            insertion: .scale.combined(with: .opacity),
+                            removal: .opacity
+                        ))
                 }
                 
                 Text("\(calendar.component(.day, from: day))")
@@ -239,6 +397,8 @@ struct DayCell: View {
                     .foregroundColor(.white)
             }
             .frame(width: 32, height: 32)
+            .animation(.easeInOut(duration: 0.3), value: isSelected)
+            .animation(.easeInOut(duration: 0.3), value: isToday)
             
             Circle()
                 .fill(hasEvents ? Color.blue : Color.clear)

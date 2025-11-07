@@ -21,11 +21,15 @@ final class Task {
     var category: TaskCategory
     var isComplete: Bool
     var goalID: String?
+    var milestoneID: String? // Link to goal milestone
     var taskBlockID: String? // New: Link to task block
     var color: String? // New: Custom color for task
     var completionAnimation: Bool // New: For cross-out animation
     var isLocked: Bool = false // New: For routine tasks that can't be moved
     var recurrenceSeriesID: String? // New: Link occurrences of a recurring series
+    var hasBeenRewarded: Bool = false // Track if rewards already given to prevent duplicates
+    var isRoutineTask: Bool = false // New: Indicates if task was generated from a routine
+    var routineID: String? // New: Links to DailyRoutine that created this task
     
     init(id: String = UUID().uuidString,
          userID: String,
@@ -37,9 +41,13 @@ final class Task {
          category: TaskCategory = .personal,
          isComplete: Bool = false,
          goalID: String? = nil,
+         milestoneID: String? = nil,
          taskBlockID: String? = nil,
          color: String? = nil,
-         recurrenceSeriesID: String? = nil) {
+         recurrenceSeriesID: String? = nil,
+         hasBeenRewarded: Bool = false,
+         isRoutineTask: Bool = false,
+         routineID: String? = nil) {
         self.id = id
         self.userID = userID
         self.title = title
@@ -50,10 +58,19 @@ final class Task {
         self.category = category
         self.isComplete = isComplete
         self.goalID = goalID
+        self.milestoneID = milestoneID
         self.taskBlockID = taskBlockID
         self.color = color
         self.completionAnimation = false
         self.recurrenceSeriesID = recurrenceSeriesID
+        self.hasBeenRewarded = hasBeenRewarded
+        self.isRoutineTask = isRoutineTask
+        self.routineID = routineID
+        
+        // Auto-lock routine tasks
+        if isRoutineTask {
+            self.isLocked = true
+        }
     }
 }
 

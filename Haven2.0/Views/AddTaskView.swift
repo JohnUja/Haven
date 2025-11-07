@@ -11,10 +11,14 @@ import SwiftData
 struct AddTaskView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var authService: FirebaseAuthService
     @Query private var users: [User]
     
     let selectedDate: Date
     let taskBlockID: String?
+    
+    @StateObject private var guestModeService = GuestModeService.shared
+    @State private var showGuestLoginPrompt = false
     
     init(selectedDate: Date, taskBlockID: String? = nil) {
         self.selectedDate = selectedDate
@@ -201,6 +205,11 @@ struct AddTaskView: View {
         .onAppear {
             setupInitialTimes()
         }
+        .fullScreenCover(isPresented: $showGuestLoginPrompt) {
+            GuestLoginPromptView(isPresented: $showGuestLoginPrompt) {
+                // On dismiss, user can continue but with limited access
+            }
+        }
         .confirmationDialog(
             isLocked ? "Unlock Scope" : "Lock Scope",
             isPresented: $showLockScopeDialog,
@@ -244,6 +253,18 @@ struct AddTaskView: View {
     private func saveTask() {
         guard let user = currentUser else { return }
         
+        // Check guest mode limits
+        if authService.isGuest {
+            if !guestModeService.canCreateTask() {
+                // Show login prompt
+                showGuestLoginPrompt = true
+                return
+            }
+            
+            // Increment task count for guest
+            guestModeService.incrementTaskCount()
+        }
+        
         if isRecurring {
             createRecurringTasks(user: user)
         } else {
@@ -252,7 +273,26 @@ struct AddTaskView: View {
         
         do {
             try modelContext.save()
+            
+            // Remember the date if task was created on a future date
+            let calendar = Calendar.current
+            let taskDate = isFlexibleTask ? selectedDate : startTime
+            let today = Date()
+            
+            if calendar.dateComponents([.day], from: today, to: taskDate).day ?? 0 > 0 {
+                // Task created on a future date - remember it
+                DatePersistenceService.shared.saveLastWorkedDate(taskDate)
+                DatePersistenceService.shared.saveSelectedDate(taskDate)
+            }
+            
             dismiss()
+            
+            // If guest just created their first task, show prompt after saving
+            if authService.isGuest && guestModeService.taskCount == 1 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    showGuestLoginPrompt = true
+                }
+            }
         } catch {
             print("Error saving task: \(error)")
         }
