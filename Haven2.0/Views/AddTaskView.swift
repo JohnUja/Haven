@@ -7,22 +7,28 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct AddTaskView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var authService: FirebaseAuthService
+    @Environment(ThemeManager.self) private var themeManager
+    @Environment(FirebaseAuthService.self) private var authService
     @Query private var users: [User]
+    @Query private var taskBlocks: [TaskBlock]
     
     let selectedDate: Date
-    let taskBlockID: String?
+    let taskBlock: TaskBlock?
+    let prefillTaskName: String?
     
     @StateObject private var guestModeService = GuestModeService.shared
     @State private var showGuestLoginPrompt = false
     
-    init(selectedDate: Date, taskBlockID: String? = nil) {
+    init(selectedDate: Date, taskBlock: TaskBlock? = nil, taskBlockID: String? = nil, prefillTaskName: String? = nil) {
         self.selectedDate = selectedDate
-        self.taskBlockID = taskBlockID
+        self.taskBlock = taskBlock
+        self.prefillTaskName = prefillTaskName
+        // Note: taskBlockID parameter kept for backward compatibility but should use taskBlock instead
     }
     
     @State private var title = ""
@@ -46,151 +52,236 @@ struct AddTaskView: View {
     }
     
     var body: some View {
-        NavigationView {
-            Form {
-                Section("Task Details") {
-                    TextField("Task title", text: $title)
-                    
-                    TextField("Description (optional)", text: $taskDescription, axis: .vertical)
-                        .lineLimit(3...6)
-                    
-                    // Priority dropdown
-                    HStack {
-                        Text("Priority")
-                            .font(.system(size: 14, weight: .regular))
-                            .foregroundColor(.primary)
-                        
-                        Spacer()
-                        
-                        Menu {
-                            ForEach(PriorityType.allCases, id: \.self) { priorityOption in
-                                Button(action: { priority = priorityOption }) {
-                                    HStack {
-                                        Text(priorityOption.rawValue.capitalized)
-                                        if priority == priorityOption {
-                                            Image(systemName: "checkmark")
-                                        }
+        let theme = themeManager.currentTheme
+        
+        return NavigationView {
+            ZStack {
+                // Background using theme gradient
+                theme.primaryGradient
+                    .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 24) {
+                        // Task Details Section
+                        sectionView(title: "TASK DETAILS", theme: theme) {
+                            VStack(spacing: 16) {
+                                // Task Title - Larger and Bold
+                                TextField("Task title", text: $title)
+                                    .font(.system(size: 20, weight: .bold, design: .default))
+                                    .foregroundColor(theme.textPrimary)
+                                    .accentColor(theme.accentColor)
+                                    .padding(.horizontal, theme.cardPadding)
+                                    .padding(.vertical, theme.cardVerticalPadding)
+                                    .background(transparentInputBackground(theme: theme))
+                                    .cornerRadius(theme.smallCornerRadius)
+                                    .placeholder(when: title.isEmpty) {
+                                        Text("Task title")
+                                            .foregroundColor(theme.textSecondary.opacity(0.6))
+                                            .font(.system(size: 20, weight: .bold, design: .default))
                                     }
+                                
+                                // Description - TextEditor
+                                ZStack(alignment: .topLeading) {
+                                    if taskDescription.isEmpty {
+                                        Text("Description (optional)")
+                                            .foregroundColor(theme.textSecondary.opacity(0.6))
+                                            .font(.system(size: 16, weight: .regular, design: .default))
+                                            .padding(.horizontal, theme.cardPadding)
+                                            .padding(.vertical, theme.cardVerticalPadding)
+                                    }
+                                    TextEditor(text: $taskDescription)
+                                        .font(.system(size: 16, weight: .regular, design: .default))
+                                        .foregroundColor(theme.textPrimary)
+                                        .accentColor(theme.accentColor)
+                                        .scrollContentBackground(.hidden)
+                                        .frame(minHeight: 100)
+                                        .padding(.horizontal, theme.cardPadding - 4)
+                                        .padding(.vertical, theme.cardVerticalPadding - 4)
                                 }
+                                .background(transparentInputBackground(theme: theme))
+                                .cornerRadius(theme.smallCornerRadius)
+                                
+                                // Priority Pill Selector
+                                priorityPillSelector(theme: theme)
                             }
-                        } label: {
+                        }
+                        
+                        // Task Type Section
+                        sectionView(title: "TASK TYPE", theme: theme) {
                             HStack {
-                                Text(priority.rawValue.capitalized)
-                                Image(systemName: "chevron.down")
-                                    .font(.caption)
+                                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(theme.accentColor)
+                                Toggle("Flexible task (no specific time)", isOn: $isFlexibleTask)
+                                    .foregroundColor(theme.textPrimary)
+                                    .tint(theme.accentColor)
                             }
-                            .foregroundColor(.blue)
-                        }
-                    }
-                }
-                
-                Section("Task Type") {
-                    Toggle("Flexible task (no specific time)", isOn: $isFlexibleTask)
-                        .onChange(of: isFlexibleTask) { _, newValue in
-                            if newValue {
-                                hasEndTime = false
-                            }
-                        }
-                }
-                
-                Section("Time") {
-                    if !isFlexibleTask {
-                        NumericTimeInput(time: $startTime, title: "Start time")
-                            .onChange(of: startTime) { _, newValue in
-                                // Prevent past times for today
-                                if Calendar.current.isDateInToday(newValue) && newValue < Date() {
-                                    startTime = Date()
+                            .padding(.horizontal, theme.cardPadding)
+                            .padding(.vertical, theme.cardVerticalPadding)
+                            .background(transparentInputBackground(theme: theme))
+                            .cornerRadius(theme.smallCornerRadius)
+                            .onChange(of: isFlexibleTask) { _, newValue in
+                                if newValue {
+                                    hasEndTime = false
                                 }
                             }
-                        
-                        Toggle("Has end time", isOn: $hasEndTime)
-                        
-                        if hasEndTime {
-                            NumericTimeInput(time: $endTime, title: "End time")
                         }
-                    } else {
-                        Text("This task can be done anytime today")
-                            .foregroundColor(.secondary)
-                            .italic()
-                    }
-                }
-                
-                Section("Category") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Category")
-                            .font(.system(size: 14, weight: .regular))
-                            .foregroundColor(.primary)
                         
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 12) {
-                            ForEach(TaskCategory.allCases, id: \.self) { cat in
-                                Button(action: { category = cat }) {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: cat.icon)
-                                            .font(.title3)
-                                            .foregroundColor(cat.color())
-                                            .frame(width: 24, height: 24)
-                                        
-                                        Text(cat.displayName)
-                                            .font(.body)
-                                            .foregroundColor(.primary)
-                                        
-                                        Spacer()
-                                        
-                                        if category == cat {
-                                            Image(systemName: "checkmark")
-                                                .font(.caption)
-                                                .foregroundColor(.blue)
+                        // Time Section
+                        sectionView(title: "TIME", theme: theme) {
+                            if !isFlexibleTask {
+                                VStack(spacing: 16) {
+                                    if hasEndTime {
+                                        // Horizontal layout when end time is enabled
+                                        HStack(spacing: 12) {
+                                            NumericTimeInput(time: $startTime, title: "Start time")
+                                                .onChange(of: startTime) { _, newValue in
+                                                    // Prevent past times for today
+                                                    if Calendar.current.isDateInToday(newValue) && newValue < Date() {
+                                                        startTime = Date()
+                                                    }
+                                                }
+                                            
+                                            NumericTimeInput(time: $endTime, title: "End time")
+                                        }
+                                    } else {
+                                        NumericTimeInput(time: $startTime, title: "Start time")
+                                            .onChange(of: startTime) { _, newValue in
+                                                // Prevent past times for today
+                                                if Calendar.current.isDateInToday(newValue) && newValue < Date() {
+                                                    startTime = Date()
+                                                }
+                                            }
+                                    }
+                                    
+                                    Toggle("Has end time", isOn: $hasEndTime)
+                                        .foregroundColor(theme.textPrimary)
+                                        .tint(theme.accentColor)
+                                }
+                                .padding(.horizontal, theme.cardPadding)
+                                .padding(.vertical, theme.cardVerticalPadding)
+                                .background(transparentInputBackground(theme: theme))
+                                .cornerRadius(theme.smallCornerRadius)
+                            } else {
+                                Text("This task can be done anytime today")
+                                    .font(.system(size: 14, weight: .regular, design: .default))
+                                    .foregroundColor(theme.textSecondary)
+                                    .italic()
+                                    .padding(.horizontal, theme.cardPadding)
+                                    .padding(.vertical, theme.cardVerticalPadding)
+                                    .background(transparentInputBackground(theme: theme))
+                                    .cornerRadius(theme.smallCornerRadius)
+                            }
+                        }
+                        
+                        // Category Section
+                        sectionView(title: "CATEGORY", theme: theme) {
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 12) {
+                                ForEach(TaskCategory.allCases, id: \.self) { cat in
+                                    Button(action: { category = cat }) {
+                                        HStack(spacing: 8) {
+                                            Image(systemName: cat.icon)
+                                                .font(.title3)
+                                                .foregroundColor(category == cat ? cat.color() : cat.color().opacity(0.7))
+                                                .frame(width: 24, height: 24)
+                                            
+                                            Text(cat.displayName)
+                                                .font(.system(size: 16, weight: category == cat ? .bold : .regular, design: .default))
+                                                .foregroundColor(theme.textPrimary)
+                                            
+                                            Spacer()
+                                            
+                                            if category == cat {
+                                                Image(systemName: "checkmark.circle.fill")
+                                                    .font(.caption)
+                                                    .foregroundColor(theme.accentColor)
+                                            }
+                                        }
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                                .fill(theme.glassBackground.opacity(0.3))
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                                        .stroke(category == cat ? theme.accentColor : theme.glassBorder.opacity(0.5), lineWidth: category == cat ? 2 : 1)
+                                                )
+                                        )
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                }
+                            }
+                            .padding(.horizontal, theme.cardPadding)
+                            .padding(.vertical, theme.cardVerticalPadding)
+                            .background(transparentInputBackground(theme: theme))
+                            .cornerRadius(theme.smallCornerRadius)
+                        }
+                        
+                        // Recurrence Section
+                        sectionView(title: "RECURRENCE", theme: theme) {
+                            VStack(spacing: 16) {
+                                Toggle("Make this a recurring task", isOn: $isRecurring)
+                                    .foregroundColor(theme.textPrimary)
+                                    .tint(theme.accentColor)
+                                
+                                if isRecurring {
+                                    Picker("Repeat", selection: $recurrenceType) {
+                                        ForEach(RecurrenceType.allCases, id: \.self) { type in
+                                            Text(type.displayName).tag(type)
                                         }
                                     }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .fill(category == cat ? Color.blue.opacity(0.1) : Color.gray.opacity(0.1))
-                                    )
+                                    .pickerStyle(.segmented)
+                                    .tint(theme.accentColor)
+                                    
+                                    DatePicker("End date", selection: $recurrenceEndDate, displayedComponents: [.date])
+                                        .datePickerStyle(.compact)
+                                        .tint(theme.accentColor)
                                 }
-                                .buttonStyle(PlainButtonStyle())
                             }
+                            .padding(.horizontal, theme.cardPadding)
+                            .padding(.vertical, theme.cardVerticalPadding)
+                            .background(transparentInputBackground(theme: theme))
+                            .cornerRadius(theme.smallCornerRadius)
                         }
-                    }
-                }
-                
-                Section("Recurrence") {
-                    Toggle("Make this a recurring task", isOn: $isRecurring)
-                    
-                    if isRecurring {
-                        Picker("Repeat", selection: $recurrenceType) {
-                            ForEach(RecurrenceType.allCases, id: \.self) { type in
-                                Text(type.displayName).tag(type)
-                            }
-                        }
-                        .pickerStyle(.segmented)
                         
-                        DatePicker("End date", selection: $recurrenceEndDate, displayedComponents: [.date])
-                            .datePickerStyle(.compact)
-                    }
-                }
-                
-                Section("Settings") {
-                    Toggle("Lock task", isOn: Binding(
-                        get: { isLocked },
-                        set: { newValue in
-                            if isRecurring {
-                                pendingLockValue = newValue
-                                showLockScopeDialog = true
-                            } else {
-                                isLocked = newValue
+                        // Settings Section
+                        sectionView(title: "SETTINGS", theme: theme) {
+                            HStack {
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(theme.accentColor)
+                                Toggle("Lock task", isOn: Binding(
+                                    get: { isLocked },
+                                    set: { newValue in
+                                        if isRecurring {
+                                            pendingLockValue = newValue
+                                            showLockScopeDialog = true
+                                        } else {
+                                            isLocked = newValue
+                                        }
+                                    }
+                                ))
+                                .foregroundColor(theme.textPrimary)
+                                .tint(theme.accentColor)
                             }
+                            .padding(.horizontal, theme.cardPadding)
+                            .padding(.vertical, theme.cardVerticalPadding)
+                            .background(transparentInputBackground(theme: theme))
+                            .cornerRadius(theme.smallCornerRadius)
                         }
-                    ))
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
                 }
             }
             .navigationTitle("Add Task")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(theme.textPrimary)
                     }
                 }
                 
@@ -199,11 +290,16 @@ struct AddTaskView: View {
                         saveTask()
                     }
                     .disabled(title.isEmpty)
+                    .foregroundColor(title.isEmpty ? theme.textSecondary : theme.accentColor)
                 }
             }
+            .toolbarBackground(theme.glassBackground.opacity(0.5), for: .navigationBar)
         }
         .onAppear {
             setupInitialTimes()
+            if let prefill = prefillTaskName, title.isEmpty {
+                title = prefill
+            }
         }
         .fullScreenCover(isPresented: $showGuestLoginPrompt) {
             GuestLoginPromptView(isPresented: $showGuestLoginPrompt) {
@@ -238,6 +334,50 @@ struct AddTaskView: View {
                 // revert the toggle
                 pendingLockValue = isLocked
             }
+        }
+    }
+    
+    // MARK: - Priority Pill Selector
+    @ViewBuilder
+    private func priorityPillSelector(theme: any AppTheme) -> some View {
+        HStack(spacing: 12) {
+            ForEach(PriorityType.allCases, id: \.self) { priorityOption in
+                Button(action: {
+                    priority = priorityOption
+                    // Haptic feedback
+                    let generator = UIImpactFeedbackGenerator(style: .soft)
+                    generator.prepare()
+                    generator.impactOccurred()
+                }) {
+                    Text(priorityOption.rawValue.capitalized)
+                        .font(.system(size: 14, weight: priority == priorityOption ? .bold : .regular, design: .default))
+                        .foregroundColor(priority == priorityOption ? .white : priorityColor(for: priorityOption))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(
+                            Capsule()
+                                .fill(priority == priorityOption ? priorityColor(for: priorityOption) : Color.clear)
+                                .overlay(
+                                    Capsule()
+                                        .stroke(priorityColor(for: priorityOption), lineWidth: priority == priorityOption ? 0 : 1.5)
+                                )
+                        )
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+        }
+        .padding(.horizontal, theme.cardPadding)
+        .padding(.vertical, theme.cardVerticalPadding)
+        .background(transparentInputBackground(theme: theme))
+        .cornerRadius(theme.smallCornerRadius)
+    }
+    
+    private func priorityColor(for priority: PriorityType) -> Color {
+        switch priority {
+        case .urgent: return .red
+        case .high: return .orange
+        case .normal: return .blue
+        case .low: return .green
         }
     }
     
@@ -285,7 +425,13 @@ struct AddTaskView: View {
                 DatePersistenceService.shared.saveSelectedDate(taskDate)
             }
             
-            dismiss()
+            // Post notification that task was created (for onboarding flow)
+            NotificationCenter.default.post(name: NSNotification.Name("OnboardingTaskCreated"), object: nil)
+            
+            // Ensure dismiss happens on main thread
+            DispatchQueue.main.async {
+                dismiss()
+            }
             
             // If guest just created their first task, show prompt after saving
             if authService.isGuest && guestModeService.taskCount == 1 {
@@ -295,10 +441,23 @@ struct AddTaskView: View {
             }
         } catch {
             print("Error saving task: \(error)")
+            // Show error to user
+            DispatchQueue.main.async {
+                // TODO: Show error alert
+            }
         }
     }
     
     private func createSingleTask(user: User) {
+        // Resolve taskBlock from ID if needed (backward compatibility)
+        let resolvedTaskBlock: TaskBlock? = {
+            if let taskBlock = taskBlock {
+                return taskBlock
+            }
+            // Legacy support: if taskBlockID was provided, find it
+            return nil
+        }()
+        
         let task = Task(
             userID: user.id,
             title: title,
@@ -307,7 +466,7 @@ struct AddTaskView: View {
             endTime: isFlexibleTask ? selectedDate : (hasEndTime ? endTime : startTime),
             priority: priority,
             category: category,
-            taskBlockID: taskBlockID
+            taskBlock: resolvedTaskBlock
         )
         
         task.isLocked = isLocked
@@ -320,6 +479,14 @@ struct AddTaskView: View {
         let endDate = recurrenceEndDate
         let seriesID = UUID().uuidString
         
+        // Resolve taskBlock from ID if needed (backward compatibility)
+        let resolvedTaskBlock: TaskBlock? = {
+            if let taskBlock = taskBlock {
+                return taskBlock
+            }
+            return nil
+        }()
+        
         while currentDate <= endDate {
             // Check if we should create a task for this date based on recurrence type
             if shouldCreateTaskForDate(currentDate) {
@@ -331,7 +498,7 @@ struct AddTaskView: View {
                     endTime: isFlexibleTask ? currentDate : (hasEndTime ? calendar.date(byAdding: .hour, value: 1, to: currentDate) ?? currentDate : currentDate),
                     priority: priority,
                     category: category,
-                    taskBlockID: taskBlockID,
+                    taskBlock: resolvedTaskBlock,
                     recurrenceSeriesID: seriesID
                 )
                 
@@ -380,6 +547,19 @@ struct AddTaskView: View {
             return true // For now, treat custom as daily
         }
     }
+    
+    // MARK: - Helper Views
+    private func sectionView<Content: View>(title: String, theme: any AppTheme, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold, design: .default))
+                .foregroundColor(theme.textPrimary.opacity(0.5)) // Lighter grey for better visibility
+                // Removed .textCase(.uppercase)
+            
+            content()
+        }
+    }
+    
 }
 
 #Preview {

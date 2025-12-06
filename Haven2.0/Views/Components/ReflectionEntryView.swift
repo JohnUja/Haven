@@ -15,6 +15,7 @@ struct ReflectionEntryView: View {
     let goalID: String
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(ThemeManager.self) private var themeManager
     @State private var note: String = ""
     @State private var selectedPhoto: PhotosPickerItem? = nil
     @State private var selectedImageData: Data? = nil
@@ -64,25 +65,12 @@ struct ReflectionEntryView: View {
                                 .font(.headline)
                                 .foregroundColor(.white)
                             
-                            TextEditor(text: $note)
-                                .frame(minHeight: 200)
-                                .padding(12)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 16)
-                                        .fill(.ultraThinMaterial)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 16)
-                                                .stroke(
-                                                    LinearGradient(
-                                                        colors: [.purple.opacity(0.5), .pink.opacity(0.5)],
-                                                        startPoint: .topLeading,
-                                                        endPoint: .bottomTrailing
-                                                    ),
-                                                    lineWidth: 2
-                                                )
-                                        )
-                                )
-                                .foregroundColor(.primary)
+                            transparentTextEditor(
+                                text: $note,
+                                theme: themeManager.currentTheme,
+                                placeholder: "What did you learn? How did it go?",
+                                minHeight: 200
+                            )
                         }
                         .padding(.horizontal, 20)
                         

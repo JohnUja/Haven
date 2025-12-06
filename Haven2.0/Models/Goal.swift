@@ -17,6 +17,13 @@ final class GoalMilestone {
     var isComplete: Bool
     var deadline: Date?
     
+    // Relationship: Link back to parent Goal
+    var goal: Goal?
+    
+    // Relationship: Tasks linked to this specific milestone
+    @Relationship(deleteRule: .nullify, inverse: \Task.milestone)
+    var tasks: [Task]? = []
+    
     init(id: String = UUID().uuidString, title: String, targetValue: Int, isComplete: Bool = false, deadline: Date? = nil) {
         self.id = id
         self.title = title
@@ -72,7 +79,12 @@ final class Goal {
     var createdAt: Date
     var startDate: Date
     var deadline: Date?
-    var milestones: [GoalMilestone]
+    // Relationship: Milestones (Cascade delete = if Goal deleted, Milestones deleted)
+    @Relationship(deleteRule: .cascade, inverse: \GoalMilestone.goal)
+    var milestones: [GoalMilestone]? = []
+    // Relationship: Tasks linked to this goal
+    @Relationship(deleteRule: .nullify, inverse: \Task.goal)
+    var tasks: [Task]? = []
     var timeCrystalsReward: Int = 10
     var themeReward: String?
     
@@ -88,7 +100,7 @@ final class Goal {
          createdAt: Date = Date(),
          startDate: Date = Date(),
          deadline: Date? = nil,
-         milestones: [GoalMilestone] = [],
+         milestones: [GoalMilestone]? = nil,
          timeCrystalsReward: Int = 10,
          themeReward: String? = nil) {
         self.id = id
@@ -103,28 +115,24 @@ final class Goal {
         self.createdAt = createdAt
         self.startDate = startDate
         self.deadline = deadline
-        self.milestones = milestones
+        self.milestones = milestones ?? []
         self.timeCrystalsReward = timeCrystalsReward
         self.themeReward = themeReward
     }
     
-    // Auto-calculate target from linked tasks (milestone tasks if using milestones, otherwise direct goal tasks)
-    func effectiveTargetValue(tasks: [Task]) -> Int {
-        // If using milestones, count all tasks in milestones
-        if !milestones.isEmpty {
-            return tasks.filter { task in
-                task.goalID == self.id && task.milestoneID != nil
-            }.count
+    // Calculate progress based on real relationships
+    func effectiveTargetValue() -> Int {
+        if let milestones = milestones, !milestones.isEmpty {
+            // Sum of tasks in all milestones
+            return milestones.reduce(0) { $0 + ($1.tasks?.count ?? 0) }
         } else {
-            // Otherwise count tasks linked directly to goal
-            return tasks.filter { task in
-                task.goalID == self.id && task.milestoneID == nil
-            }.count
+            // Count direct tasks
+            return tasks?.count ?? 0
         }
     }
     
-    func progressPercentage(tasks: [Task] = []) -> Double {
-        let effectiveTarget = tasks.isEmpty ? targetValue : effectiveTargetValue(tasks: tasks)
+    func progressPercentage() -> Double {
+        let effectiveTarget = effectiveTargetValue()
         guard effectiveTarget > 0 else { return 0 }
         return min(Double(currentValue) / Double(effectiveTarget), 1.0)
     }

@@ -13,10 +13,11 @@ import GoogleSignIn
 
 @main
 struct TimeFlowApp: App {
-    @StateObject private var authService = FirebaseAuthService.shared
+    @State private var authService = FirebaseAuthService.shared
     @State private var themeManager = ThemeManager()
     @StateObject private var timeSettings = TimeSettingsManager()
     @StateObject private var calendarManager = CalendarManager()
+    @StateObject private var onboardingService = OnboardingService.shared
     
     var sharedModelContainer: ModelContainer = createModelContainer()
     
@@ -69,6 +70,10 @@ struct TimeFlowApp: App {
             GoalMilestone.self,
             Theme.self,
             DailyRoutine.self,
+            FeedReaction.self,
+            FeedComment.self,
+            MoodEntry.self,
+            GoalReflection.self,
         ])
         
         do {
@@ -106,15 +111,24 @@ struct TimeFlowApp: App {
         WindowGroup {
             Group {
                 if authService.isAuthenticated {
-                    MainTabView()
-                        .environment(themeManager)
-                        .environmentObject(timeSettings)
-                        .environmentObject(calendarManager)
-                        .environmentObject(authService)
-                        .environmentObject(DeveloperModeService.shared)
+                    if onboardingService.isOnboardingComplete {
+                        MainTabView()
+                            .environment(themeManager)
+                            .environmentObject(timeSettings)
+                            .environmentObject(calendarManager)
+                            .environment(authService)
+                            .environmentObject(DeveloperModeService.shared)
+                    } else {
+                        OnboardingView()
+                            .environment(themeManager)
+                            .environmentObject(timeSettings)
+                            .environment(authService)
+                            .environmentObject(onboardingService)
+                    }
                 } else {
                     FirebaseAuthenticationView()
-                        .environmentObject(authService)
+                        .environment(themeManager)
+                        .environment(authService)
                         .environmentObject(DeveloperModeService.shared)
                 }
             }
@@ -124,6 +138,11 @@ struct TimeFlowApp: App {
             }
             .onChange(of: authService.isAuthenticated) { _, isAuthenticated in
                 print("TimeFlowApp: Auth state changed - authenticated: \(isAuthenticated)")
+            }
+            .onChange(of: onboardingService.isOnboardingComplete) { _, isComplete in
+                if isComplete {
+                    print("TimeFlowApp: Onboarding completed, switching to MainTabView")
+                }
             }
         }
         .modelContainer(sharedModelContainer)

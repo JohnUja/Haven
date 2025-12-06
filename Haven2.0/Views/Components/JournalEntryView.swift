@@ -14,6 +14,7 @@ struct JournalEntryView: View {
     let goalID: String
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(ThemeManager.self) private var themeManager
     @State private var note: String = ""
     @State private var selectedPhoto: PhotosPickerItem? = nil
     @State private var selectedImageData: Data? = nil
@@ -54,12 +55,12 @@ struct JournalEntryView: View {
     }
     
     private var textEditorSection: some View {
-        TextEditor(text: $note)
-            .frame(minHeight: 120)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.gray.opacity(0.2))
-            )
+        transparentTextEditor(
+            text: $note,
+            theme: themeManager.currentTheme,
+            placeholder: "Reflect on this task...",
+            minHeight: 120
+        )
     }
     
     @ViewBuilder

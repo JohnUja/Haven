@@ -20,9 +20,10 @@ final class Task {
     var priority: PriorityType
     var category: TaskCategory
     var isComplete: Bool
-    var goalID: String?
-    var milestoneID: String? // Link to goal milestone
-    var taskBlockID: String? // New: Link to task block
+    // Relationships (replaced String IDs)
+    var goal: Goal?
+    var milestone: GoalMilestone?
+    var taskBlock: TaskBlock?
     var color: String? // New: Custom color for task
     var completionAnimation: Bool // New: For cross-out animation
     var isLocked: Bool = false // New: For routine tasks that can't be moved
@@ -40,9 +41,9 @@ final class Task {
          priority: PriorityType = .normal,
          category: TaskCategory = .personal,
          isComplete: Bool = false,
-         goalID: String? = nil,
-         milestoneID: String? = nil,
-         taskBlockID: String? = nil,
+         goal: Goal? = nil,
+         milestone: GoalMilestone? = nil,
+         taskBlock: TaskBlock? = nil,
          color: String? = nil,
          recurrenceSeriesID: String? = nil,
          hasBeenRewarded: Bool = false,
@@ -57,9 +58,9 @@ final class Task {
         self.priority = priority
         self.category = category
         self.isComplete = isComplete
-        self.goalID = goalID
-        self.milestoneID = milestoneID
-        self.taskBlockID = taskBlockID
+        self.goal = goal
+        self.milestone = milestone
+        self.taskBlock = taskBlock
         self.color = color
         self.completionAnimation = false
         self.recurrenceSeriesID = recurrenceSeriesID
@@ -122,7 +123,7 @@ enum TaskCategory: String, CaseIterable, Codable {
         switch self {
         case .work: return "Work"
         case .personal: return "Personal"
-        case .fixed: return "Fixed"
+        case .fixed: return "Health"
         case .flexible: return "Flexible"
         case .hobbies: return "Hobbies"
         case .selfCare: return "Self Care"
@@ -137,7 +138,7 @@ enum TaskCategory: String, CaseIterable, Codable {
         switch self {
         case .work: return "briefcase.fill"
         case .personal: return "person.fill"
-        case .fixed: return "clock.fill"
+        case .fixed: return "heart.circle.fill" // Health icon - more fitting
         case .flexible: return "arrow.triangle.2.circlepath"
         case .hobbies: return "paintbrush.fill"
         case .selfCare: return "heart.fill"
@@ -151,15 +152,15 @@ enum TaskCategory: String, CaseIterable, Codable {
     func color() -> Color {
         switch self {
         case .work: return .blue
-        case .personal: return .green
-        case .fixed: return .orange
-        case .flexible: return .purple
-        case .hobbies: return .pink
-        case .selfCare: return .mint
-        case .leisure: return .cyan
-        case .growth: return .indigo
-        case .reading: return .brown
-        case .skinCare: return .yellow
+        case .personal: return .purple
+        case .fixed: return .red // Health - red
+        case .flexible: return .green
+        case .hobbies: return .orange // Changed to orange
+        case .selfCare: return .pink // Changed to pink
+        case .leisure: return .teal
+        case .growth: return .purple.opacity(0.8)
+        case .reading: return Color(red: 0.6, green: 0.4, blue: 0.2) // Brown
+        case .skinCare: return Color(red: 1.0, green: 0.84, blue: 0.0) // Golden
         }
     }
 }

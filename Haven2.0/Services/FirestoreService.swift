@@ -188,6 +188,22 @@ class FirestoreService: ObservableObject {
         try await userRef.setData(data, merge: true)
     }
     
+    // MARK: - Update Onboarding Status
+    func updateOnboardingStatus(uid: String, isComplete: Bool) async throws {
+        guard !uid.isEmpty else { return }
+        
+        let userRef = db.collection("users").document(uid)
+        try await userRef.setData(["onboardingComplete": isComplete], merge: true)
+    }
+    
+    // MARK: - Delete User
+    func deleteUser(uid: String) async throws {
+        guard !uid.isEmpty else { return }
+        
+        let userRef = db.collection("users").document(uid)
+        try await userRef.delete()
+    }
+    
     // MARK: - Sync Pending Changes (Background)
     private func syncPendingChanges() async {
         guard let uid = Auth.auth().currentUser?.uid, !pendingChanges.isEmpty else {

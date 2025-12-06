@@ -46,12 +46,12 @@ struct AuthenticationView: View {
                         .shadow(color: .purple.opacity(0.5), radius: 20)
                     
                     Text("Haven 2.0")
-                        .font(.system(size: 42, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
+                        .font(.custom("Montserrat", size: 42).weight(.bold))
+                        .foregroundColor(.black)
                     
                     Text("Your personal productivity haven")
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.8))
+                        .font(.custom("Montserrat", size: 16).weight(.medium))
+                        .foregroundColor(.black)
                 }
                 
                 Spacer()
@@ -65,7 +65,7 @@ struct AuthenticationView: View {
                         },
                         onCompletion: { result in
                             switch result {
-                            case .success(let authorization):
+                            case .success(_):
                                 // Handle in AuthenticationService delegate
                                 break
                             case .failure(let error):
@@ -108,7 +108,7 @@ struct AuthenticationView: View {
                             }
                             
                             Text("Continue with Google")
-                                .font(.system(size: 17, weight: .semibold))
+                                .font(.custom("Montserrat", size: 17).weight(.semibold))
                                 .foregroundColor(.black)
                             
                             Spacer()
@@ -138,8 +138,8 @@ struct AuthenticationView: View {
                 
                 // Terms and Privacy
                 Text("By continuing, you agree to our Terms of Service and Privacy Policy")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.7))
+                    .font(.custom("Montserrat", size: 12))
+                    .foregroundColor(.black)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
                     .padding(.top, 20)

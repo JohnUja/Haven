@@ -10,6 +10,8 @@ import EventKit
 import SwiftUI
 
 class CalendarManager: ObservableObject {
+    static let shared = CalendarManager()
+    
     @Published var isAuthorized = false
     @Published var calendarEvents: [EKEvent] = []
     @Published var isLoading = false
@@ -34,7 +36,7 @@ class CalendarManager: ObservableObject {
         }
     }
     
-    func requestAccess() {
+    func requestAccess(completion: ((Bool) -> Void)? = nil) {
         eventStore.requestFullAccessToEvents { [weak self] granted, error in
             DispatchQueue.main.async {
                 if granted {
@@ -46,6 +48,7 @@ class CalendarManager: ObservableObject {
                         print("Calendar access denied: \(error)")
                     }
                 }
+                completion?(granted)
             }
         }
     }
@@ -86,5 +89,60 @@ class CalendarManager: ObservableObject {
     
     func getEventCountForDate(_ date: Date) -> Int {
         getEventsForDate(date).count
+    }
+    
+    // MARK: - Add Task to Calendar
+    func addTaskToCalendar(task: Task) {
+        guard isAuthorized else {
+            requestAccess()
+            return
+        }
+        
+        let event = EKEvent(eventStore: eventStore)
+        event.title = task.title
+        event.startDate = task.startTime
+        event.endDate = task.endTime
+        event.notes = task.taskDescription
+        event.calendar = eventStore.defaultCalendarForNewEvents
+        
+        do {
+            try eventStore.save(event, span: .thisEvent)
+            print("Task added to calendar: \(task.title)")
+        } catch {
+            print("Failed to add task to calendar: \(error)")
+        }
+    }
+    
+    // MARK: - Sync Task with Calendar
+    func syncTaskWithCalendar(task: Task) {
+        guard isAuthorized else {
+            requestAccess()
+            return
+        }
+        
+        // Find existing event or create new one
+        let predicate = eventStore.predicateForEvents(
+            withStart: task.startTime.addingTimeInterval(-3600),
+            end: task.endTime.addingTimeInterval(3600),
+            calendars: nil
+        )
+        let events = eventStore.events(matching: predicate)
+        
+        if let existingEvent = events.first(where: { $0.title == task.title }) {
+            // Update existing event
+            existingEvent.startDate = task.startTime
+            existingEvent.endDate = task.endTime
+            existingEvent.notes = task.taskDescription
+            
+            do {
+                try eventStore.save(existingEvent, span: .thisEvent)
+                print("Task synced with calendar: \(task.title)")
+            } catch {
+                print("Failed to sync task with calendar: \(error)")
+            }
+        } else {
+            // Create new event
+            addTaskToCalendar(task: task)
+        }
     }
 }

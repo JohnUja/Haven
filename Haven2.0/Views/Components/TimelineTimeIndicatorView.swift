@@ -13,24 +13,20 @@ struct TimelineTimeIndicatorView: View {
     @State private var pulseScale: CGFloat = 1.0
     
     var body: some View {
-        // White circle indicator with integrated green pulsing ring
+        // Green dot that pulses (single element, not white dot + separate ring)
         ZStack {
-            // Green pulsing ring as part of the white indicator (outer ring)
+            // Green pulsing circle (the dot itself pulses)
             Circle()
-                .stroke(Color.green.opacity(0.8), lineWidth: 1.5)
-                .frame(width: 16, height: 16)
+                .fill(Color.green)
+                .frame(width: 10, height: 10)
                 .scaleEffect(pulseScale)
-            
-            // White circle indicator (center)
-            Circle()
-                .fill(Color.white)
-                .frame(width: 8, height: 8)
+                .opacity(0.8 + (pulseScale - 1.0) * 0.2) // Slight opacity change with pulse
         }
         .position(x: position.x, y: position.y)
         .onAppear {
             // Pulse animation every second
             withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
-                pulseScale = 1.3
+                pulseScale = 1.4
             }
         }
     }

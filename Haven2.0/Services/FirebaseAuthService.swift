@@ -62,14 +62,15 @@ enum AuthProvider: String, Codable {
 
 // MARK: - Firebase Auth Service
 @MainActor
-class FirebaseAuthService: NSObject, ObservableObject  {
+@Observable
+class FirebaseAuthService: NSObject {
     static let shared = FirebaseAuthService()
     
-    @Published var isAuthenticated = false
-    @Published var currentUser: FirebaseAuth.User?
-    @Published var isLoading = false
-    @Published var errorMessage: String?
-    @Published var isGuest = false
+    var isAuthenticated = false
+    var currentUser: FirebaseAuth.User?
+    var isLoading = false
+    var errorMessage: String?
+    var isGuest = false
     
     private var authStateListenerHandle: AuthStateDidChangeListenerHandle?
     
@@ -426,7 +427,7 @@ class FirebaseAuthService: NSObject, ObservableObject  {
                         // Player is now authenticated
                         print("Game Center: Authentication successful")
                         print("Game Center: Player ID: \(localPlayer.gamePlayerID)")
-                        print("Game Center: Team Player ID: \(localPlayer.teamPlayerID ?? "N/A")")
+                        print("Game Center: Team Player ID: \(localPlayer.teamPlayerID)")
                         continuation.resume()
                     } else if let error = error {
                         // Error occurred during authentication
@@ -528,6 +529,117 @@ class FirebaseAuthService: NSObject, ObservableObject  {
             let result = try await user.link(with: credential)
             currentUser = result.user
             isGuest = false
+        } catch {
+            errorMessage = error.localizedDescription
+            throw error
+        }
+    }
+    
+    // MARK: - Password Reset
+    func sendPasswordReset(email: String) async throws {
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        
+        do {
+            try await Auth.auth().sendPasswordReset(withEmail: email)
+        } catch {
+            errorMessage = error.localizedDescription
+            throw error
+        }
+    }
+    
+    // MARK: - Email Verification
+    func sendEmailVerification() async throws {
+        guard let user = currentUser else {
+            throw AuthError.userNotFound
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        
+        do {
+            try await user.sendEmailVerification()
+        } catch {
+            errorMessage = error.localizedDescription
+            throw error
+        }
+    }
+    
+    // MARK: - Change Email (Compatible Version)
+    func changeEmail(to newEmail: String, currentPassword: String) async throws {
+        guard let user = currentUser, let currentEmail = user.email else {
+            throw AuthError.userNotFound
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        
+        do {
+            // 1. Reauthenticate first
+            let credential = EmailAuthProvider.credential(withEmail: currentEmail, password: currentPassword)
+            try await user.reauthenticate(with: credential)
+            
+            // 2. Update Email (Using the older method - warning is acceptable for now)
+            // Note: Yellow warning is okay until you upgrade Firebase SDK to 10.18.0+
+            try await user.updateEmail(to: newEmail)
+            
+            // 3. Send verification to the new email manually
+            try await user.sendEmailVerification()
+            
+            print("Email updated to \(newEmail) and verification sent.")
+            
+        } catch {
+            errorMessage = error.localizedDescription
+            throw error
+        }
+    }
+    
+    // MARK: - Provider Helpers
+    
+    /// Returns true if the user has a password and can use the changeEmail/changePassword functions
+    var canChangeEmail: Bool {
+        guard let user = currentUser else { return false }
+        return user.providerData.contains { $0.providerID == "password" }
+    }
+    
+    /// Returns a nice name for the UI (e.g., "Google", "Apple", "Email")
+    var currentProviderDisplayName: String {
+        guard let user = currentUser, let providerID = user.providerData.first?.providerID else {
+            return "Unknown"
+        }
+        switch providerID {
+        case "google.com": return "Google"
+        case "apple.com": return "Apple"
+        case "gamecenter", "gc.apple.com": return "Game Center"
+        case "password": return "Email"
+        default: return providerID.capitalized
+        }
+    }
+    
+    // MARK: - Change Password
+    func changePassword(currentPassword: String, newPassword: String) async throws {
+        guard let user = currentUser, let email = user.email else {
+            throw AuthError.userNotFound
+        }
+        
+        guard newPassword.count >= 6 else {
+            throw AuthError.weakPassword
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        
+        do {
+            // Reauthenticate first
+            let credential = EmailAuthProvider.credential(withEmail: email, password: currentPassword)
+            try await user.reauthenticate(with: credential)
+            
+            // Update password
+            try await user.updatePassword(to: newPassword)
         } catch {
             errorMessage = error.localizedDescription
             throw error

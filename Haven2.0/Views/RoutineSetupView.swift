@@ -9,21 +9,24 @@ import SwiftUI
 import SwiftData
 
 struct RoutineSetupView: View {
+    @Environment(ThemeManager.self) private var themeManager
+    private let routineToEdit: DailyRoutine?
+    
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var authService: FirebaseAuthService
+    @Environment(FirebaseAuthService.self) private var authService
     @Query private var users: [User]
     
-    @State private var routineTitle = "My Daily Essentials"
-    @State private var selectedTemplates: Set<String> = [] // Default template IDs
-    @State private var customTasks: [RoutineTaskTemplate] = []
-    @State private var durationType: RoutineDurationType = .tillMonthEnd
-    @State private var durationDays: Int = 30
-    @State private var notificationEnabled = true
-    @State private var showAddTask = false
+    @State private var routineTitle: String
+    @State private var selectedTemplates: Set<String>
+    @State private var customTasks: [RoutineTaskTemplate]
+    @State private var durationType: RoutineDurationType
+    @State private var durationDays: Int
+    @State private var notificationEnabled: Bool
+    @State private var showAddTask: Bool
     
     // Default templates
-    let defaultTemplates: [RoutineTaskTemplate] = [
+    private static let defaultTemplateCatalog: [RoutineTaskTemplate] = [
         RoutineTaskTemplate(
             id: "sleep",
             title: "Sleep",
@@ -66,6 +69,40 @@ struct RoutineSetupView: View {
         )
     ]
     
+    private var defaultTemplates: [RoutineTaskTemplate] {
+        Self.defaultTemplateCatalog
+    }
+    
+    private var defaultTemplateLookup: [String: RoutineTaskTemplate] {
+        Dictionary(uniqueKeysWithValues: defaultTemplates.map { ($0.id, $0) })
+    }
+    
+    init(routineToEdit: DailyRoutine? = nil) {
+        self.routineToEdit = routineToEdit
+        let defaults = RoutineSetupView.defaultTemplateCatalog
+        let defaultIDs = Set(defaults.map { $0.id })
+        
+        if let routine = routineToEdit {
+            let defaultSelections = routine.taskTemplates.filter { defaultIDs.contains($0.id) }
+            let customSelections = routine.taskTemplates.filter { !defaultIDs.contains($0.id) }
+            
+            _routineTitle = State(initialValue: routine.title)
+            _selectedTemplates = State(initialValue: Set(defaultSelections.map { $0.id }))
+            _customTasks = State(initialValue: customSelections)
+            _durationType = State(initialValue: routine.durationType)
+            _durationDays = State(initialValue: routine.durationDays ?? 30)
+            _notificationEnabled = State(initialValue: routine.notificationEnabled)
+        } else {
+            _routineTitle = State(initialValue: "My Daily Essentials")
+            _selectedTemplates = State(initialValue: [])
+            _customTasks = State(initialValue: [])
+            _durationType = State(initialValue: .tillMonthEnd)
+            _durationDays = State(initialValue: 30)
+            _notificationEnabled = State(initialValue: true)
+        }
+        _showAddTask = State(initialValue: false)
+    }
+    
     private var currentUser: User? {
         users.first
     }
@@ -74,12 +111,16 @@ struct RoutineSetupView: View {
         NavigationView {
             Form {
                 Section("Routine Name") {
-                    TextField("Routine name", text: $routineTitle)
+                    transparentTextField(
+                        placeholder: "Routine name",
+                        text: $routineTitle,
+                        theme: themeManager.currentTheme
+                    )
                 }
                 
                 Section("Default Tasks") {
                     Text("These are daily tasks everyone needs. Toggle them on/off:")
-                        .font(.caption)
+                        .font(.system(size: 12, weight: .regular, design: .rounded))
                         .foregroundColor(.secondary)
                     
                     ForEach(defaultTemplates) { template in
@@ -95,9 +136,9 @@ struct RoutineSetupView: View {
                         )) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(template.title)
-                                    .font(.headline)
+                                    .font(.system(size: 16, weight: .semibold, design: .rounded))
                                 Text(template.timeOfDay)
-                                    .font(.caption)
+                                    .font(.system(size: 12, weight: .regular, design: .rounded))
                                     .foregroundColor(.secondary)
                             }
                         }
@@ -118,9 +159,9 @@ struct RoutineSetupView: View {
                         )) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(task.title)
-                                    .font(.headline)
+                                    .font(.system(size: 16, weight: .semibold, design: .rounded))
                                 Text("\(task.timeOfDay) • \(task.durationMinutes) min")
-                                    .font(.caption)
+                                    .font(.system(size: 12, weight: .regular, design: .rounded))
                                     .foregroundColor(.secondary)
                             }
                         }
@@ -149,7 +190,7 @@ struct RoutineSetupView: View {
                         Stepper("Days: \(durationDays)", value: $durationDays, in: 7...90)
                     } else {
                         Text("Tasks will be generated until the end of the current month. You'll be prompted to update on the first of next month.")
-                            .font(.caption)
+                            .font(.system(size: 12, weight: .regular, design: .rounded))
                             .foregroundColor(.secondary)
                     }
                 }
@@ -158,7 +199,9 @@ struct RoutineSetupView: View {
                     Toggle("Enable notifications", isOn: $notificationEnabled)
                 }
             }
-            .navigationTitle("Setup Routine")
+            .scrollContentBackground(.hidden)
+            .listStyle(.insetGrouped)
+            .navigationTitle(routineToEdit == nil ? "Setup Routine" : "Edit Routine")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -168,7 +211,7 @@ struct RoutineSetupView: View {
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
+                    Button(routineToEdit == nil ? "Save" : "Update") {
                         saveRoutine()
                     }
                     .disabled(routineTitle.isEmpty || (selectedTemplates.isEmpty && customTasks.isEmpty))
@@ -193,22 +236,22 @@ struct RoutineSetupView: View {
     }
     
     private func saveRoutine() {
-        guard let user = currentUser else { return }
-        
         // Combine default templates (selected) and custom tasks
-        var allTemplates: [RoutineTaskTemplate] = []
-        
-        // Add selected default templates
-        for template in defaultTemplates where selectedTemplates.contains(template.id) {
-            allTemplates.append(template)
-        }
-        
-        // Add custom tasks
+        var allTemplates: [RoutineTaskTemplate] = selectedTemplates.compactMap { defaultTemplateLookup[$0] }
         allTemplates.append(contentsOf: customTasks)
+        allTemplates.sort { $0.timeOfDay < $1.timeOfDay }
         
         guard !allTemplates.isEmpty else { return }
         
-        // Create routine
+        if let routine = routineToEdit {
+            updateExistingRoutine(routine, with: allTemplates)
+        } else {
+            guard let user = currentUser else { return }
+            createRoutine(for: user, templates: allTemplates)
+        }
+    }
+    
+    private func createRoutine(for user: User, templates: [RoutineTaskTemplate]) {
         let routine = DailyRoutine(
             userID: user.id,
             title: routineTitle,
@@ -217,20 +260,54 @@ struct RoutineSetupView: View {
             durationType: durationType,
             durationDays: durationType == .days ? durationDays : nil,
             startDate: Date(),
-            taskTemplates: allTemplates,
+            taskTemplates: templates,
             notificationEnabled: notificationEnabled
         )
         
         modelContext.insert(routine)
+        RoutineService.shared.generateTasksFromRoutine(routine, in: modelContext)
         
-        // Generate tasks from routine
+        do {
+            try modelContext.save()
+            // Post notification for onboarding flow
+            NotificationCenter.default.post(name: NSNotification.Name("RoutineCreated"), object: nil)
+            dismiss()
+        } catch {
+            print("Error saving routine: \(error)")
+        }
+    }
+    
+    private func updateExistingRoutine(_ routine: DailyRoutine, with templates: [RoutineTaskTemplate]) {
+        routine.title = routineTitle
+        routine.taskTemplates = templates
+        routine.notificationEnabled = notificationEnabled
+        routine.durationType = durationType
+        routine.durationDays = durationType == .days ? durationDays : nil
+        routine.startDate = Date()
+        routine.updatedAt = Date()
+        routine.isActive = true
+        
+        let calendar = Calendar.current
+        if routine.durationType == .tillMonthEnd {
+            if let monthEnd = calendar.dateInterval(of: .month, for: routine.startDate)?.end {
+                routine.endDate = calendar.date(byAdding: .day, value: -1, to: monthEnd)
+            } else {
+                routine.endDate = nil
+            }
+        } else if let days = routine.durationDays {
+            routine.endDate = calendar.date(byAdding: .day, value: days, to: routine.startDate)
+        } else {
+            routine.endDate = nil
+        }
+        
+        RoutineService.shared.removeTasks(for: routine, in: modelContext)
         RoutineService.shared.generateTasksFromRoutine(routine, in: modelContext)
         
         do {
             try modelContext.save()
             dismiss()
         } catch {
-            print("Error saving routine: \(error)")
+            print("Error updating routine: \(error)")
         }
     }
 }
@@ -238,6 +315,7 @@ struct RoutineSetupView: View {
 struct RoutineTaskEditorView: View {
     @Binding var task: RoutineTaskTemplate
     @Environment(\.dismiss) private var dismiss
+    @Environment(ThemeManager.self) private var themeManager
     var isNewTask: Bool = false
     
     @State private var title: String = ""
@@ -251,9 +329,18 @@ struct RoutineTaskEditorView: View {
         NavigationView {
             Form {
                 Section("Task Details") {
-                    TextField("Task title", text: $title)
-                    TextField("Description (optional)", text: $description, axis: .vertical)
-                        .lineLimit(3...6)
+                    transparentTextField(
+                        placeholder: "Task title",
+                        text: $title,
+                        theme: themeManager.currentTheme
+                    )
+                    transparentTextField(
+                        placeholder: "Description (optional)",
+                        text: $description,
+                        theme: themeManager.currentTheme,
+                        axis: .vertical,
+                        lineLimit: 3...6
+                    )
                 }
                 
                 Section("Time") {

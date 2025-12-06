@@ -8,6 +8,13 @@
 import SwiftUI
 import AudioToolbox
 
+// MARK: - Scroll Direction (moved outside generic struct)
+enum TimelineScrollDirection {
+    case up
+    case down
+    case none
+}
+
 struct UnifiedDraggableTimelineItem<Content: View>: View {
     let content: Content
     let side: TaskTimelineBlock.TimelineSide
@@ -19,8 +26,9 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
     let onTaskCollision: ((Date, Date) -> Void)? // New parameter for collision detection
     let onDragStateChanged: ((Bool) -> Void)? // New parameter for drag state
     let onTap: (() -> Void)? // New parameter for tap gesture
+    let onScrollRequest: ((TimelineScrollDirection) -> Void)? // New parameter for scroll-on-hover
     
-    init(content: Content, side: TaskTimelineBlock.TimelineSide, isLocked: Bool, startTime: Date, endTime: Date, onTimeChanged: @escaping (Date, Date) -> Void, onSideChanged: @escaping (TaskTimelineBlock.TimelineSide) -> Void, onTaskCollision: ((Date, Date) -> Void)? = nil, onDragStateChanged: ((Bool) -> Void)? = nil, onTap: (() -> Void)? = nil) {
+    init(content: Content, side: TaskTimelineBlock.TimelineSide, isLocked: Bool, startTime: Date, endTime: Date, onTimeChanged: @escaping (Date, Date) -> Void, onSideChanged: @escaping (TaskTimelineBlock.TimelineSide) -> Void, onTaskCollision: ((Date, Date) -> Void)? = nil, onDragStateChanged: ((Bool) -> Void)? = nil, onTap: (() -> Void)? = nil, onScrollRequest: ((TimelineScrollDirection) -> Void)? = nil) {
         self.content = content
         self.side = side
         self.isLocked = isLocked
@@ -31,6 +39,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
         self.onTaskCollision = onTaskCollision
         self.onDragStateChanged = onDragStateChanged
         self.onTap = onTap
+        self.onScrollRequest = onScrollRequest
     }
     
     @State private var dragOffset: CGSize = .zero
@@ -41,9 +50,13 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
     @State private var showGuidelines = false
     @State private var showingLockedAlert = false
     @State private var didDrag: Bool = false
+    @State private var nearbyTaskDetected: Bool = false // For magnetic effect
+    @State private var magneticOffset: CGSize = .zero // Magnetic pull effect
+    @State private var scrollTimer: Timer? = nil // Timer for continuous scrolling
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     
     private let minuteHeight: CGFloat = 2.0 // 120 points per hour / 60 minutes = 2 points per minute
+    private let scrollTriggerDistance: CGFloat = 100 // Distance from edge to trigger scroll
     
     init(
         @ViewBuilder content: () -> Content,
@@ -55,7 +68,8 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
         onSideChanged: @escaping (TaskTimelineBlock.TimelineSide) -> Void,
         onTaskCollision: ((Date, Date) -> Void)? = nil,
         onDragStateChanged: ((Bool) -> Void)? = nil,
-        onTap: (() -> Void)? = nil
+        onTap: (() -> Void)? = nil,
+        onScrollRequest: ((TimelineScrollDirection) -> Void)? = nil
     ) {
         self.content = content()
         self.side = side
@@ -67,6 +81,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
         self.onTaskCollision = onTaskCollision
         self.onDragStateChanged = onDragStateChanged
         self.onTap = onTap
+        self.onScrollRequest = onScrollRequest
     }
     
     var body: some View {
@@ -74,7 +89,6 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
             content
                 .offset(dragOffset)
                 .scaleEffect(isDragging ? 1.05 : 1.0)
-                .shadow(color: isDragging ? .black.opacity(0.3) : .clear, radius: 8, x: 0, y: 4)
                 .simultaneousGesture(
                     TapGesture()
                         .onEnded { _ in
@@ -87,9 +101,12 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                 )
                 .gesture(dragGesture)
                 .zIndex(isDragging ? 1000 : 0)
+                // Allow scrolling to pass through when not dragging
+                .allowsHitTesting(true)
+                .contentShape(Rectangle())
             
             // Floating time indicator at timeline level (positioned at the top of the task)
-            if isDragging, let hoverTime = currentHoverTime {
+            if isDragging, currentHoverTime != nil {
                 floatingTimeIndicator
                     .zIndex(1001)
             }
@@ -110,15 +127,15 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                 Text("Do you want to move this item to \(newSide == .left ? "Work" : "Personal") side?")
             }
         }
-        .alert("Item Locked", isPresented: $showingLockedAlert) {
+        .alert("Task Locked", isPresented: $showingLockedAlert) {
             Button("OK") { }
         } message: {
-            Text("This item is locked and cannot be moved. Unlock it from the home screen to move it.")
+            Text("This task is locked and cannot be moved. Tap the task to unlock it from the details page.")
         }
     }
     
     private var dragGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.5)
+        LongPressGesture(minimumDuration: 0.3) // Lighter, more sensitive (reduced from 0.5)
             .sequenced(before: DragGesture())
             .onChanged { value in
                 switch value {
@@ -130,7 +147,15 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                             showGuidelines = true
                             onDragStateChanged?(true) // Notify parent
                         }
-                        AudioServicesPlaySystemSound(1519) // Haptic feedback
+                        // Lighter haptic feedback - similar to goal element
+                        let generator = UIImpactFeedbackGenerator(style: .light)
+                        generator.prepare()
+                        generator.impactOccurred()
+                        
+                        // Smooth selection haptic
+                        let selectionGenerator = UISelectionFeedbackGenerator()
+                        selectionGenerator.prepare()
+                        selectionGenerator.selectionChanged()
                     }
                     
                 case .second(true, let drag):
@@ -150,7 +175,7 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                         let minuteTranslation = Int(verticalTranslation / minuteHeight)
                         
                         let newStartTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: startTime) ?? startTime
-                        let newEndTime = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: endTime) ?? endTime
+                        _ = Calendar.current.date(byAdding: .minute, value: minuteTranslation, to: endTime) ?? endTime
                         
                         // Snap to nearest 5-minute interval for ultra precision
                         currentHoverTime = snapToNearestFiveMinutes(date: newStartTime)
@@ -161,6 +186,9 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                         } else {
                             pendingSideChange = nil
                         }
+                        
+                        // Scroll-on-hover: Check if dragging near top or bottom
+                        checkScrollOnHover(dragLocation: drag.location)
                     }
                     
                 default:
@@ -193,22 +221,34 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                             finalNewEndTime = snappedTime.addingTimeInterval(duration)
                         }
                         
+                        // Check for collision BEFORE updating time (only on drop)
+                        // This is the key: collision detection happens on DROP, not during drag
+                        if let collisionHandler = onTaskCollision {
+                            // Check collision first
+                            collisionHandler(finalNewStartTime, finalNewEndTime)
+                            // Note: If collision is detected, the handler will show an alert
+                            // and prevent the time update. We'll only update time if no collision.
+                        }
+                        
                         // Check if side changed
                         if let newSide = determineSideFromPosition(drag.translation), newSide != side {
                             showingSideChangeConfirmation = true
                             pendingSideChange = newSide
                         } else {
-                            // Just update time
+                            // Only update time if no collision was detected
+                            // (collision handler will prevent this if needed)
                             onTimeChanged(finalNewStartTime, finalNewEndTime)
                         }
                     }
                     
                     currentHoverTime = nil
                     didDrag = false // Reset for next interaction
+                    stopScrollTimer() // Stop any ongoing scroll
                     AudioServicesPlaySystemSound(1520) // Haptic feedback
                     
                 default:
                     // Long press cancelled
+                    stopScrollTimer() // Stop any ongoing scroll
                     withAnimation(.easeInOut(duration: 0.2)) {
                         isDragging = false
                         dragOffset = .zero
@@ -240,7 +280,6 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
                                         .stroke(Color.white.opacity(0.8), lineWidth: 1.5)
                                 )
                         )
-                        .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
                     
                     // Side change indicator (if applicable)
                     if let pendingSide = pendingSideChange {
@@ -319,6 +358,46 @@ struct UnifiedDraggableTimelineItem<Content: View>: View {
         } else {
             return nil // Still in middle section, no side change
         }
+    }
+    
+    // MARK: - Scroll-on-Hover Functions
+    private func checkScrollOnHover(dragLocation: CGPoint) {
+        // Get the screen bounds to determine if near top or bottom
+        let screenHeight = UIScreen.main.bounds.height
+        let topThreshold: CGFloat = scrollTriggerDistance
+        let bottomThreshold: CGFloat = screenHeight - scrollTriggerDistance
+        
+        // Determine scroll direction based on drag location
+        let scrollDirection: TimelineScrollDirection
+        if dragLocation.y < topThreshold {
+            scrollDirection = .up
+        } else if dragLocation.y > bottomThreshold {
+            scrollDirection = .down
+        } else {
+            scrollDirection = .none
+        }
+        
+        // Request scroll if near edge
+        if scrollDirection != .none {
+            onScrollRequest?(scrollDirection)
+            startScrollTimer(direction: scrollDirection)
+        } else {
+            stopScrollTimer()
+        }
+    }
+    
+    private func startScrollTimer(direction: TimelineScrollDirection) {
+        // Only start timer if not already running
+        guard scrollTimer == nil else { return }
+        
+        scrollTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [onScrollRequest] _ in
+            onScrollRequest?(direction)
+        }
+    }
+    
+    private func stopScrollTimer() {
+        scrollTimer?.invalidate()
+        scrollTimer = nil
     }
 }
 

@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct GuestLoginPromptView: View {
-    @EnvironmentObject private var authService: FirebaseAuthService
+    @Environment(FirebaseAuthService.self) private var authService
     @Binding var isPresented: Bool
     var onDismiss: (() -> Void)? = nil
     

@@ -22,6 +22,10 @@ final class TaskBlock {
     var isRecurring: Bool = false
     var recurrenceSeriesID: String? // Link occurrences of a recurring block series
     
+    // Relationship: Tasks inside this block (cascade delete = if Block deleted, Tasks deleted)
+    @Relationship(deleteRule: .cascade, inverse: \Task.taskBlock)
+    var tasks: [Task]? = []
+    
     init(id: String = UUID().uuidString,
          userID: String,
          title: String,

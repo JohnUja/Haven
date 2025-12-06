@@ -12,6 +12,7 @@ import AudioToolbox
 
 struct GoalsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(ThemeManager.self) private var themeManager
     @Query private var goals: [Goal]
     @State private var showingAddGoal = false
     @State private var showingFloatingMenu: Goal? = nil
@@ -22,6 +23,7 @@ struct GoalsView: View {
     @State private var showingPauseConfirmation: Goal? = nil
     @State private var selectedGoal: Goal? = nil
     @State private var goalSortOrder: GoalSortOrder = .latest
+    @Query private var allTasks: [Task]
     
     enum GoalSortOrder: String, CaseIterable {
         case latest = "Latest"
@@ -34,6 +36,23 @@ struct GoalsView: View {
         GridItem(.flexible()),
         GridItem(.flexible())
     ]
+    
+    // Delete goal and all linked tasks
+    private func deleteGoalAndLinkedTasks(_ goal: Goal) {
+        // Find all tasks linked to this goal
+        let linkedTasks = allTasks.filter { $0.goal?.id == goal.id }
+        
+        // Delete all linked tasks
+        for task in linkedTasks {
+            modelContext.delete(task)
+        }
+        
+        // Delete the goal
+        modelContext.delete(goal)
+        
+        // Save changes
+        try? modelContext.save()
+    }
     
     private var sortedGoals: [Goal] {
         // Separate active and paused goals
@@ -74,8 +93,8 @@ struct GoalsView: View {
             // Need tasks for accurate progress calculation
             let allTasks = (try? modelContext.fetch(FetchDescriptor<Task>())) ?? []
             sortedActive = activeGoals.sorted { g1, g2 in
-                let g1Tasks = allTasks.filter { $0.goalID == g1.id }
-                let g2Tasks = allTasks.filter { $0.goalID == g2.id }
+                let g1Tasks = allTasks.filter { $0.goal?.id == g1.id }
+                let g2Tasks = allTasks.filter { $0.goal?.id == g2.id }
                 let p1 = g1.progressPercentage(tasks: g1Tasks)
                 let p2 = g2.progressPercentage(tasks: g2Tasks)
                 return p1 > p2
@@ -91,35 +110,51 @@ struct GoalsView: View {
     
     var body: some View {
         NavigationView {
-            ScrollView {
-                LazyVGrid(columns: columns, spacing: 16) {
-                    ForEach(sortedGoals) { goal in
-                        GoalCardView(goal: goal)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                // Always navigate on tap (long press is handled separately)
-                                selectedGoal = goal
-                            }
-                            .onLongPressGesture(minimumDuration: 0.3) {
-                                // Haptic feedback AFTER long press completes
-                                AudioServicesPlaySystemSound(1520) // Haptic vibration
-                                withAnimation {
-                                    showingFloatingMenu = goal
-                                    // Don't set selectedGoal - long press should not navigate
+            ZStack {
+                // Background - purple gradient (matching home screen)
+                themeManager.currentTheme.primaryGradient
+                    .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 20) {
+                        // Goals Heading (reduced size)
+                        Text("Goals")
+                            .font(.system(size: 18, weight: .semibold, design: .default)) // Reduced by 2
+                            .foregroundColor(themeManager.currentTheme.textPrimary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal)
+                            .padding(.top, 20)
+                        
+                        if sortedGoals.isEmpty {
+                            emptyStateView
+                        } else {
+                    LazyVGrid(columns: columns, spacing: 20) {
+                        ForEach(sortedGoals) { goal in
+                            GoalCardView(goal: goal)
+                                .frame(height: 200) // Fixed height for consistency
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    // Always navigate on tap (long press is handled separately)
+                                    selectedGoal = goal
                                 }
-                            }
+                                .onLongPressGesture(minimumDuration: 0.3) {
+                                    // Haptic feedback AFTER long press completes
+                                    AudioServicesPlaySystemSound(1520) // Haptic vibration
+                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                                        showingFloatingMenu = goal
+                                        // Don't set selectedGoal - long press should not navigate
+                                    }
+                                }
+                        }
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 20)
                 }
-                .padding()
             }
-            .background(
-                LinearGradient(
-                    colors: [.purple.opacity(0.1), .blue.opacity(0.1)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .navigationTitle("Goals")
+                }
+            }
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline) // Remove large heading
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Menu {
@@ -158,10 +193,9 @@ struct GoalsView: View {
         .alert(item: $showingDeleteConfirmation) { goal in
             Alert(
                 title: Text("Delete Goal?"),
-                message: Text("This will remove the goal but keep all linked tasks."),
+                message: Text("This will permanently delete the goal and all linked tasks. This action cannot be undone."),
                 primaryButton: .destructive(Text("Delete")) {
-                    modelContext.delete(goal)
-                    try? modelContext.save()
+                    deleteGoalAndLinkedTasks(goal)
                 },
                 secondaryButton: .cancel()
             )
@@ -187,7 +221,7 @@ struct GoalsView: View {
                         Color.black.opacity(0.3)
                             .ignoresSafeArea()
                             .onTapGesture {
-                                withAnimation {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                     showingFloatingMenu = nil
                                 }
                             }
@@ -212,34 +246,70 @@ struct GoalsView: View {
                                 showingDeleteConfirmation = goal
                             },
                             onDismiss: {
-                                withAnimation {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                     showingFloatingMenu = nil
                                 }
                             }
                         )
-                        .transition(.scale.combined(with: .opacity))
+                        .transition(.asymmetric(
+                            insertion: .scale(scale: 0.8).combined(with: .opacity).animation(.spring(response: 0.4, dampingFraction: 0.75)),
+                            removal: .scale(scale: 0.8).combined(with: .opacity).animation(.spring(response: 0.3, dampingFraction: 0.8))
+                        ))
                     }
                 }
             }
         )
+    }
+    
+    private var emptyStateView: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "target")
+                .font(.system(size: 64))
+                .foregroundColor(.white.opacity(0.6))
+            
+            Text("Get Started")
+                .appTextStyle(.sectionHeader, theme: themeManager.currentTheme)
+            
+            Text("Create a goal today and begin pursuing your goals or dreams")
+                .font(AppStyleSheet.font(for: .body))
+                .foregroundColor(.white.opacity(0.8))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 80)
     }
 }
 
 struct GoalCardView: View {
     let goal: Goal
     @Query private var allTasks: [Task]
+    @Environment(ThemeManager.self) private var themeManager
     
     private var goalTasks: [Task] {
-        allTasks.filter { $0.goalID == goal.id }
+        allTasks.filter { $0.goal?.id == goal.id }
     }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Header - Only show icon
+            // Header - Show goal name
             HStack {
-                Image(systemName: goal.category.icon)
-                    .foregroundColor(goal.category.color())
-                    .font(.title2)
+                VStack(alignment: .leading, spacing: 4) {
+                    // Goal name (Theme-Aware)
+                    Text(goal.title)
+                        .appTextStyle(.taskTitle, theme: themeManager.currentTheme)
+                        .lineLimit(2)
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: goal.category.icon)
+                            .font(.system(size: 10, weight: .regular, design: .default))
+                            .foregroundColor(goal.category.color())
+                        
+                        Text(goal.category.displayName)
+                            .appTextStyle(.caption, theme: themeManager.currentTheme)
+                            .opacity(themeManager.currentTheme.textSecondaryOpacity)
+                    }
+                }
                 
                 Spacer()
                 
@@ -257,10 +327,10 @@ struct GoalCardView: View {
                 }
             }
             
-            // Progress Ring
+            // Progress Ring (Theme-Aware Background)
             ZStack {
                 Circle()
-                    .stroke(Color.gray.opacity(0.3), lineWidth: 8)
+                    .stroke(themeManager.currentTheme.textPrimary.opacity(0.2), lineWidth: 8)
                     .frame(width: 80, height: 80)
                 
                 Circle()
@@ -286,47 +356,79 @@ struct GoalCardView: View {
                 
                 VStack {
                     Text("\(Int(goal.progressPercentage(tasks: goalTasks) * 100))%")
-                        .font(.title3)
-                        .fontWeight(.bold)
-                        .foregroundColor(goal.status == .paused ? .gray : .primary)
+                        .appTextStyle(.body, theme: themeManager.currentTheme)
+                        .opacity(goal.status == .paused ? themeManager.currentTheme.textTertiaryOpacity : 1.0)
                     
                     Text("\(goal.currentValue)/\(goal.effectiveTargetValue(tasks: goalTasks))")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .appTextStyle(.caption, theme: themeManager.currentTheme)
+                        .opacity(themeManager.currentTheme.textSecondaryOpacity)
                 }
             }
             .frame(maxWidth: .infinity)
             
-            // Progress Description
-            Text(progressDescription)
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+            // Progress Description (Theme-Aware)
+            // Special styling for "Add tasks to start tracking" with animation
+            if progressDescription == "Add tasks to start tracking" {
+                ZStack {
+                    // Base text (smaller, light weight - reduced by 2-3 sizes)
+                    Text(progressDescription)
+                        .font(.system(size: 9, weight: .light, design: .default))
+                        .foregroundColor(themeManager.currentTheme.textPrimary.opacity(0.7))
+                        .multilineTextAlignment(.center)
+                    
+                    // Animated orange left-to-right swish/pulse
+                    GoalShimmerEffect()
+                        .mask(
+                            Text(progressDescription)
+                                .font(.system(size: 9, weight: .light, design: .default))
+                        )
+                }
+            } else {
+                Text(progressDescription)
+                    .font(.system(size: 11, weight: .regular, design: .default)) // Reduced from body
+                    .foregroundColor(themeManager.currentTheme.textPrimary.opacity(themeManager.currentTheme.textSecondaryOpacity))
+                    .multilineTextAlignment(.center)
+            }
 
-            // Status subtitle and due date on same line
+            // Status subtitle and due date on same line (Theme-Aware)
             HStack {
                 Text(statusSubtitle)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .appTextStyle(.caption, theme: themeManager.currentTheme)
+                    .opacity(themeManager.currentTheme.textTertiaryOpacity)
                 
                 Spacer()
                 
                 if let deadline = goal.deadline {
                     Text(formatShortDate(deadline))
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .appTextStyle(.caption, theme: themeManager.currentTheme)
+                        .opacity(themeManager.currentTheme.textTertiaryOpacity)
                 }
             }
         }
-        .padding()
+        .padding(themeManager.currentTheme.cardPadding)
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial)
+            RoundedRectangle(cornerRadius: themeManager.currentTheme.cardCornerRadius)
+                .fill(goalWidgetBackgroundColor)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(borderColor, lineWidth: 2)
+            RoundedRectangle(cornerRadius: themeManager.currentTheme.cardCornerRadius)
+                .stroke(borderColor, lineWidth: themeManager.currentTheme.cardBorderWidth)
         )
+        .frame(height: 200) // Fixed height for all goal widgets
+    }
+    
+    private var goalWidgetBackgroundColor: Color {
+        // Black for dark theme, white for light theme, purple works (uses glassBackground)
+        let theme = themeManager.currentTheme
+        switch theme.id {
+        case "light":
+            return Color.white.opacity(0.9)
+        case "dark":
+            return Color.black.opacity(0.7)
+        default:
+            // Purple and other themes use glassBackground
+            return theme.glassBackground
+        }
     }
     
     private var borderColor: Color {
@@ -365,16 +467,41 @@ struct GoalCardView: View {
         }
     }
     
+    // MARK: - Shimmer Effect for Animated Text (Orange Swish/Pulse)
+    struct GoalShimmerEffect: View {
+        @State private var phase: CGFloat = 0
+        
+        var body: some View {
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    Color.orange.opacity(0),
+                    Color.orange.opacity(0.8),
+                    Color.orange.opacity(0)
+                ]),
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .offset(x: phase)
+            .onAppear {
+                withAnimation(Animation.linear(duration: 2.0).repeatForever(autoreverses: false)) {
+                    phase = 150
+                }
+            }
+        }
+    }
+    
     private func formatShortDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d"
         return formatter.string(from: date)
     }
+    
 }
 
 struct AddGoalView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(ThemeManager.self) private var themeManager
     @Query private var users: [User]
     
     @State private var title = ""
@@ -393,25 +520,33 @@ struct AddGoalView: View {
     }
     
     var body: some View {
-        NavigationView {
-            Form {
-                Section("Goal Details") {
-                    TextField("Goal title", text: $title)
-                    TextEditor(text: $descriptionText)
-                        .frame(minHeight: 80)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8).stroke(Color.gray.opacity(0.2))
-                        )
+        let theme = themeManager.currentTheme
+        
+        return NavigationView {
+            ZStack {
+                // Background using theme gradient
+                theme.primaryGradient
+                .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 24) {
+                        // Goal Details Section
+                        sectionView(title: "GOAL DETAILS", theme: theme) {
+                            VStack(spacing: 16) {
+                                transparentTextField(placeholder: "Goal title", text: $title, theme: theme)
+                                transparentTextEditor(text: $descriptionText, theme: theme, placeholder: "Description (optional)")
                     
                     Picker("Category", selection: $category) {
-                        ForEach(GoalCategory.allCases, id: \.self) { category in
+                                    ForEach(GoalCategory.allCases, id: \.self) { cat in
                             HStack {
-                                Image(systemName: category.icon)
-                                    .foregroundColor(category.color())
-                                Text(category.displayName)
-                            }.tag(category)
+                                            Image(systemName: cat.icon)
+                                                .foregroundColor(cat.color())
+                                            Text(cat.displayName)
+                                        }.tag(cat)
                         }
                     }
+                                .pickerStyle(.menu)
+                                .tint(theme.accentColor)
                     
                     Picker("Priority", selection: $priority) {
                         ForEach(GoalPriority.allCases, id: \.self) { p in
@@ -421,48 +556,60 @@ struct AddGoalView: View {
                                     .frame(width: 12, height: 12)
                                 Text(p.rawValue)
                             }.tag(p)
+                }
                         }
+                                .pickerStyle(.menu)
+                                .tint(theme.accentColor)
                     }
+                            .padding(.horizontal, theme.cardPadding)
+                            .padding(.vertical, theme.cardVerticalPadding)
+                            .background(transparentInputBackground(theme: theme))
+                            .cornerRadius(theme.smallCornerRadius)
                 }
                 
-                Section("Dates") {
+                        // Dates Section
+                        sectionView(title: "DATES", theme: theme) {
+                            VStack(spacing: 16) {
                     DatePicker("Start Date", selection: $startDate, displayedComponents: [.date])
+                                    .tint(theme.accentColor)
+                                
                     Toggle("Set End Date", isOn: $hasEndDate)
+                                    .tint(theme.accentColor)
+                                
                     if hasEndDate {
                         DatePicker("End Date", selection: $endDate, displayedComponents: [.date])
+                                        .tint(theme.accentColor)
+            }
                     }
+                            .padding(.horizontal, theme.cardPadding)
+                            .padding(.vertical, theme.cardVerticalPadding)
+                            .background(transparentInputBackground(theme: theme))
+                            .cornerRadius(theme.smallCornerRadius)
                 }
                 
-                // Milestone Toggle
-                Section("Structure") {
+                        // Structure Section
+                        sectionView(title: "STRUCTURE", theme: theme) {
+                            VStack(spacing: 16) {
                     Toggle("Use Milestones", isOn: $hasMilestones)
+                                    .tint(theme.accentColor)
                         .onChange(of: hasMilestones) { _, newValue in
                             if newValue && milestonesDraft.isEmpty {
-                                // Add first milestone when toggled on (only if no existing milestones)
                                 milestonesDraft.append(GoalMilestoneDraft())
                             }
-                            // Don't clear milestones when toggled off - preserve them for when user toggles back on
-                        }
-                }
-                
-                // Milestones Section (only if toggle is ON)
-                if hasMilestones {
-                    Section(header: Text("Milestones")) {
-                        if milestonesDraft.isEmpty {
-                            Text("Tap '+' to add first milestone").foregroundColor(.secondary)
-                        }
-                        ForEach($milestonesDraft) { $m in
-                            milestoneEditor($m)
-                        }
-                        .onDelete { indexSet in
-                            milestonesDraft.remove(atOffsets: indexSet)
-                        }
-                        Button(action: {
-                            milestonesDraft.append(GoalMilestoneDraft())
-                        }) {
-                            Label("Add Milestone", systemImage: "plus.circle")
+                                    }
+                                
+                                if hasMilestones {
+                                    milestonesSection(theme: theme)
+                                }
+                            }
+                            .padding(.horizontal, theme.cardPadding)
+                            .padding(.vertical, theme.cardVerticalPadding)
+                            .background(transparentInputBackground(theme: theme))
+                            .cornerRadius(theme.smallCornerRadius)
                         }
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
                 }
             }
             .navigationTitle("Add Goal")
@@ -471,7 +618,7 @@ struct AddGoalView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
                         dismiss()
-                    }
+                        }
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -489,19 +636,57 @@ struct AddGoalView: View {
         }
     }
     
-    @ViewBuilder
-    private func milestoneEditor(_ milestone: Binding<GoalMilestoneDraft>) -> some View {
+    // MARK: - Helper Functions
+    private func sectionView<Content: View>(title: String, theme: any AppTheme, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            TextField("Milestone title *", text: milestone.title)
-                .font(.headline)
+            Text(title)
+                .font(.system(size: 12, weight: .semibold, design: .default))
+                .foregroundColor(theme.textPrimary.opacity(0.5))
+            
+            content()
+        }
+    }
+    
+    private func milestonesSection(theme: any AppTheme) -> some View {
+        VStack(spacing: 12) {
+                        if milestonesDraft.isEmpty {
+                Text("Tap '+' to add first milestone")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundColor(theme.textSecondary)
+                        }
+            
+                        ForEach($milestonesDraft) { $m in
+                milestoneEditor($m, theme: theme)
+                        }
+            
+                        Button(action: {
+                            milestonesDraft.append(GoalMilestoneDraft())
+                        }) {
+                HStack {
+                    Image(systemName: "plus.circle")
+                    Text("Add Milestone")
+                }
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(theme.accentColor)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func milestoneEditor(_ milestone: Binding<GoalMilestoneDraft>, theme: any AppTheme) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            transparentTextField(placeholder: "Milestone title *", text: milestone.title, theme: theme)
             
             Text("Target tasks will be auto-calculated when tasks are added to this milestone")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(theme.textSecondary)
             
             Toggle("Set Deadline", isOn: milestone.hasDeadline)
+                .tint(theme.accentColor)
+            
             if milestone.wrappedValue.hasDeadline {
                 DatePicker("Deadline", selection: milestone.deadline, displayedComponents: [.date])
+                    .tint(theme.accentColor)
             }
         }
         .padding(.vertical, 4)
@@ -557,184 +742,7 @@ private struct GoalMilestoneDraft: Identifiable {
 }
 
 // MARK: - Goal Floating Action Menu
-struct GoalFloatingActionMenu: View {
-    let goal: Goal
-    let onEdit: () -> Void
-    let onAddTask: () -> Void
-    let onPause: () -> Void
-    let onDelete: () -> Void
-    let onDismiss: () -> Void
-    
-    var body: some View {
-        HStack(spacing: 16) {
-            // Edit
-            Button(action: onEdit) {
-                VStack(spacing: 4) {
-                    Image(systemName: "pencil")
-                        .font(.title2)
-                    Text("Edit")
-                        .font(.caption)
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.gray.opacity(0.8))
-                .cornerRadius(10)
-            }
-            
-            // Add Task
-            Button(action: onAddTask) {
-                VStack(spacing: 4) {
-                    Image(systemName: "plus.circle")
-                        .font(.title2)
-                    Text("Add Task")
-                        .font(.caption)
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.gray.opacity(0.8))
-                .cornerRadius(10)
-            }
-            
-            // Pause/Resume
-            Button(action: onPause) {
-                VStack(spacing: 4) {
-                    Image(systemName: goal.status == .paused ? "play.circle" : "pause.circle")
-                        .font(.title2)
-                    Text(goal.status == .paused ? "Resume" : "Pause")
-                        .font(.caption)
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.gray.opacity(0.8))
-                .cornerRadius(10)
-            }
-            
-            // Delete
-            Button(role: .destructive, action: onDelete) {
-                VStack(spacing: 4) {
-                    Image(systemName: "trash")
-                        .font(.title2)
-                    Text("Delete")
-                        .font(.caption)
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.red.opacity(0.8))
-                .cornerRadius(10)
-            }
-        }
-        .padding()
-        .background(Color.black.opacity(0.9))
-        .cornerRadius(16)
-        .shadow(radius: 20)
-    }
-}
-
-// Deprecated - kept for reference
-struct GoalLongPressMenuView: View {
-    let goal: Goal
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
-    @State private var showingEditGoal = false
-    @State private var showingUpdateProgress = false
-    @State private var showingAddTask = false
-    @State private var showingDeleteConfirmation = false
-    
-    var body: some View {
-        NavigationView {
-            List {
-                Button(action: {
-                    dismiss()
-                    showingEditGoal = true
-                }) {
-                    HStack {
-                        Image(systemName: "pencil")
-                            .foregroundColor(.blue)
-                        Text("Edit Goal")
-                    }
-                }
-                
-                Button(action: {
-                    dismiss()
-                    showingUpdateProgress = true
-                }) {
-                    HStack {
-                        Image(systemName: "checkmark.circle")
-                            .foregroundColor(.green)
-                        Text("Update Progress")
-                    }
-                }
-                
-                Button(action: {
-                    dismiss()
-                    showingAddTask = true
-                }) {
-                    HStack {
-                        Image(systemName: "plus.circle")
-                            .foregroundColor(.purple)
-                        Text("Add Task to This Goal")
-                    }
-                }
-                
-                Button(action: {
-                    if goal.status == .paused {
-                        goal.status = .active
-                    } else {
-                        goal.status = .paused
-                    }
-                    try? modelContext.save()
-                    dismiss()
-                }) {
-                    HStack {
-                        Image(systemName: goal.status == .paused ? "play.circle" : "pause.circle")
-                            .foregroundColor(.orange)
-                        Text(goal.status == .paused ? "Resume Goal" : "Pause Goal")
-                    }
-                }
-                
-                Button(role: .destructive, action: {
-                    dismiss()
-                    showingDeleteConfirmation = true
-                }) {
-                    HStack {
-                        Image(systemName: "trash")
-                        Text("Delete Goal")
-                    }
-                }
-            }
-            .navigationTitle("Goal Actions")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-        .sheet(isPresented: $showingEditGoal) {
-            EditGoalInlineView(goal: goal)
-        }
-        .sheet(isPresented: $showingUpdateProgress) {
-            UpdateProgressInlineView(goal: goal)
-        }
-        .sheet(isPresented: $showingAddTask) {
-            AddTaskToGoalView(goal: goal)
-        }
-        .alert("Delete Goal?", isPresented: $showingDeleteConfirmation) {
-            Button("Delete", role: .destructive) {
-                modelContext.delete(goal)
-                try? modelContext.save()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This will remove the goal but keep all linked tasks.")
-        }
-    }
-}
-
+// Moved to Views/Components/GoalFloatingActionMenu.swift
 
 struct AddTaskToGoalView: View {
     let goal: Goal
@@ -746,34 +754,8 @@ struct AddTaskToGoalView: View {
     
     @State private var mode: TaskAddMode = .createNew
     @State private var selectedExistingTask: Task? = nil
-    @State private var selectedMilestoneID: String? = nil
+    @State private var selectedMilestone: GoalMilestone? = nil
     @State private var searchText = ""
-    
-    init(goal: Goal, preselectedMilestoneID: String? = nil) {
-        self.goal = goal
-        self.preselectedMilestoneID = preselectedMilestoneID
-        // Inherit goal category for new tasks
-        _category = State(initialValue: goalToTaskCategory(goal.category))
-        // Set default recurrence end date to goal deadline if available
-        if let deadline = goal.deadline {
-            _recurrenceEndDate = State(initialValue: deadline)
-        }
-    }
-    
-    private func goalToTaskCategory(_ goalCategory: GoalCategory) -> TaskCategory {
-        // Map goal categories to task categories
-        switch goalCategory {
-        case .health, .fitness: return .selfCare
-        case .work: return .work
-        case .learning: return .growth
-        case .personal: return .personal
-        case .financial: return .personal // Or create financial task category
-        case .creative: return .hobbies
-        case .social: return .personal
-        case .spiritual: return .selfCare
-        case .productivity: return .work
-        }
-    }
     
     // New task fields
     @State private var title = ""
@@ -790,8 +772,37 @@ struct AddTaskToGoalView: View {
         users.first
     }
     
+    init(goal: Goal, preselectedMilestoneID: String? = nil) {
+        self.goal = goal
+        // Legacy support: convert milestone ID to object if provided
+        if let milestoneID = preselectedMilestoneID {
+            // Will be resolved in onAppear
+        }
+        // Inherit goal category for new tasks
+        _category = State(initialValue: AddTaskToGoalView.goalToTaskCategory(goal.category))
+        // Set default recurrence end date to goal deadline if available
+        if let deadline = goal.deadline {
+            _recurrenceEndDate = State(initialValue: deadline)
+        }
+    }
+    
+    // Static helper to avoid initialization issues
+    private static func goalToTaskCategory(_ goalCategory: GoalCategory) -> TaskCategory {
+        switch goalCategory {
+        case .health, .fitness: return .selfCare
+        case .work: return .work
+        case .learning: return .growth
+        case .personal: return .personal
+        case .financial: return .personal
+        case .creative: return .hobbies
+        case .social: return .personal
+        case .spiritual: return .selfCare
+        case .productivity: return .work
+        }
+    }
+    
     private var availableTasks: [Task] {
-        let unlinked = tasks.filter { $0.goalID == nil }
+        let unlinked = tasks.filter { $0.goal == nil }
         if searchText.isEmpty {
             return unlinked
         }
@@ -808,14 +819,28 @@ struct AddTaskToGoalView: View {
     var body: some View {
         formContent
             .onAppear {
-                if selectedMilestoneID == nil && preselectedMilestoneID != nil {
-                    selectedMilestoneID = preselectedMilestoneID
+                if selectedMilestone == nil && preselectedMilestoneID != nil {
+                    // Convert milestone ID to object
+                    selectedMilestone = goal.milestones.first(where: { $0.id == preselectedMilestoneID })
                 }
             }
     }
     
     private var formContent: some View {
         NavigationView {
+            ZStack {
+                // Background matching home screen style
+                LinearGradient(
+                    colors: [
+                        Color.purple.opacity(0.8),
+                        Color.blue.opacity(0.6),
+                        Color.pink.opacity(0.4)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+                
             Form {
                 Section(header: Text("Goal")) {
                     HStack {
@@ -829,14 +854,14 @@ struct AddTaskToGoalView: View {
                 // Milestone Selection (if any exist)
                 if !availableMilestones.isEmpty {
                     Section(header: Text("Link to Milestone (Optional)")) {
-                        Picker("Milestone", selection: $selectedMilestoneID) {
-                            Text("None").tag(nil as String?)
+                        Picker("Milestone", selection: $selectedMilestone) {
+                            Text("None").tag(nil as GoalMilestone?)
                             ForEach(availableMilestones, id: \.id) { milestone in
                                 HStack {
                                     Image(systemName: milestone.isComplete ? "checkmark.circle.fill" : "circle")
                                     Text(milestone.title)
                                 }
-                                .tag(milestone.id as String?)
+                                .tag(milestone as GoalMilestone?)
                             }
                         }
                     }
@@ -852,10 +877,41 @@ struct AddTaskToGoalView: View {
                 }
                 
                 if mode == .createNew {
+                        createNewTaskSection
+                    } else {
+                        linkExistingTaskSection
+                    }
+                }
+                .scrollContentBackground(.hidden)
+                .listRowBackground(Color.clear)
+            }
+            .navigationTitle("Add Task to Goal")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") {
+                        saveTask()
+                    }
+                    .disabled(cannotSave)
+                }
+            }
+        }
+    }
+    
+    @Environment(ThemeManager.self) private var themeManager
+    
+    private var createNewTaskSection: some View {
+        let theme = themeManager.currentTheme
+        
+        return Group {
                     Section(header: Text("Task Details")) {
-                        TextField("Task title", text: $title)
-                        TextField("Description (optional)", text: $taskDescription, axis: .vertical)
-                            .lineLimit(3...6)
+                        transparentTextField(placeholder: "Task title", text: $title, theme: theme)
+                        transparentTextField(placeholder: "Description (optional)", text: $taskDescription, theme: theme, axis: .vertical, lineLimit: 3...6)
+                        
+                        // Priority and Category pickers - keep existing style for now
                         
                         Picker("Priority", selection: $priority) {
                             ForEach(PriorityType.allCases, id: \.self) { p in
@@ -910,7 +966,10 @@ struct AddTaskToGoalView: View {
                             }
                         }
                     }
-                } else {
+        }
+    }
+    
+    private var linkExistingTaskSection: some View {
                     Section(header: Text("Select Task")) {
                         TextField("Search tasks...", text: $searchText)
                             .textFieldStyle(.roundedBorder)
@@ -953,22 +1012,6 @@ struct AddTaskToGoalView: View {
                                         }
                                     }
                                 }
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Add Task to Goal")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        saveTask()
-                    }
-                    .disabled(cannotSave)
                 }
             }
         }
@@ -986,7 +1029,7 @@ struct AddTaskToGoalView: View {
         guard let user = currentUser else { return }
         
         // Validate milestone belongs to goal
-        if let milestoneID = selectedMilestoneID, !goal.milestones.contains(where: { $0.id == milestoneID }) {
+        if let milestone = selectedMilestone, !goal.milestones.contains(where: { $0.id == milestone.id }) {
             return // Invalid milestone
         }
         
@@ -1007,16 +1050,16 @@ struct AddTaskToGoalView: View {
                     endTime: endTime,
                     priority: priority,
                     category: category,
-                    goalID: goal.id,
-                    milestoneID: selectedMilestoneID
+                    goal: goal,
+                    milestone: selectedMilestone
                 )
                 modelContext.insert(task)
             }
         } else {
             // Link existing task to goal
             if let task = selectedExistingTask {
-                task.goalID = goal.id
-                task.milestoneID = selectedMilestoneID
+                task.goal = goal
+                task.milestone = selectedMilestone
             }
         }
         
@@ -1050,8 +1093,8 @@ struct AddTaskToGoalView: View {
                     endTime: taskEnd,
                     priority: priority,
                     category: category,
-                    goalID: goal.id,
-                    milestoneID: selectedMilestoneID,
+                    goal: goal,
+                    milestone: selectedMilestone,
                     recurrenceSeriesID: seriesID
                 )
                 modelContext.insert(task)
@@ -1096,7 +1139,6 @@ enum TaskAddMode {
     case linkExisting
 }
 
-// MARK: - Link Task to Goal View
 struct LinkTaskToGoalView: View {
     let task: Task
     @Environment(\.dismiss) private var dismiss
@@ -1104,7 +1146,7 @@ struct LinkTaskToGoalView: View {
     @Query private var goals: [Goal]
     
     @State private var selectedGoalID: String? = nil
-    @State private var selectedMilestoneID: String? = nil
+    @State private var selectedMilestone: GoalMilestone? = nil
     
     private var activeGoals: [Goal] {
         goals.filter { $0.status != .paused }
@@ -1121,6 +1163,19 @@ struct LinkTaskToGoalView: View {
     
     var body: some View {
         NavigationView {
+            ZStack {
+                // Background matching home screen style
+                LinearGradient(
+                    colors: [
+                        Color.purple.opacity(0.8),
+                        Color.blue.opacity(0.6),
+                        Color.pink.opacity(0.4)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+                
             Form {
                 Section(header: Text("Task")) {
                     HStack {
@@ -1140,10 +1195,10 @@ struct LinkTaskToGoalView: View {
                             Button(action: {
                                 if selectedGoalID == goal.id {
                                     selectedGoalID = nil
-                                    selectedMilestoneID = nil
+                                    selectedMilestone = nil
                                 } else {
                                     selectedGoalID = goal.id
-                                    selectedMilestoneID = nil
+                                    selectedMilestone = nil
                                 }
                             }) {
                                 HStack {
@@ -1153,17 +1208,16 @@ struct LinkTaskToGoalView: View {
                                         Text(goal.title)
                                             .font(.headline)
                                             .foregroundColor(.primary)
-                                        Text(goal.category.displayName)
+                                            if let deadline = goal.deadline {
+                                                Text("Due: \(deadline, style: .date)")
                                             .font(.caption)
                                             .foregroundColor(.secondary)
+                                            }
                                     }
                                     Spacer()
                                     if selectedGoalID == goal.id {
                                         Image(systemName: "checkmark.circle.fill")
                                             .foregroundColor(.blue)
-                                    } else {
-                                        Image(systemName: "circle")
-                                            .foregroundColor(.gray)
                                     }
                                 }
                             }
@@ -1172,20 +1226,23 @@ struct LinkTaskToGoalView: View {
                 }
                 
                 // Milestone Selection (if goal selected and has milestones)
-                if let goal = selectedGoal, !availableMilestones.isEmpty {
+                if let _ = selectedGoal, !availableMilestones.isEmpty {
                     Section(header: Text("Link to Milestone (Optional)")) {
-                        Picker("Milestone", selection: $selectedMilestoneID) {
-                            Text("None - Link directly to goal").tag(nil as String?)
+                        Picker("Milestone", selection: $selectedMilestone) {
+                            Text("None - Link directly to goal").tag(nil as GoalMilestone?)
                             ForEach(availableMilestones, id: \.id) { milestone in
                                 HStack {
                                     Image(systemName: milestone.isComplete ? "checkmark.circle.fill" : "circle")
+                                            .foregroundColor(milestone.isComplete ? .green : .gray)
                                     Text(milestone.title)
                                 }
-                                .tag(milestone.id as String?)
+                                .tag(milestone as GoalMilestone?)
                             }
                         }
                     }
                 }
+                }
+                .scrollContentBackground(.hidden)
             }
             .navigationTitle("Add to Goal")
             .navigationBarTitleDisplayMode(.inline)
@@ -1206,18 +1263,18 @@ struct LinkTaskToGoalView: View {
     private func linkTaskToGoal() {
         guard let goalID = selectedGoalID else { return }
         
-        // Validate milestone belongs to selected goal
-        if let milestoneID = selectedMilestoneID,
+        // Validate milestone belongs to goal
+        if let milestone = selectedMilestone,
            let goal = selectedGoal,
-           !goal.milestones.contains(where: { $0.id == milestoneID }) {
+           !goal.milestones.contains(where: { $0.id == milestone.id }) {
             return // Invalid milestone
         }
         
         // Link task to goal
-        task.goalID = goalID
-        task.milestoneID = selectedMilestoneID
+        task.goal = selectedGoal
+        task.milestone = selectedMilestone
         
-        // Sync target value for the goal
+        // Update goal target value if needed
         if let goal = selectedGoal {
             GoalProgressUpdater.syncTargetValue(for: goal, context: modelContext)
         }
@@ -1226,7 +1283,7 @@ struct LinkTaskToGoalView: View {
             try modelContext.save()
             dismiss()
         } catch {
-            print("Error linking task to goal: \(error)")
+            print("Failed to link task to goal: \(error)")
         }
     }
 }

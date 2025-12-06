@@ -11,6 +11,7 @@ struct NumericTimeInput: View {
     @Binding var time: Date
     let title: String
     let isEnabled: Bool
+    @Environment(ThemeManager.self) private var themeManager
     
     @State private var selectedHour = 1
     @State private var selectedMinute = 0
@@ -25,11 +26,13 @@ struct NumericTimeInput: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let theme = themeManager.currentTheme
+        
+        return VStack(alignment: .leading, spacing: 8) {
             // Title with lighter font weight to match section labels
             Text(title)
                 .font(.system(size: 14, weight: .regular))
-                .foregroundColor(.secondary)
+                .foregroundColor(theme.textSecondary)
             
             HStack(spacing: 12) {
                 // Wheel picker for hours and minutes
@@ -38,6 +41,7 @@ struct NumericTimeInput: View {
                         ForEach(availableHours, id: \.self) { hour in
                             Text("\(hour)")
                                 .font(.system(size: 20, weight: .regular))
+                                .foregroundColor(theme.textPrimary)
                                 .tag(hour)
                         }
                     }
@@ -52,11 +56,13 @@ struct NumericTimeInput: View {
                     
                     Text(":")
                         .font(.system(size: 20, weight: .regular))
+                        .foregroundColor(theme.textPrimary)
                     
                     Picker("", selection: $selectedMinute) {
                         ForEach(availableMinutes, id: \.self) { minute in
                             Text(String(format: "%02d", minute))
                                 .font(.system(size: 20, weight: .regular))
+                                .foregroundColor(theme.textPrimary)
                                 .tag(minute)
                         }
                     }
@@ -71,11 +77,16 @@ struct NumericTimeInput: View {
                 
                 // AM/PM toggle
                 Picker("AM/PM", selection: $isAM) {
-                    Text("AM").tag(true)
-                    Text("PM").tag(false)
+                    Text("AM")
+                        .foregroundColor(theme.id == "dark" ? .white : theme.textPrimary)
+                        .tag(true)
+                    Text("PM")
+                        .foregroundColor(theme.id == "dark" ? .white : theme.textPrimary)
+                        .tag(false)
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 80)
+                .tint(theme.accentColor)
                 .disabled(!isEnabled)
                 .onChange(of: isAM) { _, _ in
                     updateTimeFromSelection()

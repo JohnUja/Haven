@@ -51,11 +51,10 @@ struct DailySummaryView: View {
                             .shadow(color: .green.opacity(0.5), radius: 10)
                         
                         Text("Day Complete!")
-                            .font(.title)
-                            .fontWeight(.bold)
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
                         
                         Text(dateFormatter.string(from: summary.date))
-                            .font(.headline)
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
                             .foregroundColor(.secondary)
                     }
                     .padding(.top, 20)
@@ -80,7 +79,7 @@ struct DailySummaryView: View {
                         
                         // Crystals Gained
                         SummaryCard(
-                            icon: "diamond.fill",
+                            icon: "sparkles",
                             title: "Time Crystals",
                             value: "+\(summary.crystalsGained)",
                             color: .yellow
@@ -100,10 +99,10 @@ struct DailySummaryView: View {
                                 VStack(alignment: .leading, spacing: 8) {
                                     ForEach(summary.bonuses, id: \.self) { bonus in
                                         HStack {
-                                            Crystal3DView()
-                                                .frame(width: 14, height: 14)
+                                            Text("✨")
+                                                .font(.system(size: 14))
                                             Text(bonus)
-                                                .font(.subheadline)
+                                                .font(.system(size: 16, weight: .medium, design: .rounded))
                                         }
                                     }
                                 }
@@ -166,10 +165,15 @@ struct DailySummaryView: View {
             }
             .background(
                 LinearGradient(
-                    colors: [.green.opacity(0.1), .mint.opacity(0.1)],
+                    colors: [
+                        Color.purple.opacity(0.1),
+                        Color.pink.opacity(0.1),
+                        Color.blue.opacity(0.1)
+                    ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
+                .ignoresSafeArea()
             )
             .navigationTitle("Daily Summary")
             .navigationBarTitleDisplayMode(.inline)
@@ -196,8 +200,8 @@ struct SummaryCard: View {
         HStack(spacing: 16) {
             // Icon
             if useCrystalIcon {
-                Crystal3DView()
-                    .frame(width: 24, height: 24)
+                Text("✨")
+                    .font(.system(size: 20))
             } else {
                 Image(systemName: icon)
                     .font(.title2)
@@ -214,9 +218,8 @@ struct SummaryCard: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 
-                Text(value)
-                    .font(.title2)
-                    .fontWeight(.bold)
+            Text(value)
+                .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
             }
             

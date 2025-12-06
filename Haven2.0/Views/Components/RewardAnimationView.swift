@@ -44,8 +44,8 @@ struct RewardAnimationView: View {
                 VStack(spacing: 12) {
                     // Crystals
                     HStack(spacing: 8) {
-                        Crystal3DView()
-                            .frame(width: 24, height: 24)
+                        Text("✨")
+                            .font(.system(size: 20))
                         Text("+\(crystals) Time Crystals")
                             .font(.headline)
                             .foregroundColor(.white)

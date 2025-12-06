@@ -25,8 +25,11 @@ class TimeSettingsManager: ObservableObject {
     }
     
     func toggleTimeFormat() {
-        use24HourFormat.toggle()
+        // Don't toggle here - value is already set by the binding
+        // Just save to UserDefaults
         UserDefaults.standard.set(use24HourFormat, forKey: "use24HourFormat")
+        // Force UI update
+        objectWillChange.send()
     }
     
     func setTimezone(_ newTimezone: TimeZone) {

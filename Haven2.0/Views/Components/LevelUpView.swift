@@ -59,13 +59,13 @@ struct LevelUpView: View {
                     // Level Number Display
                     VStack(spacing: 8) {
                         Text("LEVEL UP!")
-                            .font(.system(size: 36, weight: .bold, design: .rounded))
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
                             .scaleEffect(isAnimating ? 1.0 : 0.5)
                             .opacity(isAnimating ? 1.0 : 0.0)
                         
                         Text("\(levelUpResult.newLevel)")
-                            .font(.system(size: 100, weight: .bold, design: .rounded))
+                            .font(.system(size: 72, weight: .bold, design: .rounded))
                             .foregroundStyle(
                                 LinearGradient(
                                     colors: [.yellow, .orange, .pink, .purple],

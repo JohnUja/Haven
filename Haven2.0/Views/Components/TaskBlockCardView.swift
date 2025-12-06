@@ -175,21 +175,20 @@ struct TaskBlockCardView: View {
                     ZStack {
                         // MUCH PALER category color background with HIGH transparency - use taskBlock color if available
                         let backgroundColor = taskBlock.map { colorFromString($0.color).opacity(0.25) } ?? blockCategoryColor.opacity(0.25)
-                        RoundedRectangle(cornerRadius: 12) // REDUCED corner radius
+                        RoundedRectangle(cornerRadius: theme.cardCornerRadius)
                             .fill(isBlockComplete ? backgroundColor.opacity(0.3) : backgroundColor)
                             .overlay(
-                                // Subtle category color stroke - Original + 1px
-                                RoundedRectangle(cornerRadius: 12)
+                                // Subtle category color stroke
+                                RoundedRectangle(cornerRadius: theme.cardCornerRadius)
                                     .stroke(
                                         taskBlock.map { colorFromString($0.color).opacity(0.6) } ?? blockCategoryColor.opacity(0.6),
-                                        lineWidth: 1.5
+                                        lineWidth: theme.cardBorderWidth
                                     )
                             )
-                            .shadow(color: theme.primaryColor.opacity(0.05), radius: theme.shadowRadius)
                         
                         // Simple completion highlight
                         if isBlockComplete {
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: theme.cardCornerRadius)
                                 .stroke(Color.green, lineWidth: 2)
                                 .opacity(0.8)
                         }
@@ -202,8 +201,15 @@ struct TaskBlockCardView: View {
             // Expanded subtasks
             if isExpanded && !tasks.isEmpty {
                 let blockColorForSubtasks = taskBlock.map { colorFromString($0.color) } ?? blockCategoryColor
+                // Sort tasks: incomplete first, then completed (for smooth animation)
+                let sortedTasks = tasks.sorted { task1, task2 in
+                    if task1.isComplete != task2.isComplete {
+                        return !task1.isComplete // Incomplete tasks first
+                    }
+                    return task1.startTime < task2.startTime // Then by start time
+                }
                 VStack(spacing: 8) {
-                    ForEach(tasks, id: \.id) { task in
+                    ForEach(sortedTasks, id: \.id) { task in
                         HStack(spacing: 12) {
                             // Indent for subtask - MATCH BLOCK COLOR
                             Rectangle()
@@ -234,7 +240,8 @@ struct TaskBlockCardView: View {
                                 Button(action: {
                                     guard let user = users.first else { return }
                                     
-                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                    // Optimized animation - use spring for smoother performance
+                                    withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
                                         let wasComplete = task.isComplete
                                         task.isComplete.toggle()
                                         
@@ -277,7 +284,7 @@ struct TaskBlockCardView: View {
                                             user.weeklyProductivityScore += rewards.score
                                             
                                             // Update momentum
-                                            GamificationService.updateMomentumDays(user: user, tasks: allTasks)
+                                            _ = GamificationService.updateMomentumDays(user: user, tasks: allTasks)
                                             
                                             // Check for bonuses (similar to TaskCardView)
                                             let calendar = Calendar.current
@@ -360,6 +367,7 @@ struct TaskBlockCardView: View {
                                 .fill(theme.cardBackground.opacity(0.5))
                         )
                         .opacity(task.isComplete ? 0.7 : 1.0)
+                        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: task.isComplete)
                     }
                 }
                 .padding(.top, 8)
@@ -387,7 +395,7 @@ struct TaskBlockCardView: View {
         Task(userID: "1", title: "Dress up", startTime: Date(), endTime: Date().addingTimeInterval(900))
     ]
     
-    return TaskBlockCardView(tasks: sampleTasks, theme: DefaultTheme())
+    return TaskBlockCardView(tasks: sampleTasks, theme: PurpleTheme())
         .padding()
 }
 

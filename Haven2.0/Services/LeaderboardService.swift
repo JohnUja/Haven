@@ -126,7 +126,8 @@ enum LeaderboardService {
         tasks: [Task],
         goals: [Goal],
         location: String? = nil,
-        radius: Double = 100.0 // miles
+        radius: Double = 100.0, // miles
+        includeFakeUsers: Bool = true // For testing
     ) -> [LeaderboardEntry] {
         let calendar = Calendar.current
         let now = Date()
@@ -164,6 +165,12 @@ enum LeaderboardService {
             entries.append(entry)
         }
         
+        // Add fake users for testing (if enabled)
+        if includeFakeUsers {
+            let fakeUsers = generateFakeUsers()
+            entries.append(contentsOf: fakeUsers)
+        }
+        
         // Sort by score (descending) and assign ranks
         entries.sort { $0.score > $1.score }
         for (index, _) in entries.enumerated() {
@@ -171,6 +178,28 @@ enum LeaderboardService {
         }
         
         return entries
+    }
+    
+    // MARK: - Fake Users for Testing
+    static func generateFakeUsers() -> [LeaderboardEntry] {
+        let fakeNames = [
+            "Alex Chen", "Jordan Smith", "Sam Taylor", "Casey Brown",
+            "Morgan Lee", "Riley Davis", "Quinn Wilson", "Avery Martinez",
+            "Blake Anderson", "Cameron Thomas"
+        ]
+        
+        // Generate scores that create a realistic leaderboard distribution
+        let baseScores = [4500, 4200, 3800, 3500, 3200, 2800, 2500, 2200, 1900, 1600]
+        
+        return zip(fakeNames, baseScores).enumerated().map { index, pair in
+            LeaderboardEntry(
+                userID: "fake_user_\(index)",
+                username: pair.0,
+                score: pair.1 + Int.random(in: -200...200), // Add some variation
+                level: max(1, pair.1 / 500), // Rough level calculation
+                rank: 0 // Will be set after sorting
+            )
+        }
     }
     
     // MARK: - Weekly Reset

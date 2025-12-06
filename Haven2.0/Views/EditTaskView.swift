@@ -13,6 +13,7 @@ struct EditTaskView: View {
     let allTasks: [Task]? // Optional - all tasks to check for overlaps
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(ThemeManager.self) private var themeManager
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     @Query private var allTasksQuery: [Task] // Query for all tasks if not provided
     
@@ -47,56 +48,133 @@ struct EditTaskView: View {
     
     var body: some View {
         NavigationView {
-            Form {
-                Section("Task Details") {
-                    TextField("Task Title", text: $title)
-                    
-                    TextField("Description (Optional)", text: $taskDescription, axis: .vertical)
-                        .lineLimit(3...6)
-                }
+            ZStack {
+                // Background using theme gradient
+                themeManager.currentTheme.primaryGradient
+                    .ignoresSafeArea()
                 
-                Section("Time") {
-                    DatePicker("Start Time", selection: $startTime, displayedComponents: [.hourAndMinute, .date])
-                    DatePicker("End Time", selection: $endTime, displayedComponents: [.hourAndMinute, .date])
-                }
-                
-                Section("Category & Priority") {
-                    Picker("Category", selection: $category) {
-                        ForEach(TaskCategory.allCases, id: \.self) { cat in
-                            HStack {
-                                Image(systemName: cat.icon)
-                                    .foregroundColor(cat.color())
-                                Text(cat.displayName)
+                ScrollView {
+                    VStack(spacing: 24) {
+                        // Task Details Section
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("TASK DETAILS")
+                                .font(.system(size: 12, weight: .semibold, design: .default))
+                                .foregroundColor(themeManager.currentTheme.textPrimary.opacity(0.7))
+                                .textCase(.uppercase)
+                            
+                            transparentTextField(
+                                placeholder: "Task Title",
+                                text: $title,
+                                theme: themeManager.currentTheme
+                            )
+                            
+                            transparentTextField(
+                                placeholder: "Description (Optional)",
+                                text: $taskDescription,
+                                theme: themeManager.currentTheme,
+                                axis: .vertical,
+                                lineLimit: 3...6
+                            )
+                        }
+                        .padding(.horizontal, 20)
+                        
+                        // Time Section
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("TIME")
+                                .font(.system(size: 12, weight: .semibold, design: .default))
+                                .foregroundColor(themeManager.currentTheme.textPrimary.opacity(0.7))
+                                .textCase(.uppercase)
+                            
+                            DatePicker("Start Time", selection: $startTime, displayedComponents: [.hourAndMinute, .date])
+                                .padding(.horizontal, themeManager.currentTheme.cardPadding)
+                                .padding(.vertical, themeManager.currentTheme.cardVerticalPadding)
+                                .background(transparentInputBackground(theme: themeManager.currentTheme))
+                                .cornerRadius(themeManager.currentTheme.smallCornerRadius)
+                            
+                            DatePicker("End Time", selection: $endTime, displayedComponents: [.hourAndMinute, .date])
+                                .padding(.horizontal, themeManager.currentTheme.cardPadding)
+                                .padding(.vertical, themeManager.currentTheme.cardVerticalPadding)
+                                .background(transparentInputBackground(theme: themeManager.currentTheme))
+                                .cornerRadius(themeManager.currentTheme.smallCornerRadius)
+                        }
+                        .padding(.horizontal, 20)
+                        
+                        // Category & Priority Section
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("CATEGORY & PRIORITY")
+                                .font(.system(size: 12, weight: .semibold, design: .default))
+                                .foregroundColor(themeManager.currentTheme.textPrimary.opacity(0.7))
+                                .textCase(.uppercase)
+                            
+                            Picker("Category", selection: $category) {
+                                ForEach(TaskCategory.allCases, id: \.self) { cat in
+                                    HStack {
+                                        Image(systemName: cat.icon)
+                                            .foregroundColor(cat.color())
+                                        Text(cat.displayName)
+                                    }
+                                    .tag(cat)
+                                }
                             }
-                            .tag(cat)
-                        }
-                    }
-                    
-                    Picker("Priority", selection: $priority) {
-                        ForEach(PriorityType.allCases, id: \.self) { priority in
-                            Text(priority.rawValue.capitalized).tag(priority)
-                        }
-                    }
-                }
-                
-                Section("Settings") {
-                    Toggle("Lock task", isOn: Binding(
-                        get: { isLocked },
-                        set: { newValue in
-                            // If part of recurrence, show scope dialog; otherwise just toggle
-                            if task.recurrenceSeriesID != nil {
-                                pendingLockValue = newValue
-                                showLockScopeDialog = true
-                            } else {
-                                isLocked = newValue
+                            .padding(.horizontal, themeManager.currentTheme.cardPadding)
+                            .padding(.vertical, themeManager.currentTheme.cardVerticalPadding)
+                            .background(transparentInputBackground(theme: themeManager.currentTheme))
+                            .cornerRadius(themeManager.currentTheme.smallCornerRadius)
+                            
+                            Picker("Priority", selection: $priority) {
+                                ForEach(PriorityType.allCases, id: \.self) { priority in
+                                    Text(priority.rawValue.capitalized).tag(priority)
+                                }
                             }
+                            .padding(.horizontal, themeManager.currentTheme.cardPadding)
+                            .padding(.vertical, themeManager.currentTheme.cardVerticalPadding)
+                            .background(transparentInputBackground(theme: themeManager.currentTheme))
+                            .cornerRadius(themeManager.currentTheme.smallCornerRadius)
                         }
-                    ))
-                }
-                
-                Section {
-                    Button("Delete Task", role: .destructive) {
-                        showingDeleteAlert = true
+                        .padding(.horizontal, 20)
+                        
+                        // Settings Section
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("SETTINGS")
+                                .font(.system(size: 12, weight: .semibold, design: .default))
+                                .foregroundColor(themeManager.currentTheme.textPrimary.opacity(0.7))
+                                .textCase(.uppercase)
+                            
+                            Toggle("Lock task", isOn: Binding(
+                                get: { isLocked },
+                                set: { newValue in
+                                    // If part of recurrence, show scope dialog; otherwise just toggle
+                                    if task.recurrenceSeriesID != nil {
+                                        pendingLockValue = newValue
+                                        showLockScopeDialog = true
+                                    } else {
+                                        isLocked = newValue
+                                    }
+                                }
+                            ))
+                            .padding(.horizontal, themeManager.currentTheme.cardPadding)
+                            .padding(.vertical, themeManager.currentTheme.cardVerticalPadding)
+                            .background(transparentInputBackground(theme: themeManager.currentTheme))
+                            .cornerRadius(themeManager.currentTheme.smallCornerRadius)
+                        }
+                        .padding(.horizontal, 20)
+                        
+                        // Delete Button
+                        Button("Delete Task", role: .destructive) {
+                            showingDeleteAlert = true
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, themeManager.currentTheme.cardVerticalPadding)
+                        .background(
+                            RoundedRectangle(cornerRadius: themeManager.currentTheme.smallCornerRadius)
+                                .fill(Color.red.opacity(0.2))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: themeManager.currentTheme.smallCornerRadius)
+                                        .stroke(Color.red, lineWidth: themeManager.currentTheme.cardBorderWidth)
+                                )
+                        )
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 20)
                     }
                 }
             }

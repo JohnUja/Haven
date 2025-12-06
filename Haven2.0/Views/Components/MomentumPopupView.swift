@@ -65,7 +65,6 @@ struct MomentumPopupView: View {
                                             endPoint: .bottomTrailing
                                         )
                                     )
-                                    .shadow(color: .orange.opacity(0.9), radius: 25)
                             }
                             .frame(height: 120)
                             
@@ -99,8 +98,6 @@ struct MomentumPopupView: View {
                                                     lineWidth: 2.5
                                                 )
                                         )
-                                        .shadow(color: .black.opacity(0.5), radius: 20, x: 0, y: 10)
-                                        .shadow(color: .orange.opacity(0.4), radius: 12, x: 0, y: 6)
                                     
                                     VStack(spacing: 8) {
                                         Text("\(user.momentumDays)")

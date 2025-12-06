@@ -11,13 +11,16 @@ import FirebaseAuth
 
 struct ProfileEditView: View {
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var authService: FirebaseAuthService
+    @Environment(ThemeManager.self) private var themeManager
+    @Environment(FirebaseAuthService.self) private var authService
     @State private var name: String = ""
     @State private var username: String = ""
     @State private var email: String = ""
     @State private var phoneNumber: String = ""
     @State private var password: String = ""
     @State private var showingPasswordChange = false
+    @State private var showingPasswordReset = false
+    @State private var showingEmailVerification = false
     @State private var showingDeleteConfirmation = false
     @State private var showingDeleteUsernameEntry = false
     @State private var deleteConfirmationUsername: String = ""
@@ -27,9 +30,17 @@ struct ProfileEditView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                // White background
-                Color(.systemBackground)
-                    .ignoresSafeArea()
+                // Background matching home screen style
+                LinearGradient(
+                    colors: [
+                        Color.purple.opacity(0.1),
+                        Color.pink.opacity(0.1),
+                        Color.blue.opacity(0.1)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
                 
                 ScrollView {
                     VStack(spacing: 0) {
@@ -97,6 +108,18 @@ struct ProfileEditView: View {
                     }
                 )
             }
+            .sheet(isPresented: $showingPasswordChange) {
+                AccountSecurityView()
+                    .environmentObject(authService)
+            }
+            .sheet(isPresented: $showingPasswordReset) {
+                PasswordResetView()
+                    .environmentObject(authService)
+            }
+            .sheet(isPresented: $showingEmailVerification) {
+                EmailVerificationView()
+                    .environmentObject(authService)
+            }
             .onAppear {
                 loadProfileData()
             }
@@ -140,7 +163,7 @@ struct ProfileEditView: View {
                 // For now, avatar is from auth provider (Apple/Google/Game Center)
             }) {
                 Text("CHANGE AVATAR")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundColor(.blue)
             }
         }
@@ -163,35 +186,78 @@ struct ProfileEditView: View {
                 placeholder: "Enter username"
             )
             
-            // Password Field
+            // Account Security Section (Email & Password)
             VStack(alignment: .leading, spacing: 8) {
-                Text("Password")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.secondary)
+                Text("Account Security")
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundColor(themeManager.currentTheme.textSecondary)
                 
                 Button(action: {
                     showingPasswordChange = true
                 }) {
                     HStack {
-                        Text("Change Password")
-                            .font(.system(size: 16))
-                            .foregroundColor(.primary)
+                        Label("Email & Password", systemImage: "lock.shield.fill")
+                            .font(.system(size: 16, weight: .regular, design: .rounded))
+                            .foregroundColor(themeManager.currentTheme.textPrimary)
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(themeManager.currentTheme.textSecondary)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color(.systemGray6))
-                    )
+                    .padding(.horizontal, themeManager.currentTheme.cardPadding)
+                    .padding(.vertical, themeManager.currentTheme.cardVerticalPadding)
+                    .background(transparentInputBackground(theme: themeManager.currentTheme))
+                    .cornerRadius(themeManager.currentTheme.smallCornerRadius)
+                }
+                
+                if authService.canChangeEmail {
+                    Button(action: {
+                        showingPasswordReset = true
+                    }) {
+                        HStack {
+                            Label("Reset Password", systemImage: "key.fill")
+                                .font(.system(size: 16, weight: .regular, design: .rounded))
+                                .foregroundColor(themeManager.currentTheme.textPrimary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(themeManager.currentTheme.textSecondary)
+                        }
+                        .padding(.horizontal, themeManager.currentTheme.cardPadding)
+                        .padding(.vertical, themeManager.currentTheme.cardVerticalPadding)
+                        .background(transparentInputBackground(theme: themeManager.currentTheme))
+                        .cornerRadius(themeManager.currentTheme.smallCornerRadius)
+                    }
                 }
             }
-            .sheet(isPresented: $showingPasswordChange) {
-                ChangePasswordView()
-                    .environmentObject(authService)
+            
+            // Email Verification Field
+            if authService.currentUser?.email != nil {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Email Verification")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                    
+                    Button(action: {
+                        showingEmailVerification = true
+                    }) {
+                        HStack {
+                            Text(authService.currentUser?.isEmailVerified == true ? "Email Verified" : "Verify Email")
+                                .font(.system(size: 16, weight: .regular, design: .rounded))
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color(.systemGray6))
+                        )
+                    }
+                }
             }
             
             // Email Field
@@ -223,19 +289,16 @@ struct ProfileEditView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(label)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.secondary)
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundColor(themeManager.currentTheme.textSecondary)
             
-            TextField(placeholder, text: value)
-                .font(.system(size: 16))
+            transparentTextField(
+                placeholder: placeholder,
+                text: value,
+                theme: themeManager.currentTheme
+            )
                 .keyboardType(keyboardType)
                 .textInputAutocapitalization(autocapitalization)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(.systemGray6))
-                )
         }
     }
     
@@ -245,7 +308,7 @@ struct ProfileEditView: View {
             showingDeleteConfirmation = true
         }) {
             Text("DELETE ACCOUNT")
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
                 .foregroundColor(.red)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
@@ -261,7 +324,8 @@ struct ProfileEditView: View {
         if let user = authService.currentUser {
             name = user.displayName ?? ""
             email = user.email ?? ""
-            username = "" // TODO: Get from Firestore user document
+            // Use displayName as username for delete account confirmation
+            username = user.displayName ?? "User"
             phoneNumber = "" // TODO: Get from Firestore user document
         }
     }
@@ -301,10 +365,23 @@ struct ProfileEditView: View {
     
     // MARK: - Delete Account
     private func deleteAccount() {
-        // Verify username matches (should already be validated in sheet)
-        guard deleteConfirmationUsername.lowercased() == username.lowercased() else {
-            errorMessage = "Username does not match. Please type your username exactly as shown."
+        // Get the actual display name from Firebase Auth
+        let actualDisplayName = authService.currentUser?.displayName ?? ""
+        
+        // Normalize both strings for comparison (lowercase, trim whitespace)
+        let normalizedConfirmation = deleteConfirmationUsername.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedDisplayName = actualDisplayName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Validate match
+        guard !normalizedConfirmation.isEmpty,
+              !normalizedDisplayName.isEmpty,
+              normalizedConfirmation == normalizedDisplayName else {
+            errorMessage = "Username does not match. Please type your username exactly as shown: \"\(actualDisplayName)\""
             showingDeleteUsernameEntry = false
+            // Show error alert
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                showingDeleteUsernameEntry = true
+            }
             return
         }
         
@@ -312,19 +389,26 @@ struct ProfileEditView: View {
         
         _Concurrency.Task {
             do {
-                if let user = authService.currentUser {
-                    try await user.delete()
+                // Use FirebaseAuthService deleteAccount method
+                try await authService.deleteAccount()
+                
+                // Also delete Firestore user data
+                if let uid = authService.currentUser?.uid {
+                    let firestoreService = FirestoreService.shared
+                    try? await firestoreService.deleteUser(uid: uid)
+                }
+                    
+                    // Clear local data on main thread
                     await MainActor.run {
                         isLoading = false
                         deleteConfirmationUsername = ""
                         showingDeleteUsernameEntry = false
                         dismiss()
-                    }
                 }
             } catch {
                 await MainActor.run {
                     isLoading = false
-                    errorMessage = error.localizedDescription
+                    errorMessage = "Failed to delete account: \(error.localizedDescription)"
                     deleteConfirmationUsername = ""
                     showingDeleteUsernameEntry = false
                 }
@@ -336,7 +420,8 @@ struct ProfileEditView: View {
 // MARK: - Change Password View
 struct ChangePasswordView: View {
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var authService: FirebaseAuthService
+    @Environment(ThemeManager.self) private var themeManager
+    @Environment(FirebaseAuthService.self) private var authService
     @State private var currentPassword: String = ""
     @State private var newPassword: String = ""
     @State private var confirmPassword: String = ""
@@ -345,19 +430,51 @@ struct ChangePasswordView: View {
     
     var body: some View {
         NavigationView {
-            Form {
-                Section {
-                    SecureField("Current Password", text: $currentPassword)
-                    SecureField("New Password", text: $newPassword)
-                    SecureField("Confirm Password", text: $confirmPassword)
-                } header: {
-                    Text("Change Password")
-                } footer: {
-                    if let error = errorMessage {
-                        Text(error)
-                            .foregroundColor(.red)
-                    } else {
-                        Text("Password must be at least 6 characters long")
+            ZStack {
+                themeManager.currentTheme.primaryGradient
+                    .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 24) {
+                        // Password Fields Section
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("CHANGE PASSWORD")
+                                .font(.system(size: 12, weight: .semibold, design: .default))
+                                .foregroundColor(themeManager.currentTheme.textPrimary.opacity(0.7))
+                                .textCase(.uppercase)
+                            
+                            transparentSecureField(
+                                placeholder: "Current Password",
+                                text: $currentPassword,
+                                theme: themeManager.currentTheme
+                            )
+                            
+                            transparentSecureField(
+                                placeholder: "New Password",
+                                text: $newPassword,
+                                theme: themeManager.currentTheme
+                            )
+                            
+                            transparentSecureField(
+                                placeholder: "Confirm Password",
+                                text: $confirmPassword,
+                                theme: themeManager.currentTheme
+                            )
+                            
+                            if let error = errorMessage {
+                                Text(error)
+                                    .font(themeManager.currentTheme.bodyFont)
+                                    .foregroundColor(.red)
+                                    .padding(.top, 8)
+                            } else {
+                                Text("Password must be at least 6 characters long")
+                                    .font(themeManager.currentTheme.bodyFont)
+                                    .foregroundColor(themeManager.currentTheme.textSecondary)
+                                    .padding(.top, 8)
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 20)
                     }
                 }
             }
@@ -392,21 +509,10 @@ struct ChangePasswordView: View {
         
         _Concurrency.Task {
             do {
-                if let user = authService.currentUser {
-                    // Reauthenticate first
-                    let credential = EmailAuthProvider.credential(
-                        withEmail: user.email ?? "",
-                        password: currentPassword
-                    )
-                    try await user.reauthenticate(with: credential)
-                    
-                    // Update password
-                    try await user.updatePassword(to: newPassword)
-                    
+                try await authService.changePassword(currentPassword: currentPassword, newPassword: newPassword)
                     await MainActor.run {
                         isLoading = false
                         dismiss()
-                    }
                 }
             } catch {
                 await MainActor.run {

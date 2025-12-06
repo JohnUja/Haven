@@ -27,6 +27,7 @@ final class User {
     var momentumDays: Int
     var lastMomentumUpdate: Date?
     var moodJarCompletions: Int // Track rewards earned via mood jar
+    var age: Int? // User's age (optional)
     
     // Relationship to mood entries
     @Relationship(deleteRule: .cascade, inverse: \MoodEntry.user)
@@ -46,7 +47,8 @@ final class User {
          weeklyResetDate: Date? = nil,
          momentumDays: Int = 0,
          lastMomentumUpdate: Date? = nil,
-         moodJarCompletions: Int = 0) {
+         moodJarCompletions: Int = 0,
+         age: Int? = nil) {
         self.id = id
         self.email = email
         self.name = name
@@ -62,6 +64,7 @@ final class User {
         self.momentumDays = momentumDays
         self.lastMomentumUpdate = lastMomentumUpdate
         self.moodJarCompletions = moodJarCompletions
+        self.age = age
         self.moodHistory = []
     }
 }

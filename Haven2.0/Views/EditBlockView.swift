@@ -14,6 +14,7 @@ struct EditBlockView: View {
     let allTasks: [Task] // All tasks to check for overlaps
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(ThemeManager.self) private var themeManager
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     
     @State private var title: String
@@ -50,87 +51,183 @@ struct EditBlockView: View {
     
     var body: some View {
         NavigationView {
-            Form {
-                Section("Block Details") {
-                    TextField("Block Title", text: $title)
-                    
-                    TextField("Description (Optional)", text: $blockDescription, axis: .vertical)
-                        .lineLimit(3...6)
-                }
+            ZStack {
+                // Background using theme gradient
+                themeManager.currentTheme.primaryGradient
+                    .ignoresSafeArea()
                 
-                Section("Time") {
-                    DatePicker("Start Time", selection: $newStartTime, displayedComponents: [.hourAndMinute, .date])
-                    Text("Moving the block start time will adjust all tasks within it by the same amount.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                Section("Priority") {
-                    Picker("Priority", selection: $priority) {
-                        ForEach(PriorityType.allCases, id: \.self) { priority in
-                            Text(priority.rawValue.capitalized).tag(priority)
+                ScrollView {
+                    VStack(spacing: 24) {
+                        // Block Details Section
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("BLOCK DETAILS")
+                                .font(.system(size: 12, weight: .semibold, design: .default))
+                                .foregroundColor(themeManager.currentTheme.textPrimary.opacity(0.7))
+                                .textCase(.uppercase)
+                            
+                            transparentTextField(
+                                placeholder: "Block Title",
+                                text: $title,
+                                theme: themeManager.currentTheme
+                            )
+                            
+                            transparentTextField(
+                                placeholder: "Description (Optional)",
+                                text: $blockDescription,
+                                theme: themeManager.currentTheme,
+                                axis: .vertical,
+                                lineLimit: 3...6
+                            )
                         }
-                    }
-                }
-                
-                Section("Settings") {
-                    Toggle("Lock block", isOn: Binding(
-                        get: { isLocked },
-                        set: { newValue in
-                            // If part of recurrence, show scope dialog; otherwise just toggle
-                            if taskBlock.recurrenceSeriesID != nil {
-                                pendingLockValue = newValue
-                                showLockScopeDialog = true
-                            } else {
-                                isLocked = newValue
-                            }
-                        }
-                    ))
-                    Toggle("Make recurring", isOn: $isRecurring)
-                    if isRecurring {
-                        Picker("Repeat", selection: $recurrenceType) {
-                            ForEach(RecurrenceType.allCases, id: \.self) { type in
-                                Text(type.displayName).tag(type)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        DatePicker("End date", selection: $recurrenceEndDate, displayedComponents: [.date])
-                            .datePickerStyle(.compact)
-                    }
-                }
-
-                Section("Subtasks") {
-                    ForEach(localTasksInBlock, id: \.id) { task in
-                        HStack {
-                            TextField("Title", text: Binding(
-                                get: { task.title },
-                                set: { task.title = $0 }
-                            ))
-                            Spacer()
-                            Text("\(timeSettings.formatTime(task.startTime)) - \(timeSettings.formatTime(task.endTime))")
+                        .padding(.horizontal, 20)
+                        
+                        // Time Section
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("TIME")
+                                .font(.system(size: 12, weight: .semibold, design: .default))
+                                .foregroundColor(themeManager.currentTheme.textPrimary.opacity(0.7))
+                                .textCase(.uppercase)
+                            
+                            DatePicker("Start Time", selection: $newStartTime, displayedComponents: [.hourAndMinute, .date])
+                                .padding(.horizontal, themeManager.currentTheme.cardPadding)
+                                .padding(.vertical, themeManager.currentTheme.cardVerticalPadding)
+                                .background(transparentInputBackground(theme: themeManager.currentTheme))
+                                .cornerRadius(themeManager.currentTheme.smallCornerRadius)
+                            
+                            Text("Moving the block start time will adjust all tasks within it by the same amount.")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
-                            Button(action: {
-                                // Remove from model and local list immediately
-                                task.taskBlockID = nil
-                                localTasksInBlock.removeAll { $0.id == task.id }
-                                try? modelContext.save()
-                            }) {
-                                Image(systemName: "minus.circle.fill").foregroundColor(.red)
+                                .foregroundColor(themeManager.currentTheme.textSecondary)
+                        }
+                        .padding(.horizontal, 20)
+                        
+                        // Priority Section
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("PRIORITY")
+                                .font(.system(size: 12, weight: .semibold, design: .default))
+                                .foregroundColor(themeManager.currentTheme.textPrimary.opacity(0.7))
+                                .textCase(.uppercase)
+                            
+                            Picker("Priority", selection: $priority) {
+                                ForEach(PriorityType.allCases, id: \.self) { priority in
+                                    Text(priority.rawValue.capitalized).tag(priority)
+                                }
+                            }
+                            .padding(.horizontal, themeManager.currentTheme.cardPadding)
+                            .padding(.vertical, themeManager.currentTheme.cardVerticalPadding)
+                            .background(transparentInputBackground(theme: themeManager.currentTheme))
+                            .cornerRadius(themeManager.currentTheme.smallCornerRadius)
+                        }
+                        .padding(.horizontal, 20)
+                        
+                        // Settings Section
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("SETTINGS")
+                                .font(.system(size: 12, weight: .semibold, design: .default))
+                                .foregroundColor(themeManager.currentTheme.textPrimary.opacity(0.7))
+                                .textCase(.uppercase)
+                            
+                            Toggle("Lock block", isOn: Binding(
+                                get: { isLocked },
+                                set: { newValue in
+                                    // If part of recurrence, show scope dialog; otherwise just toggle
+                                    if taskBlock.recurrenceSeriesID != nil {
+                                        pendingLockValue = newValue
+                                        showLockScopeDialog = true
+                                    } else {
+                                        isLocked = newValue
+                                    }
+                                }
+                            ))
+                            .padding(.horizontal, themeManager.currentTheme.cardPadding)
+                            .padding(.vertical, themeManager.currentTheme.cardVerticalPadding)
+                            .background(transparentInputBackground(theme: themeManager.currentTheme))
+                            .cornerRadius(themeManager.currentTheme.smallCornerRadius)
+                            
+                            Toggle("Make recurring", isOn: $isRecurring)
+                                .padding(.horizontal, themeManager.currentTheme.cardPadding)
+                                .padding(.vertical, themeManager.currentTheme.cardVerticalPadding)
+                                .background(transparentInputBackground(theme: themeManager.currentTheme))
+                                .cornerRadius(themeManager.currentTheme.smallCornerRadius)
+                            
+                            if isRecurring {
+                                Picker("Repeat", selection: $recurrenceType) {
+                                    ForEach(RecurrenceType.allCases, id: \.self) { type in
+                                        Text(type.displayName).tag(type)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                .padding(.horizontal, themeManager.currentTheme.cardPadding)
+                                .padding(.vertical, themeManager.currentTheme.cardVerticalPadding)
+                                .background(transparentInputBackground(theme: themeManager.currentTheme))
+                                .cornerRadius(themeManager.currentTheme.smallCornerRadius)
+                                
+                                DatePicker("End date", selection: $recurrenceEndDate, displayedComponents: [.date])
+                                    .datePickerStyle(.compact)
+                                    .padding(.horizontal, themeManager.currentTheme.cardPadding)
+                                    .padding(.vertical, themeManager.currentTheme.cardVerticalPadding)
+                                    .background(transparentInputBackground(theme: themeManager.currentTheme))
+                                    .cornerRadius(themeManager.currentTheme.smallCornerRadius)
                             }
                         }
-                    }
-                    Button(action: { addSubtask() }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "plus.circle.fill").foregroundColor(.green)
-                            Text("Add Subtask").foregroundColor(.green)
+                        .padding(.horizontal, 20)
+                        
+                        // Subtasks Section
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("SUBTASKS")
+                                .font(.system(size: 12, weight: .semibold, design: .default))
+                                .foregroundColor(themeManager.currentTheme.textPrimary.opacity(0.7))
+                                .textCase(.uppercase)
+                            
+                            ForEach(localTasksInBlock, id: \.id) { task in
+                                HStack {
+                                    transparentTextField(
+                                        placeholder: "Title",
+                                        text: Binding(
+                                            get: { task.title },
+                                            set: { task.title = $0 }
+                                        ),
+                                        theme: themeManager.currentTheme
+                                    )
+                                    Spacer()
+                                    Text("\(timeSettings.formatTime(task.startTime)) - \(timeSettings.formatTime(task.endTime))")
+                                        .font(.caption)
+                                        .foregroundColor(themeManager.currentTheme.textSecondary)
+                                    Button(action: {
+                                        // Remove from model and local list immediately
+                                        task.taskBlock = nil
+                                        localTasksInBlock.removeAll { $0.id == task.id }
+                                        try? modelContext.save()
+                                    }) {
+                                        Image(systemName: "minus.circle.fill").foregroundColor(.red)
+                                    }
+                                }
+                            }
+                            
+                            Button(action: { addSubtask() }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "plus.circle.fill").foregroundColor(.green)
+                                    Text("Add Subtask").foregroundColor(.green)
+                                }
+                            }
                         }
-                    }
-                }
-                
-                Section {
-                    Button("Delete Block", role: .destructive) {
-                        showingDeleteAlert = true
+                        .padding(.horizontal, 20)
+                        
+                        // Delete Button
+                        Button("Delete Block", role: .destructive) {
+                            showingDeleteAlert = true
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, themeManager.currentTheme.cardVerticalPadding)
+                        .background(
+                            RoundedRectangle(cornerRadius: themeManager.currentTheme.smallCornerRadius)
+                                .fill(Color.red.opacity(0.2))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: themeManager.currentTheme.smallCornerRadius)
+                                        .stroke(Color.red, lineWidth: themeManager.currentTheme.cardBorderWidth)
+                                )
+                        )
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 20)
                     }
                 }
             }
@@ -290,7 +387,7 @@ struct EditBlockView: View {
     private func findOverlappingTasks(newTaskTimes: [(Task, Date, Date)]) -> [Task] {
         var overlapping: [Task] = []
         
-        for (task, newStart, newEnd) in newTaskTimes {
+        for (_, newStart, newEnd) in newTaskTimes {
             // Check against all tasks not in this block
             let conflicts = allTasks.filter { otherTask in
                 // Don't check against tasks in this block
@@ -337,7 +434,7 @@ extension EditBlockView {
                            priority: priority,
                            category: .personal,
                            isComplete: false,
-                           taskBlockID: taskBlock.id)
+                           taskBlock: taskBlock)
         modelContext.insert(newTask)
         localTasksInBlock.append(newTask) // Immediate UI update
         try? modelContext.save()

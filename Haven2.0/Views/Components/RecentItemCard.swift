@@ -74,21 +74,21 @@ struct RecentItemCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(itemTitle)
                         .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white)
+                        .foregroundColor(.black) // Changed to black
                         .lineLimit(1)
                     
                     HStack(spacing: 8) {
                         Text(itemType)
                             .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundColor(.white.opacity(0.6))
+                            .foregroundColor(.black.opacity(0.6)) // Changed to black
                         
                         Text("•")
                             .font(.system(size: 12))
-                            .foregroundColor(.white.opacity(0.4))
+                            .foregroundColor(.black.opacity(0.4)) // Changed to black
                         
                         Text(formatDate(itemDate))
                             .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundColor(.white.opacity(0.6))
+                            .foregroundColor(.black.opacity(0.6)) // Changed to black
                     }
                 }
                 
@@ -96,15 +96,15 @@ struct RecentItemCard: View {
                 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.4))
+                    .foregroundColor(.black.opacity(0.4)) // Changed to black
             }
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(theme.cardBackground.opacity(0.6))
+                    .fill(Color.gray.opacity(0.3)) // Darker grey background
                     .overlay(
                         RoundedRectangle(cornerRadius: 16)
-                            .stroke(theme.accentColor.opacity(0.3), lineWidth: 1)
+                            .stroke(theme.accentColor.opacity(0.2), lineWidth: 1)
                     )
             )
         }
@@ -130,7 +130,7 @@ struct RecentItemCard: View {
                 endTime: Date().addingTimeInterval(3600),
                 category: .work
             ),
-            theme: DefaultTheme(),
+            theme: PurpleTheme(),
             onTap: {}
         )
         .padding()

@@ -14,6 +14,7 @@ import Combine
 struct DeveloperModeView: View {
     @EnvironmentObject var developerService: DeveloperModeService
     @Environment(\.modelContext) private var modelContext
+    @Environment(ThemeManager.self) private var themeManager
     @Query private var users: [User]
     
     @State private var showingMaxXPAlert = false
@@ -25,16 +26,22 @@ struct DeveloperModeView: View {
     }
     
     var body: some View {
-        List {
-            Section {
-                Text("Developer Mode is enabled for this account.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            } header: {
-                Text("Status")
-            }
+        ZStack {
+            // Background using theme gradient
+            themeManager.currentTheme.primaryGradient
+                .ignoresSafeArea()
             
-            Section("Bypass Options") {
+            List {
+                Section {
+                    Text("Developer Mode is enabled for this account.")
+                        .font(.system(size: 12, weight: .regular, design: .rounded))
+                        .foregroundColor(.secondary)
+                } header: {
+                    Text("Status")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                }
+            
+            Section {
                 Toggle("Bypass All Limits", isOn: $developerService.bypassLimits)
                     .onChange(of: developerService.bypassLimits) { _, newValue in
                         developerService.saveDeveloperPreferences()
@@ -44,9 +51,12 @@ struct DeveloperModeView: View {
                     .onChange(of: developerService.unlimitedTasks) { _, newValue in
                         developerService.saveDeveloperPreferences()
                     }
+            } header: {
+                Text("Bypass Options")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
             }
             
-            Section("Testing Options") {
+            Section {
                 Toggle("Set Max XP", isOn: $developerService.maxXP)
                     .onChange(of: developerService.maxXP) { _, newValue in
                         if newValue, let user = currentUser {
@@ -70,9 +80,12 @@ struct DeveloperModeView: View {
                         }
                         developerService.saveDeveloperPreferences()
                     }
+            } header: {
+                Text("Testing Options")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
             }
             
-            Section("Quick Actions") {
+            Section {
                 Button(action: {
                     if let user = currentUser {
                         applyMaxXP(to: user)
@@ -81,6 +94,7 @@ struct DeveloperModeView: View {
                     }
                 }) {
                     Label("Set All Max Values", systemImage: "sparkles")
+                        .font(.system(size: 16, weight: .regular, design: .rounded))
                 }
                 
                 Button(action: {
@@ -89,17 +103,22 @@ struct DeveloperModeView: View {
                     }
                 }) {
                     Label("Reset to Normal", systemImage: "arrow.counterclockwise")
+                        .font(.system(size: 16, weight: .regular, design: .rounded))
                         .foregroundColor(.red)
                 }
+            } header: {
+                Text("Quick Actions")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
             }
             
-            Section("Level Progression Testing") {
+            Section {
                 Button(action: {
                     if let user = currentUser {
                         testLevelProgression(user: user)
                     }
                 }) {
                     Label("Test Level Up Animation", systemImage: "arrow.up.circle.fill")
+                        .font(.system(size: 16, weight: .regular, design: .rounded))
                         .foregroundColor(.blue)
                 }
                 
@@ -109,47 +128,56 @@ struct DeveloperModeView: View {
                     }
                 }) {
                     Label("Add XP to Trigger Level Up", systemImage: "plus.circle.fill")
+                        .font(.system(size: 16, weight: .regular, design: .rounded))
                         .foregroundColor(.green)
                 }
                 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Current Level: \(currentUser?.level ?? 0)")
-                        .font(.caption)
+                        .font(.system(size: 12, weight: .regular, design: .rounded))
                         .foregroundColor(.secondary)
                     
                     Text("Current XP: \(currentUser?.currentXP ?? 0)")
-                        .font(.caption)
+                        .font(.system(size: 12, weight: .regular, design: .rounded))
                         .foregroundColor(.secondary)
                     
                     if let user = currentUser {
                         let nextLevelXP = LevelService.xpForLevel(user.level + 1)
-                        let currentLevelXP = LevelService.xpForLevel(user.level)
                         let xpNeeded = nextLevelXP - user.currentXP
                         
                         Text("XP Needed for Next Level: \(xpNeeded)")
-                            .font(.caption)
+                            .font(.system(size: 12, weight: .regular, design: .rounded))
                             .foregroundColor(.secondary)
                     }
                 }
                 .padding(.vertical, 4)
+            } header: {
+                Text("Level Progression Testing")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
             }
             
-            Section("Account Info") {
+            Section {
                 if let firebaseUser = Auth.auth().currentUser {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Email: \(firebaseUser.email ?? "N/A")")
-                            .font(.caption)
+                            .font(.system(size: 12, weight: .regular, design: .rounded))
                             .foregroundColor(.secondary)
                         
                         Text("UID: \(firebaseUser.uid)")
-                            .font(.caption)
+                            .font(.system(size: 12, weight: .regular, design: .rounded))
                             .foregroundColor(.secondary)
                     }
                 }
+            } header: {
+                Text("Account Info")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
             }
+            }
+            .scrollContentBackground(.hidden)
+            .listStyle(.insetGrouped)
+            .navigationTitle("Developer Mode")
+            .navigationBarTitleDisplayMode(.inline)
         }
-        .navigationTitle("Developer Mode")
-        .navigationBarTitleDisplayMode(.inline)
     }
     
     // MARK: - Helper Methods

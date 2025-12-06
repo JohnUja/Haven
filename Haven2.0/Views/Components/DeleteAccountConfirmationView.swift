@@ -13,6 +13,13 @@ struct DeleteAccountConfirmationView: View {
     @Binding var confirmationText: String
     let onConfirm: () -> Void
     let onCancel: () -> Void
+    @Environment(ThemeManager.self) private var themeManager
+    
+    private var isValid: Bool {
+        let normalizedConfirmation = confirmationText.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedUsername = username.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        return !normalizedConfirmation.isEmpty && normalizedConfirmation == normalizedUsername
+    }
     
     var body: some View {
         NavigationView {
@@ -42,10 +49,13 @@ struct DeleteAccountConfirmationView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                     
-                    TextField("Enter username", text: $confirmationText)
-                        .textFieldStyle(.roundedBorder)
-                        .autocapitalization(.none)
-                        .autocorrectionDisabled()
+                    transparentTextField(
+                        placeholder: "Enter username",
+                        text: $confirmationText,
+                        theme: themeManager.currentTheme
+                    )
+                    .autocapitalization(.none)
+                    .autocorrectionDisabled()
                 }
                 .padding(.horizontal, 24)
                 
@@ -67,10 +77,10 @@ struct DeleteAccountConfirmationView: View {
                             .padding(.vertical, 14)
                             .background(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .fill(confirmationText.lowercased() == username.lowercased() ? Color.red : Color.gray)
+                                    .fill(isValid ? Color.red : Color.gray)
                             )
                     }
-                    .disabled(confirmationText.lowercased() != username.lowercased())
+                    .disabled(!isValid)
                     
                     Button(action: onCancel) {
                         Text("Cancel")

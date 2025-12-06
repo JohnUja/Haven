@@ -11,6 +11,7 @@ import SwiftData
 struct GoalsDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(ThemeManager.self) private var themeManager
     let goal: Goal
     @Query private var tasks: [Task]
     @Query private var journalEntries: [JournalEntry]
@@ -33,13 +34,22 @@ struct GoalsDetailView: View {
     }
     
     var body: some View {
-        List {
-            headerSection
-            descriptionSection
-            milestonesSection
-            linkedTasksSection
-            missedTasksSection
-            journalEntriesSection
+        ZStack {
+            // Background matching home screen style
+            themeManager.currentTheme.primaryGradient
+                .opacity(0.1)
+                .ignoresSafeArea()
+            
+            List {
+                headerSection
+                descriptionSection
+                milestonesSection
+                linkedTasksSection
+                missedTasksSection
+                journalEntriesSection
+            }
+            .scrollContentBackground(.hidden)
+            .listStyle(.insetGrouped)
         }
         .navigationTitle("Goal Detail")
         .navigationBarTitleDisplayMode(.inline)
@@ -138,19 +148,19 @@ struct GoalsDetailView: View {
                             .foregroundColor(goal.category.color())
                             .font(.caption)
                         Text(goal.category.displayName)
-                            .font(.caption)
+                            .font(.system(size: 12, weight: .regular, design: .rounded))
                             .foregroundColor(.secondary)
                     }
                     .padding(.bottom, 2)
                     
                     HStack(spacing: 8) {
                         Image(systemName: goal.category.icon).foregroundColor(goal.category.color())
-                        Text(goal.title).font(.headline)
+                        Text(goal.title).font(.system(size: 18, weight: .semibold, design: .rounded))
                     }
-                    Text(statusSubtitle(for: goal)).font(.caption).foregroundColor(.secondary)
+                    Text(statusSubtitle(for: goal)).font(.system(size: 12, weight: .regular, design: .rounded)).foregroundColor(.secondary)
                     HStack(spacing: 8) {
-                        if let start = Optional(goal.startDate) { Text(start, style: .date).font(.caption).foregroundColor(.secondary) }
-                        if let end = goal.deadline { Text("→").font(.caption).foregroundColor(.secondary); Text(end, style: .date).font(.caption).foregroundColor(.secondary) }
+                        if let start = Optional(goal.startDate) { Text(start, style: .date).font(.system(size: 12, weight: .regular, design: .rounded)).foregroundColor(.secondary) }
+                        if let end = goal.deadline { Text("→").font(.system(size: 12, weight: .regular, design: .rounded)).foregroundColor(.secondary); Text(end, style: .date).font(.system(size: 12, weight: .regular, design: .rounded)).foregroundColor(.secondary) }
                     }
                 }
             }
@@ -158,24 +168,35 @@ struct GoalsDetailView: View {
     }
     
     private var descriptionSection: some View {
-        Section("About") {
+        Section {
             if let desc = goal.goalDescription, !desc.isEmpty {
                 Text(desc)
+                    .font(.system(size: 16, weight: .regular, design: .rounded))
             } else {
-                Text("No description").foregroundColor(.secondary)
+                Text("No description")
+                    .font(.system(size: 16, weight: .regular, design: .rounded))
+                    .foregroundColor(.secondary)
             }
+        } header: {
+            Text("About")
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
         }
     }
     
     private var milestonesSection: some View {
-        Section("Milestones") {
+        Section {
             if goal.milestones.isEmpty {
-                Text("No milestones").foregroundColor(.secondary)
+                Text("No milestones")
+                    .font(.system(size: 16, weight: .regular, design: .rounded))
+                    .foregroundColor(.secondary)
             } else {
                 ForEach(goal.milestones, id: \.id) { milestone in
                     milestoneCard(milestone)
                 }
             }
+        } header: {
+            Text("Milestones")
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
         }
     }
     
@@ -185,8 +206,7 @@ struct GoalsDetailView: View {
             // Milestone header
             HStack {
                 Text(milestone.title)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
                 Spacer()
                 if let d = milestone.deadline {
                     Text(d, style: .date)
@@ -209,7 +229,7 @@ struct GoalsDetailView: View {
                         Image(systemName: "plus.circle")
                         Text("Add Task")
                     }
-                    .font(.caption)
+                    .font(.system(size: 12, weight: .regular, design: .rounded))
                     .foregroundColor(.blue)
                 }
             } else {
@@ -249,19 +269,19 @@ struct GoalsDetailView: View {
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(task.title)
+                    .font(.system(size: 16, weight: .regular, design: .rounded))
                     .strikethrough(task.isComplete)
                     .foregroundColor(task.isComplete ? .secondary : .primary)
                 
                 HStack(spacing: 4) {
                     Text(task.startTime, style: .time)
-                        .font(.caption2)
+                        .font(.system(size: 11, weight: .regular, design: .rounded))
                         .foregroundColor(.secondary)
                     
                     // Show "Late" badge for missed tasks
                     if !task.isComplete && task.endTime < Date() {
                         Text("Late")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
                             .foregroundColor(.orange)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -462,8 +482,11 @@ private struct GoalMilestoneDraft: Identifiable {
 struct EditGoalInlineView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(ThemeManager.self) private var themeManager
     let goal: Goal
     @Query private var allTasks: [Task]
+    
+    // State Variables
     @State private var title: String
     @State private var descriptionText: String
     @State private var category: GoalCategory
@@ -492,6 +515,7 @@ struct EditGoalInlineView: View {
         _endDate = State(initialValue: goal.deadline ?? Date())
         _status = State(initialValue: goal.status)
         _hasMilestones = State(initialValue: !goal.milestones.isEmpty)
+        
         _milestonesDraft = State(initialValue: goal.milestones.map {
             GoalMilestoneDraft(
                 id: $0.id,
@@ -500,6 +524,7 @@ struct EditGoalInlineView: View {
                 deadline: $0.deadline ?? Date()
             )
         })
+        
         let gid = goal.id
         _allTasks = Query(filter: #Predicate<Task> { task in
             task.goalID == gid
@@ -508,131 +533,31 @@ struct EditGoalInlineView: View {
     
     var body: some View {
         NavigationView {
-            Form {
-                Section("Basics") {
-                    TextField("Title", text: $title)
-                    TextEditor(text: $descriptionText).frame(minHeight: 80)
-                    Picker("Category", selection: $category) {
-                        ForEach(GoalCategory.allCases, id: \.self) { c in
-                            HStack { Image(systemName: c.icon); Text(c.displayName) }.tag(c)
-                        }
-                    }
-                    Picker("Priority", selection: $priority) {
-                        ForEach(GoalPriority.allCases, id: \.self) { p in
-                            HStack {
-                                Circle().fill(p.color).frame(width: 12, height: 12)
-                                Text(p.rawValue)
-                            }.tag(p)
-                        }
-                    }
-                }
-                Section("Timing") {
-                    DatePicker("Start Date", selection: $startDate, displayedComponents: [.date])
-                    Toggle("Set End Date", isOn: $hasEndDate)
-                    if hasEndDate { DatePicker("End Date", selection: $endDate, displayedComponents: [.date]) }
-                }
-                Section("Status") {
-                    // Only allow pause/resume - completed and atRisk are auto-calculated
-                    if goal.status == .paused {
-                        Button("Resume Goal") {
-                            status = .active
-                        }
-                    } else {
-                        Button("Pause Goal") {
-                            status = .paused
-                        }
-                    }
-                }
+            ZStack {
+                // Background
+                LinearGradient(
+                    colors: [
+                        Color.purple.opacity(0.8),
+                        Color.blue.opacity(0.6),
+                        Color.pink.opacity(0.4)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
                 
-                Section("Structure") {
-                    Toggle("Use Milestones", isOn: $hasMilestones)
-                        .onChange(of: hasMilestones) { _, newValue in
-                            if newValue {
-                                // When toggling back on, restore milestones from goal if draft is empty but goal has milestones
-                                if milestonesDraft.isEmpty && !goal.milestones.isEmpty {
-                                    milestonesDraft = goal.milestones.map {
-                                        GoalMilestoneDraft(
-                                            id: $0.id,
-                                            title: $0.title,
-                                            hasDeadline: $0.deadline != nil,
-                                            deadline: $0.deadline ?? Date()
-                                        )
-                                    }
-                                } else if milestonesDraft.isEmpty {
-                                    // Only add new milestone if no existing ones
-                                    milestonesDraft.append(GoalMilestoneDraft())
-                                }
-                            }
-                            // Don't clear milestones when toggled off - preserve them for when user toggles back on
-                        }
-                }
-                
-                if hasMilestones {
-                    Section(header: Text("Milestones")) {
-                        ForEach($milestonesDraft) { $milestone in
-                            milestoneEditor($milestone)
-                                .swipeActions {
-                                    Button(role: .destructive) {
-                                        if let index = milestonesDraft.firstIndex(where: { $0.id == milestone.id }) {
-                                            milestonesDraft.remove(at: index)
-                                        }
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                }
-                        }
-                        .onDelete { indexSet in
-                            milestonesDraft.remove(atOffsets: indexSet)
-                        }
-                        
-                        Button("Add Milestone") {
-                            milestonesDraft.append(GoalMilestoneDraft())
-                        }
-                    }
+                Form {
+                    basicsSection
+                    timingSection
+                    statusSection
+                    structureSection
                     
-                    // Tasks linked to milestones
-                    Section(header: Text("Linked Tasks")) {
-                        ForEach(milestonesDraft) { milestone in
-                            let milestoneTasks = goalTasks.filter { $0.milestoneID == milestone.id }
-                            DisclosureGroup("\(milestone.title) (\(milestoneTasks.count) tasks)") {
-                                if milestoneTasks.isEmpty {
-                                    Button("Link Task to \(milestone.title)") {
-                                        showingAddTaskToMilestone = milestone.id
-                                    }
-                                    .font(.caption)
-                                    .foregroundColor(.blue)
-                                } else {
-                                    ForEach(milestoneTasks, id: \.id) { task in
-                                        HStack {
-                                            Text(task.title)
-                                                .font(.caption)
-                                            Spacer()
-                                            if task.isComplete {
-                                                Image(systemName: "checkmark.circle.fill")
-                                                    .foregroundColor(.green)
-                                                    .font(.caption2)
-                                            }
-                                        }
-                                        .swipeActions {
-                                            Button(role: .destructive) {
-                                                task.milestoneID = nil
-                                                try? modelContext.save()
-                                                GoalProgressUpdater.syncTargetValue(for: goal, context: modelContext)
-                                            } label: {
-                                                Label("Unlink", systemImage: "link.badge.minus")
-                                            }
-                                        }
-                                    }
-                                    Button("Link More Tasks") {
-                                        showingAddTaskToMilestone = milestone.id
-                                    }
-                                    .font(.caption)
-                                    .foregroundColor(.blue)
-                                }
-                            }
-                        }
+                    if hasMilestones {
+                        milestonesListSection
+                        linkedTasksSection
                     }
                 }
+                .scrollContentBackground(.hidden)
             }
             .navigationTitle("Edit Goal")
             .toolbar {
@@ -656,13 +581,149 @@ struct EditGoalInlineView: View {
                 Text("All milestones must have a title.")
             }
         }
+    } // <--- THIS WAS THE MISSING BRACE causing your "private attribute" errors
+    
+    // MARK: - Sub-Views (Extracted to fix Compiler Timeout)
+    
+    private var basicsSection: some View {
+        Section("Basics") {
+            transparentTextField(
+                placeholder: "Title",
+                text: $title,
+                theme: themeManager.currentTheme
+            )
+            transparentTextEditor(
+                text: $descriptionText,
+                theme: themeManager.currentTheme,
+                placeholder: "Description",
+                minHeight: 80
+            )
+            Picker("Category", selection: $category) {
+                ForEach(GoalCategory.allCases, id: \.self) { c in
+                    HStack { Image(systemName: c.icon); Text(c.displayName) }.tag(c)
+                }
+            }
+            Picker("Priority", selection: $priority) {
+                ForEach(GoalPriority.allCases, id: \.self) { p in
+                    HStack {
+                        Circle().fill(p.color).frame(width: 12, height: 12)
+                        Text(p.rawValue)
+                    }.tag(p)
+                }
+            }
+        }
+    }
+    
+    private var timingSection: some View {
+        Section("Timing") {
+            DatePicker("Start Date", selection: $startDate, displayedComponents: [.date])
+            Toggle("Set End Date", isOn: $hasEndDate)
+            if hasEndDate { DatePicker("End Date", selection: $endDate, displayedComponents: [.date]) }
+        }
+    }
+    
+    private var statusSection: some View {
+        Section("Status") {
+            if goal.status == .paused {
+                Button("Resume Goal") { status = .active }
+            } else {
+                Button("Pause Goal") { status = .paused }
+            }
+        }
+    }
+    
+    private var structureSection: some View {
+        Section("Structure") {
+            Toggle("Use Milestones", isOn: $hasMilestones)
+                .onChange(of: hasMilestones) { _, newValue in
+                    if newValue {
+                        if milestonesDraft.isEmpty && !goal.milestones.isEmpty {
+                            milestonesDraft = goal.milestones.map {
+                                GoalMilestoneDraft(id: $0.id, title: $0.title, hasDeadline: $0.deadline != nil, deadline: $0.deadline ?? Date())
+                            }
+                        } else if milestonesDraft.isEmpty {
+                            milestonesDraft.append(GoalMilestoneDraft())
+                        }
+                    }
+                }
+        }
+    }
+    
+    private var milestonesListSection: some View {
+        Section(header: Text("Milestones")) {
+            ForEach($milestonesDraft) { $milestone in
+                milestoneEditor($milestone)
+                    .swipeActions {
+                        Button(role: .destructive) {
+                            if let index = milestonesDraft.firstIndex(where: { $0.id == milestone.id }) {
+                                milestonesDraft.remove(at: index)
+                            }
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+            }
+            .onDelete { indexSet in
+                milestonesDraft.remove(atOffsets: indexSet)
+            }
+            
+            Button("Add Milestone") {
+                milestonesDraft.append(GoalMilestoneDraft())
+            }
+        }
+    }
+    
+    private var linkedTasksSection: some View {
+        Section(header: Text("Linked Tasks")) {
+            ForEach(milestonesDraft) { milestone in
+                let milestoneTasks = goalTasks.filter { $0.milestoneID == milestone.id }
+                DisclosureGroup("\(milestone.title) (\(milestoneTasks.count) tasks)") {
+                    if milestoneTasks.isEmpty {
+                        Button("Link Task to \(milestone.title)") {
+                            showingAddTaskToMilestone = milestone.id
+                        }
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                    } else {
+                        ForEach(milestoneTasks, id: \.id) { task in
+                            HStack {
+                                Text(task.title).font(.caption)
+                                Spacer()
+                                if task.isComplete {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.green)
+                                        .font(.caption2)
+                                }
+                            }
+                            .swipeActions {
+                                Button(role: .destructive) {
+                                    task.milestoneID = nil
+                                    try? modelContext.save()
+                                    GoalProgressUpdater.syncTargetValue(for: goal, context: modelContext)
+                                } label: {
+                                    Label("Unlink", systemImage: "link.badge.minus")
+                                }
+                            }
+                        }
+                        Button("Link More Tasks") {
+                            showingAddTaskToMilestone = milestone.id
+                        }
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                    }
+                }
+            }
+        }
     }
     
     @ViewBuilder
     private func milestoneEditor(_ milestone: Binding<GoalMilestoneDraft>) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            TextField("Milestone title *", text: milestone.title)
-                .font(.headline)
+            transparentTextField(
+                placeholder: "Milestone title *",
+                text: milestone.title,
+                theme: themeManager.currentTheme
+            )
             
             Text("Target tasks will be auto-calculated when tasks are added to this milestone")
                 .font(.caption)
@@ -677,7 +738,6 @@ struct EditGoalInlineView: View {
     }
     
     private func save() {
-        // Validate milestone names (required if milestones exist)
         if hasMilestones {
             let invalidMilestones = milestonesDraft.filter { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             if !invalidMilestones.isEmpty {
@@ -693,33 +753,24 @@ struct EditGoalInlineView: View {
         goal.startDate = startDate
         goal.deadline = hasEndDate ? endDate : nil
         goal.status = status
-        // Don't allow manual status changes to completed/atRisk - only pause/resume
         
-        // Update milestones
-        // First, find existing milestones to preserve IDs
+        // Milestone Logic
         let existingMilestoneIDs = Set(goal.milestones.map { $0.id })
         let draftMilestoneIDs = Set(milestonesDraft.map { $0.id })
         
-        // Remove deleted milestones
         let toDelete = existingMilestoneIDs.subtracting(draftMilestoneIDs)
         goal.milestones.removeAll { toDelete.contains($0.id) }
         
-        // Unlink tasks from deleted milestones
         for deletedID in toDelete {
             let tasksToUnlink = goalTasks.filter { $0.milestoneID == deletedID }
-            for task in tasksToUnlink {
-                task.milestoneID = nil
-            }
+            for task in tasksToUnlink { task.milestoneID = nil }
         }
         
-        // Update or add milestones
         for draft in milestonesDraft {
             if let existing = goal.milestones.first(where: { $0.id == draft.id }) {
-                // Update existing milestone
                 existing.title = draft.title
                 existing.deadline = draft.hasDeadline ? draft.deadline : nil
             } else {
-                // Add new milestone - insert into context first
                 let newMilestone = GoalMilestone(
                     id: draft.id,
                     title: draft.title,
@@ -732,9 +783,7 @@ struct EditGoalInlineView: View {
             }
         }
         
-        // Sync target value after milestone changes
         GoalProgressUpdater.syncTargetValue(for: goal, context: modelContext)
-        
         try? modelContext.save()
         dismiss()
     }

@@ -20,6 +20,8 @@ enum PermissionStatus {
 
 @MainActor
 class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+    static let shared = PermissionManager()
+    
     @Published var cameraStatus: PermissionStatus = .notDetermined
     @Published var locationStatus: PermissionStatus = .notDetermined
     

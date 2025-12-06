@@ -11,6 +11,7 @@ import SwiftData
 struct AddBlockView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(ThemeManager.self) private var themeManager
     @Query private var users: [User]
     
     let selectedDate: Date
@@ -37,101 +38,172 @@ struct AddBlockView: View {
     }
     
     var body: some View {
-        NavigationView {
-            Form {
-                Section("Block Details") {
-                    TextField("Block name (e.g., Go to Work)", text: $blockTitle)
-                    
-                    TextField("Description (optional)", text: $blockDescription, axis: .vertical)
-                        .lineLimit(2...4)
-                }
+        let theme = themeManager.currentTheme
+        
+        return NavigationView {
+            ZStack {
+                // Background using theme gradient
+                theme.primaryGradient
+                    .ignoresSafeArea()
                 
-                Section("Time") {
-                    NumericTimeInput(time: $startTime, title: "Start time")
-                    NumericTimeInput(time: $endTime, title: "End time")
-                }
-                
-                Section("Color") {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
-                        ForEach(availableColors, id: \.self) { color in
-                            Button(action: { selectedColor = color }) {
-                                Circle()
-                                    .fill(colorFromString(color))
-                                    .frame(width: 30, height: 30)
-                                    .overlay(
-                                        Circle()
-                                            .stroke(selectedColor == color ? .white : .clear, lineWidth: 3)
-                                    )
-                                    .overlay(
-                                        Circle()
-                                            .stroke(.gray, lineWidth: 1)
-                                    )
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                        }
-                    }
-                }
-                
-                Section("Priority & Settings") {
-                    Picker("Priority", selection: $selectedPriority) {
-                        ForEach(PriorityType.allCases, id: \.self) { p in
-                            Text(p.rawValue.capitalized).tag(p)
-                        }
-                    }
-                    Toggle("Lock block", isOn: Binding(
-                        get: { isLocked },
-                        set: { newValue in
-                            if isRecurring {
-                                pendingLockValue = newValue
-                                showLockScopeDialog = true
-                            } else {
-                                isLocked = newValue
+                ScrollView {
+                    VStack(spacing: 24) {
+                        // Block Details Section
+                        sectionView(title: "BLOCK DETAILS", theme: theme) {
+                            VStack(spacing: 16) {
+                                transparentTextField(
+                                    placeholder: "Block name (e.g., Go to Work)",
+                                    text: $blockTitle,
+                                    theme: theme
+                                )
+                                
+                                transparentTextField(
+                                    placeholder: "Description (optional)",
+                                    text: $blockDescription,
+                                    theme: theme,
+                                    axis: .vertical,
+                                    lineLimit: 2...4
+                                )
                             }
                         }
-                    ))
-                }
+                        
+                        // Time Section
+                        sectionView(title: "TIME", theme: theme) {
+                            VStack(spacing: 16) {
+                                NumericTimeInput(time: $startTime, title: "Start time")
+                                NumericTimeInput(time: $endTime, title: "End time")
+                            }
+                            .padding(.horizontal, theme.cardPadding)
+                            .padding(.vertical, theme.cardVerticalPadding)
+                            .background(transparentInputBackground(theme: theme))
+                            .cornerRadius(theme.smallCornerRadius)
+                        }
+                        
+                        // Color Section
+                        sectionView(title: "COLOR", theme: theme) {
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
+                                ForEach(availableColors, id: \.self) { color in
+                                    Button(action: { selectedColor = color }) {
+                                        Circle()
+                                            .fill(colorFromString(color))
+                                            .frame(width: 30, height: 30)
+                                            .overlay(
+                                                Circle()
+                                                    .stroke(selectedColor == color ? theme.textPrimary : .clear, lineWidth: 3)
+                                            )
+                                            .overlay(
+                                                Circle()
+                                                    .stroke(theme.glassBorder.opacity(0.5), lineWidth: 1)
+                                            )
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                }
+                            }
+                            .padding(.horizontal, theme.cardPadding)
+                            .padding(.vertical, theme.cardVerticalPadding)
+                            .background(transparentInputBackground(theme: theme))
+                            .cornerRadius(theme.smallCornerRadius)
+                        }
+                        
+                        // Priority & Settings Section
+                        sectionView(title: "PRIORITY & SETTINGS", theme: theme) {
+                            VStack(spacing: 16) {
+                                Picker("Priority", selection: $selectedPriority) {
+                                    ForEach(PriorityType.allCases, id: \.self) { p in
+                                        Text(p.rawValue.capitalized).tag(p)
+                                    }
+                                }
+                                .tint(theme.accentColor)
+                                
+                                Toggle("Lock block", isOn: Binding(
+                                    get: { isLocked },
+                                    set: { newValue in
+                                        if isRecurring {
+                                            pendingLockValue = newValue
+                                            showLockScopeDialog = true
+                                        } else {
+                                            isLocked = newValue
+                                        }
+                                    }
+                                ))
+                                .foregroundColor(theme.textPrimary)
+                                .tint(theme.accentColor)
+                            }
+                            .padding(.horizontal, theme.cardPadding)
+                            .padding(.vertical, theme.cardVerticalPadding)
+                            .background(transparentInputBackground(theme: theme))
+                            .cornerRadius(theme.smallCornerRadius)
+                        }
 
-                Section("Recurrence") {
-                    Toggle("Make this a recurring block", isOn: $isRecurring)
-                    if isRecurring {
-                        Picker("Repeat", selection: $recurrenceType) {
-                            ForEach(RecurrenceType.allCases, id: \.self) { type in
-                                Text(type.displayName).tag(type)
+                        // Recurrence Section
+                        sectionView(title: "RECURRENCE", theme: theme) {
+                            VStack(spacing: 16) {
+                                Toggle("Make this a recurring block", isOn: $isRecurring)
+                                    .foregroundColor(theme.textPrimary)
+                                    .tint(theme.accentColor)
+                                
+                                if isRecurring {
+                                    Picker("Repeat", selection: $recurrenceType) {
+                                        ForEach(RecurrenceType.allCases, id: \.self) { type in
+                                            Text(type.displayName).tag(type)
+                                        }
+                                    }
+                                    .pickerStyle(.segmented)
+                                    .tint(theme.accentColor)
+                                    
+                                    DatePicker("End date", selection: $recurrenceEndDate, displayedComponents: [.date])
+                                        .datePickerStyle(.compact)
+                                        .tint(theme.accentColor)
+                                }
                             }
+                            .padding(.horizontal, theme.cardPadding)
+                            .padding(.vertical, theme.cardVerticalPadding)
+                            .background(transparentInputBackground(theme: theme))
+                            .cornerRadius(theme.smallCornerRadius)
                         }
-                        .pickerStyle(.segmented)
-                        DatePicker("End date", selection: $recurrenceEndDate, displayedComponents: [.date])
-                            .datePickerStyle(.compact)
-                    }
-                }
-                
-                Section("Subtasks") {
-                    ForEach(0..<subtasks.count, id: \.self) { index in
-                        HStack {
-                            TextField("Subtask \(index + 1)", text: $subtasks[index])
-                            
-                            Button(action: {
-                                removeSubtask(at: index)
-                            }) {
-                                Image(systemName: "minus.circle.fill")
-                                    .font(.title3)
-                                    .foregroundColor(.red)
+                        
+                        // Subtasks Section
+                        sectionView(title: "SUBTASKS", theme: theme) {
+                            VStack(spacing: 12) {
+                                ForEach(0..<subtasks.count, id: \.self) { index in
+                                    HStack {
+                                        transparentTextField(
+                                            placeholder: "Subtask \(index + 1)",
+                                            text: $subtasks[index],
+                                            theme: theme
+                                        )
+                                        
+                                        Button(action: {
+                                            removeSubtask(at: index)
+                                        }) {
+                                            Image(systemName: "minus.circle.fill")
+                                                .font(.title3)
+                                                .foregroundColor(.red)
+                                        }
+                                        .disabled(subtasks.count <= 1)
+                                    }
+                                }
+                                
+                                Button(action: {
+                                    addSubtask()
+                                }) {
+                                    HStack {
+                                        Image(systemName: "plus.circle.fill")
+                                            .font(.title3)
+                                            .foregroundColor(theme.accentColor)
+                                        Text("Add Subtask")
+                                            .foregroundColor(theme.accentColor)
+                                    }
+                                }
                             }
-                            .disabled(subtasks.count <= 1)
+                            .padding(.horizontal, theme.cardPadding)
+                            .padding(.vertical, theme.cardVerticalPadding)
+                            .background(transparentInputBackground(theme: theme))
+                            .cornerRadius(theme.smallCornerRadius)
                         }
                     }
-                    
-                    Button(action: {
-                        addSubtask()
-                    }) {
-                        HStack {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.title3)
-                                .foregroundColor(.green)
-                            Text("Add Subtask")
-                                .foregroundColor(.green)
-                        }
-                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
                 }
             }
             .navigationTitle("Add Block")
@@ -141,6 +213,7 @@ struct AddBlockView: View {
                     Button("Cancel") {
                         dismiss()
                     }
+                    .foregroundColor(theme.textPrimary)
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -148,8 +221,10 @@ struct AddBlockView: View {
                         saveBlock()
                     }
                     .disabled(blockTitle.isEmpty)
+                    .foregroundColor(blockTitle.isEmpty ? theme.textSecondary : theme.accentColor)
                 }
             }
+            .toolbarBackground(theme.glassBackground.opacity(0.5), for: .navigationBar)
         }
         .confirmationDialog(
             isLocked ? "Unlock Scope" : "Lock Scope",
@@ -304,7 +379,7 @@ struct AddBlockView: View {
                 priority: selectedPriority,
                 category: .personal,
                 isComplete: false,
-                taskBlockID: block.id,
+                taskBlock: block,
                 recurrenceSeriesID: block.recurrenceSeriesID
             )
             if let applyToSeries = applyLockToSeries {
@@ -320,6 +395,19 @@ struct AddBlockView: View {
             modelContext.insert(t)
         }
     }
+    
+    // MARK: - Helper Views
+    private func sectionView<Content: View>(title: String, theme: any AppTheme, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold, design: .default))
+                .foregroundColor(theme.textPrimary.opacity(0.7))
+                .textCase(.uppercase)
+            
+            content()
+        }
+    }
+    
 }
 
 #Preview {

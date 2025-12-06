@@ -12,14 +12,16 @@ import FirebaseAuth
 import AuthenticationServices
 import GoogleSignIn
 import GameKit // <-- 1. IMPORT GAMEKIT
+import UIKit
 
 // --- 2. DELETED 'AuthError' and 'AuthProvider' ENUMS ---
 // They are now correctly defined in FirebaseAuthService.swift
 // --------------------------------------------------------
 
 struct FirebaseAuthenticationView: View {
-    @EnvironmentObject private var authService: FirebaseAuthService
+    @Environment(FirebaseAuthService.self) private var authService
     @Environment(\.modelContext) private var modelContext
+    @Environment(ThemeManager.self) private var themeManager
     @State private var showError = false
     @State private var showEmailSignUp = false
     @State private var email = ""
@@ -39,74 +41,87 @@ struct FirebaseAuthenticationView: View {
     
     var body: some View {
         ZStack {
-            // Gradient background
-            LinearGradient(
-                colors: [
-                    Color.purple.opacity(0.8),
-                    Color.pink.opacity(0.7),
-                    Color.blue.opacity(0.6)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            // Solid black background matching Dynaus reference
+            Color.black
+                .ignoresSafeArea()
             
             ScrollView {
-                VStack(spacing: 40) {
+                VStack(spacing: 24) {
                     Spacer()
-                        .frame(height: 40)
+                        .frame(height: 120) // Increased from 60 to move options lower
                         
-                    // App Logo/Icon
-                    VStack(spacing: 16) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 80))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [.white, .purple, .pink],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .shadow(color: .purple.opacity(0.5), radius: 20)
+                    // App Logo/Icon - matching reference image (three sparkles)
+                    VStack(spacing: 12) {
+                        HStack(spacing: 8) {
+                            // Two smaller purple sparkles
+                            Image(systemName: "sparkle")
+                                .font(.system(size: 24))
+                                .foregroundColor(.purple)
+                            
+                            Image(systemName: "sparkle")
+                                .font(.system(size: 24))
+                                .foregroundColor(.purple)
+                            
+                            // Larger pink sparkle
+                            Image(systemName: "sparkle")
+                                .font(.system(size: 40))
+                                .foregroundColor(.pink)
+                        }
                         
-                        Text("Haven 2.0")
-                            .font(.system(size: 42, weight: .bold, design: .rounded))
+                        // App name with Montserrat font, white text
+                        Text("Haven")
+                            .font(AppStyleSheet.font(for: .pageHeader))
                             .foregroundColor(.white)
                         
+                        // Tagline with Montserrat font, white text
                         Text("Your personal productivity haven")
-                            .font(.subheadline)
+                            .font(AppStyleSheet.font(for: .body))
                             .foregroundColor(.white.opacity(0.8))
                     }
                     
                     if showEmailSignUp {
-                        // Email/Password Sign Up Form
+                        // Email/Password Sign Up Form (username removed - will be in onboarding)
                         VStack(spacing: 16) {
-                            if isSignUp {
-                                TextField("Display Name (Optional)", text: $displayName)
-                                    .textFieldStyle(.roundedBorder)
-                                    .autocapitalization(.words)
-                                    .padding(.horizontal, 20)
-                            }
+                            transparentTextField(
+                                placeholder: "Email",
+                                text: $email,
+                                theme: themeManager.currentTheme
+                            )
+                            .keyboardType(.emailAddress)
+                            .autocapitalization(.none)
+                            .autocorrectionDisabled()
+                            .padding(.horizontal, 20)
                             
-                            TextField("Email", text: $email)
-                                .textFieldStyle(.roundedBorder)
-                                .keyboardType(.emailAddress)
-                                .autocapitalization(.none)
-                                .autocorrectionDisabled()
-                                .padding(.horizontal, 20)
-                            
-                            SecureField("Password", text: $password)
-                                .textFieldStyle(.roundedBorder)
-                                .padding(.horizontal, 20)
+                            transparentSecureField(
+                                placeholder: "Password",
+                                text: $password,
+                                theme: themeManager.currentTheme
+                            )
+                            .padding(.horizontal, 20)
                             
                             Button(action: {
                                 _Concurrency.Task {
                                     await handleEmailAuth()
                                 }
                             }) {
+                                // Button text with dark outline
+                                ZStack {
+                                    // Outline layer
+                                    ForEach([-1, 0, 1], id: \.self) { x in
+                                        ForEach([-1, 0, 1], id: \.self) { y in
+                                            if x != 0 || y != 0 {
+                                                Text(isSignUp ? "Sign Up" : "Sign In")
+                                                    .font(.system(size: 18, weight: .semibold, design: .rounded)) // Increased from 17
+                                                    .foregroundColor(.black.opacity(0.3))
+                                                    .offset(x: CGFloat(x), y: CGFloat(y))
+                                            }
+                                        }
+                                    }
+                                    // Main text
                                 Text(isSignUp ? "Sign Up" : "Sign In")
-                                    .font(.system(size: 17, weight: .semibold))
+                                        .font(.system(size: 18, weight: .semibold, design: .rounded)) // Increased from 17
                                     .foregroundColor(.white)
+                                }
                                     .frame(maxWidth: .infinity)
                                     .frame(height: 55)
                                     .background(Color.purple)
@@ -117,66 +132,120 @@ struct FirebaseAuthenticationView: View {
                                     )
                             }
                             .padding(.horizontal, 20)
-                            .disabled(email.isEmpty || password.isEmpty || (isSignUp && displayName.isEmpty && password.count < 6))
-                            .opacity((email.isEmpty || password.isEmpty || (isSignUp && displayName.isEmpty && password.count < 6)) ? 0.6 : 1.0)
+                            .disabled(email.isEmpty || password.isEmpty || password.count < 6)
+                            .opacity((email.isEmpty || password.isEmpty || password.count < 6) ? 0.6 : 1.0)
                             
                             Button(action: {
                                 isSignUp.toggle()
                             }) {
+                                // Text with dark outline
+                                ZStack {
+                                    // Outline layer
+                                    ForEach([-1, 0, 1], id: \.self) { x in
+                                        ForEach([-1, 0, 1], id: \.self) { y in
+                                            if x != 0 || y != 0 {
+                                                Text(isSignUp ? "Already have an account? Sign In" : "Don't have an account? Sign Up")
+                                                    .font(.system(size: 15, weight: .regular, design: .rounded)) // Increased from subheadline
+                                                    .foregroundColor(.black.opacity(0.2))
+                                                    .offset(x: CGFloat(x), y: CGFloat(y))
+                                            }
+                                        }
+                                    }
+                                    // Main text
                                 Text(isSignUp ? "Already have an account? Sign In" : "Don't have an account? Sign Up")
-                                    .font(.subheadline)
+                                        .font(.system(size: 15, weight: .regular, design: .rounded)) // Increased from subheadline
                                     .foregroundColor(.white.opacity(0.9))
+                                }
                             }
                             
                             Button(action: {
                                 showEmailSignUp = false
                             }) {
+                                // Text with dark outline
+                                ZStack {
+                                    // Outline layer
+                                    ForEach([-1, 0, 1], id: \.self) { x in
+                                        ForEach([-1, 0, 1], id: \.self) { y in
+                                            if x != 0 || y != 0 {
+                                                Text("Back to Sign In Options")
+                                                    .font(.system(size: 13, weight: .regular, design: .rounded)) // Increased from caption
+                                                    .foregroundColor(.black.opacity(0.2))
+                                                    .offset(x: CGFloat(x), y: CGFloat(y))
+                                            }
+                                        }
+                                    }
+                                    // Main text
                                 Text("Back to Sign In Options")
-                                    .font(.caption)
+                                        .font(.system(size: 13, weight: .regular, design: .rounded)) // Increased from caption
                                     .foregroundColor(.white.opacity(0.7))
+                                }
                             }
                         }
                         .padding(.horizontal, 40)
                     } else {
-                        // Sign-in Options - All buttons with consistent styling
-                        VStack(spacing: 20) {
+                        // Sign-in Options - Custom buttons, smaller, consistent styling
+                        VStack(spacing: 12) {
                             
-                            // Apple Sign-In - Official Button (dedicated Apple button)
+                            // Apple Sign-In - White button with black text
                             SignInWithAppleButton(
                                 .signIn,
                                 onRequest: { request in
-                                    // Create the nonce
                                     let rawNonce = FirebaseAuthService.randomNonceString()
                                     currentAppleNonce = rawNonce
-                                    
-                                    // Set the nonce on the request
                                     request.requestedScopes = [.fullName, .email]
                                     request.nonce = FirebaseAuthService.sha256(rawNonce)
-                                    print("Apple Sign-In: Nonce generated and set")
                                 },
                                 onCompletion: { result in
-                                    // Handle the result
                                     _Concurrency.Task {
                                         await handleAppleSignIn(result: result)
                                     }
                                 }
                             )
                             .signInWithAppleButtonStyle(.white)
-                            .frame(height: 55)
+                            .frame(height: 50)
                             .frame(maxWidth: .infinity)
                             .cornerRadius(12)
+                            .padding(.horizontal, 40)
                             
-                            // Google Sign-In - Official Button (matching style)
-                            GoogleSignInButton(action: {
+                            // Google Sign-In - Dark grey button with white text
+                            Button(action: {
                                 _Concurrency.Task {
                                     await handleGoogleSignIn()
                                 }
-                            })
-                            .frame(height: 55)
-                            .frame(maxWidth: .infinity)
-                            .cornerRadius(12)
+                            }) {
+                                HStack(spacing: 12) {
+                                    // Google G icon
+                                    ZStack {
+                                        Circle()
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: [Color.red, Color.blue, Color.yellow, Color.green],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                )
+                                            )
+                                            .frame(width: 20, height: 20)
+                                        
+                                        Text("G")
+                                            .font(.system(size: 12, weight: .bold))
+                                            .foregroundColor(.white)
+                                    }
+                                    
+                                    Text("Continue with Google")
+                                        .font(AppStyleSheet.font(for: .body))
+                                        .foregroundColor(.white)
+                                    
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 16)
+                                .frame(height: 50)
+                                .frame(maxWidth: .infinity)
+                                .background(Color.gray.opacity(0.3))
+                                .cornerRadius(12)
+                            }
+                            .padding(.horizontal, 40)
                             
-                            // Game Center - Matching style button
+                            // Game Center - Dark grey button with white text
                             Button(action: {
                                 _Concurrency.Task {
                                     await handleGameCenterSignIn()
@@ -184,80 +253,62 @@ struct FirebaseAuthenticationView: View {
                             }) {
                                 HStack(spacing: 12) {
                                     // Game Center Logo
-                                    ZStack {
-                                        Circle()
-                                            .fill(
-                                                LinearGradient(
-                                                    colors: [Color.green.opacity(0.2), Color.blue.opacity(0.1)],
-                                                    startPoint: .topLeading,
-                                                    endPoint: .bottomTrailing
-                                                )
-                                            )
-                                            .frame(width: 24, height: 24)
-                                        
-                                        Image(systemName: "gamecontroller.fill")
-                                            .font(.system(size: 12, weight: .semibold))
-                                            .foregroundColor(.green)
-                                    }
+                                    Image(systemName: "gamecontroller.fill")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.green)
                                     
                                     Text("Continue with Game Center")
-                                        .font(.system(size: 17, weight: .semibold))
-                                        .foregroundColor(.primary)
+                                        .font(AppStyleSheet.font(for: .body))
+                                        .foregroundColor(.white)
                                     
                                     Spacer()
                                 }
                                 .padding(.horizontal, 16)
-                                .frame(height: 55)
+                                .frame(height: 50)
                                 .frame(maxWidth: .infinity)
-                                .background(Color.white)
+                                .background(Color.gray.opacity(0.3))
                                 .cornerRadius(12)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                                )
                             }
+                            .padding(.horizontal, 40)
                             
-                            // Email/Password option - Matching style
+                            // Email/Password option - Dark grey button with white text
                             Button(action: {
                                 showEmailSignUp = true
                                 isSignUp = false
                             }) {
                                 HStack(spacing: 12) {
                                     Image(systemName: "envelope.fill")
-                                        .foregroundColor(.white)
-                                        .font(.system(size: 17))
+                                        .foregroundColor(.black)
+                                        .font(.system(size: 16))
                                     
                                     Text("Continue with Email")
-                                        .font(.system(size: 17, weight: .semibold))
+                                        .font(AppStyleSheet.font(for: .body))
                                         .foregroundColor(.white)
                                     
                                     Spacer()
                                 }
                                 .padding(.horizontal, 16)
-                                .frame(height: 55)
+                                .frame(height: 50)
                                 .frame(maxWidth: .infinity)
-                                .background(Color.white.opacity(0.2))
+                                .background(Color.gray.opacity(0.3))
                                 .cornerRadius(12)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                                )
                             }
+                            .padding(.horizontal, 40)
                             
-                            // Try as Guest
+                            // Try as Guest - White underlined text
                             Button(action: {
-                                // --- FIX: Use _Concurrency.Task ---
                                 _Concurrency.Task {
                                     await handleGuestSignIn()
                                 }
                             }) {
                                 Text("Try as Guest")
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .foregroundColor(.white.opacity(0.9))
+                                    .font(AppStyleSheet.font(for: .body))
+                                    .foregroundColor(.white)
                                     .underline()
                             }
                             .disabled(authService.isLoading)
                             .opacity(authService.isLoading ? 0.6 : 1.0)
+                            .padding(.horizontal, 40)
                             
                             #if DEBUG
                             // Clear Guest Auth (Development Only - for testing)
@@ -282,22 +333,22 @@ struct FirebaseAuthenticationView: View {
                             }) {
                                 HStack(spacing: 12) {
                                     Image(systemName: "testtube.2")
-                                        .foregroundColor(.white.opacity(0.8))
+                                        .foregroundColor(.primary)
                                     
                                     Text("Test Account")
                                         .font(.system(size: 17, weight: .semibold))
-                                        .foregroundColor(.white.opacity(0.9))
+                                        .foregroundColor(.primary)
                                     
                                     Spacer()
                                 }
-                                .padding(.horizontal)
-                                .frame(height: 55)
+                                .padding(.horizontal, 16)
+                                .frame(height: 56)
                                 .frame(maxWidth: .infinity)
-                                .background(Color.orange.opacity(0.3))
-                                .cornerRadius(12)
+                                .background(.ultraThinMaterial)
+                                .cornerRadius(14)
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color.orange.opacity(0.5), lineWidth: 1)
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .stroke(Color.orange.opacity(0.3), lineWidth: 1)
                                 )
                             }
                             .disabled(authService.isLoading)
@@ -310,15 +361,15 @@ struct FirebaseAuthenticationView: View {
                     // Loading indicator
                     if authService.isLoading {
                         ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .progressViewStyle(CircularProgressViewStyle(tint: .purple))
                             .scaleEffect(1.5)
                             .padding(.top, 20)
                     }
                     
                     // Terms and Privacy
                     Text("By continuing, you agree to our Terms of Service and Privacy Policy")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.7))
+                        .font(.system(size: 12, weight: .regular, design: .rounded))
+                        .foregroundColor(.white.opacity(0.8))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
                         .padding(.top, 20)
@@ -387,7 +438,8 @@ struct FirebaseAuthenticationView: View {
     private func handleEmailAuth() async {
         do {
             if isSignUp {
-                try await authService.signUp(email: email, password: password, displayName: displayName)
+                // Username/displayName will be set in onboarding - pass empty for now
+                try await authService.signUp(email: email, password: password, displayName: "")
             } else {
                 try await authService.signIn(email: email, password: password)
             }

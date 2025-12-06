@@ -12,34 +12,97 @@ import AudioToolbox
 
 struct TimelineView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(ThemeManager.self) private var themeManager
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     @EnvironmentObject private var calendarManager: CalendarManager
     @Query private var tasks: [Task]
     @Query private var taskBlocks: [TaskBlock]
     @Query private var goals: [Goal]
+    @Query private var routines: [DailyRoutine]
+    @Query private var users: [User]
     @State private var selectedDate = Date()
     @State private var scrollOffset: CGFloat = 0
     @State private var timer: Timer?
     
+    // Check if selected date is today
+    private var isSelectedDateToday: Bool {
+        Calendar.current.isDateInToday(selectedDate)
+    }
+    
+    // REMOVED: Collapsible mode (not working)
+    
     // Drag and drop state
     @State private var draggedTask: Task? = nil
     
+    // Collision detection state
+    @State private var showingCollisionAlert = false
+    @State private var collisionData: (draggedTask: Task?, newStart: Date, newEnd: Date, overlappingTasks: [Task])? = nil
+    
+    // Helper struct for displaying tasks with adjusted times
+    private struct DisplayTask {
+        let task: Task
+        let displayStartTime: Date
+        let displayEndTime: Date
+    }
+    
     private var selectedDateTasks: [Task] {
         let calendar = Calendar.current
-        let filteredTasks = tasks.filter { task in
-            calendar.isDate(task.startTime, inSameDayAs: selectedDate) &&
-            // Filter out tasks from paused goals
-            !(task.goalID != nil && goals.first(where: { $0.id == task.goalID })?.status == .paused)
-        }.sorted { $0.startTime < $1.startTime }
+        let startOfSelectedDay = calendar.startOfDay(for: selectedDate)
+        let endOfSelectedDay = calendar.date(byAdding: .day, value: 1, to: startOfSelectedDay) ?? startOfSelectedDay
         
-        // Debug: Print what we're looking for vs what we found
-        print("Looking for tasks on: \(selectedDate)")
-        print("Found \(filteredTasks.count) tasks:")
-        for task in filteredTasks {
-            print("  - \(task.title) at \(task.startTime)")
+        // Filter tasks that either start or end on the selected date (handles day-spanning tasks)
+        let filteredTasks = tasks.filter { task in
+            let taskStart = task.startTime
+            let taskEnd = task.endTime
+            
+            // Task overlaps with selected date if:
+            // 1. Task starts on selected date, OR
+            // 2. Task ends on selected date, OR
+            // 3. Task spans across selected date (starts before and ends after)
+            let startsOnSelectedDay = calendar.isDate(taskStart, inSameDayAs: selectedDate)
+            let endsOnSelectedDay = calendar.isDate(taskEnd, inSameDayAs: selectedDate)
+            let spansSelectedDay = taskStart < startOfSelectedDay && taskEnd > endOfSelectedDay
+            
+            let overlapsSelectedDay = startsOnSelectedDay || endsOnSelectedDay || spansSelectedDay
+            
+            return overlapsSelectedDay &&
+            // Filter out tasks from paused goals
+            !(task.goal != nil && task.goal?.status == .paused) &&
+            // Filter out tasks from inactive routines
+            !isFromInactiveRoutine(task)
         }
         
-        return filteredTasks
+        return filteredTasks.sorted { $0.startTime < $1.startTime }
+    }
+    
+    // Helper to get adjusted display times for a task on the selected date
+    private func getDisplayTimes(for task: Task, on date: Date) -> (start: Date, end: Date) {
+        let calendar = Calendar.current
+        let taskStart = task.startTime
+        let taskEnd = task.endTime
+        let taskStartDay = calendar.startOfDay(for: taskStart)
+        let taskEndDay = calendar.startOfDay(for: taskEnd)
+        let selectedDay = calendar.startOfDay(for: date)
+        let startOfSelectedDay = calendar.startOfDay(for: date)
+        let endOfSelectedDay = calendar.date(byAdding: .day, value: 1, to: startOfSelectedDay) ?? startOfSelectedDay
+        
+        // If task starts on a previous day but ends on or after selected day
+        if taskStartDay < selectedDay && taskEndDay >= selectedDay {
+            // Show continuation from 12:00 AM on selected day
+            let displayStart = startOfSelectedDay
+            // Keep original end time if it's on selected day, otherwise show to end of day
+            let displayEnd = taskEndDay > selectedDay ? endOfSelectedDay : taskEnd
+            return (displayStart, displayEnd)
+        }
+        // If task starts on selected day but ends on next day
+        else if taskStartDay == selectedDay && taskEndDay > selectedDay {
+            // Show from start time to end of selected day (midnight)
+            return (taskStart, endOfSelectedDay)
+        }
+        // Otherwise, task is fully on selected day - no adjustment needed
+        else {
+            return (taskStart, taskEnd)
+        }
     }
     
     private var currentTime: Date {
@@ -52,6 +115,15 @@ struct TimelineView: View {
     
     private var currentMinute: Int {
         Calendar.current.component(.minute, from: currentTime)
+    }
+    
+    // MARK: - Helper Functions
+    private func isFromInactiveRoutine(_ task: Task) -> Bool {
+        guard let routineID = task.routineID else { return false }
+        if let routine = routines.first(where: { $0.id == routineID }) {
+            return !routine.isActive
+        }
+        return false
     }
     
     // MARK: - Drag and Drop Functions
@@ -79,16 +151,16 @@ struct TimelineView: View {
         switch newSide {
         case .left: // Work side
             // If current category is personal-side, change to work-side category
-            if task.category == .personal || task.category == .flexible || 
-               task.category == .hobbies || task.category == .selfCare || 
-               task.category == .leisure || task.category == .skinCare {
+            if task.category == .personal || task.category == .flexible ||
+                task.category == .hobbies || task.category == .selfCare ||
+                task.category == .leisure || task.category == .skinCare {
                 task.category = .work
             }
             // Otherwise keep original work-side category
         case .right: // Personal side
             // If current category is work-side, change to personal-side category
-            if task.category == .work || task.category == .fixed || 
-               task.category == .growth || task.category == .reading {
+            if task.category == .work || task.category == .fixed ||
+                task.category == .growth || task.category == .reading {
                 task.category = .personal
             }
             // Otherwise keep original personal-side category
@@ -103,7 +175,7 @@ struct TimelineView: View {
     
     private func updateTaskBlockTime(_ taskBlock: TaskBlock, _ newStartTime: Date, _ newEndTime: Date) {
         // Update all tasks in the block
-        let tasksInBlock = tasks.filter { $0.taskBlockID == taskBlock.id }
+        let tasksInBlock = tasks.filter { $0.taskBlock?.id == taskBlock.id }
         let duration = newEndTime.timeIntervalSince(newStartTime)
         let taskDuration = duration / Double(tasksInBlock.count)
         
@@ -124,7 +196,7 @@ struct TimelineView: View {
     
     private func updateTaskBlockSide(_ taskBlock: TaskBlock, _ newSide: TaskTimelineBlock.TimelineSide) {
         // Update all tasks in the block category based on side
-        let tasksInBlock = tasks.filter { $0.taskBlockID == taskBlock.id }
+        let tasksInBlock = tasks.filter { $0.taskBlock?.id == taskBlock.id }
         let newCategory = newSide == .left ? TaskCategory.work : TaskCategory.personal
         
         for task in tasksInBlock {
@@ -138,21 +210,66 @@ struct TimelineView: View {
         }
     }
     
-    private func handleTaskCollision(newStartTime: Date, newEndTime: Date) {
+    private func handleTaskCollision(task: Task, newStartTime: Date, newEndTime: Date) {
         // Check if the new time overlaps with any existing tasks
-        let overlappingTasks = selectedDateTasks.filter { task in
-            let taskStart = task.startTime
-            let taskEnd = task.endTime
+        // This is called on DROP, not during drag
+        let overlappingTasks = selectedDateTasks.filter { otherTask in
+            // Don't check collision with the task being dragged
+            if otherTask.id == task.id { return false }
+            
+            let taskStart = otherTask.startTime
+            let taskEnd = otherTask.endTime
             
             // Check for overlap
             return (newStartTime < taskEnd && newEndTime > taskStart)
         }
         
         if !overlappingTasks.isEmpty {
-            // Show collision options
-            print("Task collision detected with \(overlappingTasks.count) tasks")
-            // TODO: Show alert with options to replace or create task block
+            // Store collision data and show alert
+            // The alert will prevent time update until user decides
+            collisionData = (draggedTask: task, newStart: newStartTime, newEnd: newEndTime, overlappingTasks: overlappingTasks)
+            showingCollisionAlert = true
         }
+    }
+    
+    private func createTaskBlockFromCollision() {
+            guard let data = collisionData, let draggedTask = data.draggedTask else { return }
+            
+            // Create a new task block with a better title
+            let taskTitles = data.overlappingTasks.prefix(2).map { $0.title }
+            let blockTitle = taskTitles.isEmpty ? "Task Block" : (taskTitles.count == 1 ? "\(taskTitles[0]) Block" : "\(taskTitles[0]) & \(taskTitles.count > 1 ? "\(taskTitles.count - 1) more" : "")")
+            
+            // ⭐️ FIX: Swapped 'color' and 'priority' to match the initializer order
+            let newBlock = TaskBlock(
+                id: UUID().uuidString,
+                userID: users.first?.id ?? "",
+                title: blockTitle,
+                color: draggedTask.category.rawValue, // Use dragged task's category color
+                priority: draggedTask.priority // Use dragged task's priority
+            )
+            newBlock.isLocked = false // Set property after initialization
+            modelContext.insert(newBlock)
+            
+            // Add all overlapping tasks to the block
+            for task in data.overlappingTasks {
+                task.taskBlock = newBlock
+            }
+            
+            // Update the dragged task's time and add to block
+            draggedTask.startTime = data.newStart
+            draggedTask.endTime = data.newEnd
+            draggedTask.taskBlock = newBlock
+            
+            try? modelContext.save()
+            showingCollisionAlert = false
+            collisionData = nil
+        }
+    
+    private func cancelCollision() {
+        // User cancelled - just clear the collision data
+        // The task time update was already prevented in updateTaskTime
+        showingCollisionAlert = false
+        collisionData = nil
     }
     
     private var scrollBasedTime: String {
@@ -213,18 +330,14 @@ struct TimelineView: View {
     
     var body: some View {
         GeometryReader { geometry in
-            ZStack {
-                // Timeline background - using secondary gradient for variety
-                LinearGradient(
-                    colors: [.purple.opacity(0.8), .blue.opacity(0.6), .pink.opacity(0.4)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+            ZStack(alignment: .topTrailing) {
+                // Timeline background - matching home screen style
+                themeManager.currentTheme.primaryGradient
+                    .ignoresSafeArea()
                 
                 // Main Content
                 VStack(spacing: 0) {
-                    // Header
+                    // Header (Today button is now in headerView)
                     headerView
                     
                     // Timeline Content
@@ -242,13 +355,42 @@ struct TimelineView: View {
                             updateTaskSide: updateTaskSide,
                             updateTaskBlockTime: updateTaskBlockTime,
                             updateTaskBlockSide: updateTaskBlockSide,
-                            handleTaskCollision: handleTaskCollision
+                            handleTaskCollision: { task, newStart, newEnd in
+                                handleTaskCollision(task: task, newStartTime: newStart, newEndTime: newEnd)
+                            },
+                            viewMode: .fullView // Always use full view (collapsible removed)
                         )
-                        .frame(height: 24 * 120) // 24 hours * 120 points per hour
+                        .frame(height: 24 * 120) // Full height
+                                .background(
+                            GeometryReader { proxy in
+                                Color.clear
+                                    .preference(key: ScrollOffsetPreferenceKey.self, value: proxy.frame(in: .named("timelineScroll")).minY)
+                            }
+                        )
+                        .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+                            // This is for timeline scroll, not day scroller
+                            // Today button visibility is handled by isSelectedDateToday
+                        }
                     }
+                    .coordinateSpace(name: "timelineScroll")
                 }
             }
             .navigationBarHidden(true)
+            .alert("Schedule Overlap", isPresented: $showingCollisionAlert) {
+                Button("Cancel", role: .cancel) {
+                    cancelCollision()
+                }
+                Button("Group Tasks", role: .none) {
+                    createTaskBlockFromCollision()
+                }
+            } message: {
+                if let data = collisionData {
+                    let taskCount = data.overlappingTasks.count + 1 // +1 for the dragged task
+                    Text("There is a schedule overlap. Would you like to group these \(taskCount) tasks into a task block?")
+                } else {
+                    Text("There is a schedule overlap. Would you like to group these tasks into a task block?")
+                }
+            }
             .onAppear {
                 startTimer()
             }
@@ -258,9 +400,83 @@ struct TimelineView: View {
         }
     }
     
+    // MARK: - Helper Functions
+    private func monthYearString(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM yyyy"
+        return formatter.string(from: date)
+    }
+    
     private var headerView: some View {
-        VStack(spacing: 16) {
-            // Infinite Day Selector with Fixed Center Controller
+        let theme = themeManager.currentTheme
+        
+        return VStack(spacing: 16) {
+            // Month/Year Header (DEC 2025) and Today Button - Top Row
+            HStack {
+                // Calendar Button (DEC 2025) - with border like work/personal tabs
+                Button(action: {
+                    // Scroll to today
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        selectedDate = Date()
+                        DatePersistenceService.shared.saveSelectedDate(selectedDate)
+                        calendarManager.loadCalendarEvents(for: selectedDate)
+                    }
+                }) {
+                    Text(monthYearString(from: selectedDate).uppercased())
+                        .font(theme.headerFont) // Use theme headerFont (11pt, semibold)
+                        .foregroundColor(theme.textPrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                .fill(theme.glassBackground.opacity(0.3))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                        .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                                )
+                        )
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                Spacer()
+                
+                // Today Button - Top Right (purple gradient, mini transition)
+                if !isSelectedDateToday {
+                    Button(action: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            selectedDate = Date()
+                            DatePersistenceService.shared.saveSelectedDate(selectedDate)
+                            calendarManager.loadCalendarEvents(for: selectedDate)
+                        }
+                    }) {
+                        Text("Today")
+                            .font(theme.titleFont) // Use theme titleFont (10pt, regular)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [theme.accentColor, theme.accentColor.opacity(0.7)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                            .stroke(theme.accentColor, lineWidth: theme.cardBorderWidth)
+                                    )
+                            )
+                    }
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 4)
+            
+            // Infinite Day Selector with Fixed Center Controller (ORIGINAL STRUCTURE)
             InfiniteDaySelector(
                 selectedDate: $selectedDate,
                 onDateChanged: { newDate in
@@ -273,58 +489,70 @@ struct TimelineView: View {
                 }
             )
             
-            // Weather Info - Shows weather for selected date
+            // Weather Info - Shows weather for selected date (ORIGINAL STRUCTURE)
             ZStack {
                 // Background HStack for edge buttons
                 HStack {
-                    // Work label on left edge
+                    // Work label on left edge - Purple gradient background
                     Text("Work")
-                        .font(.caption)
+                        .font(theme.bodyFont) // Use theme bodyFont (10pt, regular)
                         .fontWeight(.bold)
-                        .foregroundColor(.white)
+                        .foregroundColor(theme.textPrimary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.blue.opacity(0.3))
+                            RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [theme.accentColor.opacity(0.3), theme.accentColor.opacity(0.2)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Color.blue, lineWidth: 1)
+                                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                        .stroke(theme.accentColor, lineWidth: theme.cardBorderWidth)
                                 )
                         )
                     
                     Spacer()
                     
-                    // Personal label on right edge
+                    // Personal label on right edge - Purple gradient background
                     Text("Personal")
-                        .font(.caption)
+                        .font(theme.bodyFont) // Use theme bodyFont (10pt, regular)
                         .fontWeight(.bold)
-                        .foregroundColor(.white)
+                        .foregroundColor(theme.textPrimary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.green.opacity(0.3))
+                            RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [theme.accentColor.opacity(0.3), theme.accentColor.opacity(0.2)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Color.green, lineWidth: 1)
+                                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                        .stroke(theme.accentColor, lineWidth: theme.cardBorderWidth)
                                 )
                         )
                 }
                 
-                // Time box - truly centered in middle
+                // Time box - truly centered in middle (ORIGINAL STRUCTURE)
                 Text(headerTimeDisplay)
-                    .font(.caption)
+                    .font(theme.bodyFont) // Use theme bodyFont (10pt, regular)
                     .fontWeight(.bold)
-                    .foregroundColor(.white)
+                    .foregroundColor(theme.textPrimary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: theme.smallCornerRadius)
                             .fill(Color.clear)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                    .overlay(
+                                RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                    .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
                             )
                     )
             }
@@ -390,7 +618,7 @@ struct TimelineView: View {
     
     private func getTasksForBlock(_ taskBlock: TaskBlock, hour: Int) -> [Task] {
         selectedDateTasks.filter { task in
-            task.taskBlockID == taskBlock.id && 
+            task.taskBlock?.id == taskBlock.id &&
             Calendar.current.component(.hour, from: task.startTime) == hour
         }
     }
@@ -398,7 +626,7 @@ struct TimelineView: View {
     // New function to get all tasks for a block regardless of hour
     private func getAllTasksForBlock(_ taskBlock: TaskBlock) -> [Task] {
         selectedDateTasks.filter { task in
-            task.taskBlockID == taskBlock.id
+            task.taskBlock?.id == taskBlock.id
         }
     }
     
@@ -445,6 +673,48 @@ struct TimelineView: View {
         timer?.invalidate()
         timer = nil
     }
+    
+    // Calculate collapsed height based on hours with tasks
+    // REMOVED: calculateCollapsedHeight - collapsible mode removed
+    private func _calculateCollapsedHeight() -> CGFloat {
+        let calendar = Calendar.current
+        var hoursWithTasks: Set<Int> = []
+        
+        // Get all hours that have tasks
+        for task in selectedDateTasks {
+            let taskHour = calendar.component(.hour, from: task.startTime)
+            hoursWithTasks.insert(taskHour)
+            // Also include end hour if different
+            let endHour = calendar.component(.hour, from: task.endTime)
+            if endHour != taskHour {
+                hoursWithTasks.insert(endHour)
+            }
+        }
+        
+        // Get all hours that have task blocks
+        for block in taskBlocksForSelectedDate {
+            let blockTasks = selectedDateTasks.filter { $0.taskBlockID == block.id }
+            for task in blockTasks {
+                let taskHour = calendar.component(.hour, from: task.startTime)
+                hoursWithTasks.insert(taskHour)
+                let endHour = calendar.component(.hour, from: task.endTime)
+                if endHour != taskHour {
+                    hoursWithTasks.insert(endHour)
+                }
+            }
+        }
+        
+        // Add padding hours (1 hour before first, 1 hour after last)
+        if let firstHour = hoursWithTasks.min(), let lastHour = hoursWithTasks.max() {
+            let startHour = max(0, firstHour - 1)
+            let endHour = min(23, lastHour + 1)
+            let hourCount = endHour - startHour + 1
+            return CGFloat(hourCount) * 120 // 120 points per hour
+        }
+        
+        // Default to showing 12 hours if no tasks
+        return 12 * 120
+    }
 }
 
 struct TimelineHourView: View {
@@ -489,8 +759,8 @@ struct TimelineHourView: View {
     }
     
     private var workTasksList: some View {
-        let workTasks = tasks.filter { 
-            $0.taskBlockID == nil && 
+        let workTasks = tasks.filter {
+            $0.taskBlock == nil &&
             ($0.category == .work || $0.category == .fixed || $0.category == .growth || $0.category == .reading)
         }
         let overlappingWorkGroups = getOverlappingTasks(workTasks)
@@ -627,11 +897,10 @@ struct TimelineHourView: View {
         Group {
             if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
                 let currentHour = Calendar.current.component(.hour, from: currentTime)
-                let currentMinute = Calendar.current.component(.minute, from: currentTime)
                 let isCurrentHour = hour == currentHour
                 
                 if isCurrentHour {
-                    Text("\(currentHour):\(String(format: "%02d", currentMinute))")
+                    Text(timeSettings.formatTime(currentTime))
                         .font(.caption2)
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
@@ -661,10 +930,10 @@ struct TimelineHourView: View {
     }
     
     private var personalTasksList: some View {
-        let personalTasks = tasks.filter { 
-            $0.taskBlockID == nil && 
-            ($0.category == .personal || $0.category == .flexible || 
-             $0.category == .hobbies || $0.category == .selfCare || 
+        let personalTasks = tasks.filter {
+            $0.taskBlock == nil &&
+            ($0.category == .personal || $0.category == .flexible ||
+             $0.category == .hobbies || $0.category == .selfCare ||
              $0.category == .leisure || $0.category == .skinCare)
         }
         let overlappingPersonalGroups = getOverlappingTasks(personalTasks)
@@ -757,31 +1026,54 @@ struct TaskTimelineBlock: View {
         switch task.priority {
         case .urgent: return .red.opacity(0.9)
         case .high: return .orange.opacity(0.9)
-        case .normal: return .green.opacity(0.9)
+        case .normal: return .green.opacity(0.9) // Changed from green
         case .low: return .blue.opacity(0.9)
         }
     }
     
-    // Category-based background color - ALWAYS uses task's original category color, regardless of which side (work/personal) it's on
+    // Border color - darker shade of the same category color
+    private var borderColor: Color {
+        categoryBackgroundColor.opacity(0.6)
+    }
+    
+    // Category-based background color - MORE TRANSPARENT
     private var categoryBackgroundColor: Color {
         // If task.color is set, it contains the original category name - use that for color
         if let originalCategoryString = task.color,
            let originalCategory = TaskCategory(rawValue: originalCategoryString) {
-            return originalCategory.color().opacity(0.7)
+            return originalCategory.color().opacity(0.5) // Increased transparency from 0.85
         }
         // Otherwise use current category color
-        return task.category.color().opacity(0.7)
+        return task.category.color().opacity(0.5) // Increased transparency from 0.85
     }
     
     var body: some View {
         VStack(alignment: side == .left ? .leading : .trailing, spacing: 4) {
-            // Task title
-            Text(task.title)
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(.white)
-                .lineLimit(2)
-                .multilineTextAlignment(side == .left ? .leading : .trailing)
+            // Task title with routine indicator
+            HStack(spacing: 4) {
+                if side == .left {
+                    if task.isRoutineTask {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 8))
+                            .foregroundColor(.yellow)
+                    }
+                    Text(task.title)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+                } else {
+                    Text(task.title)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+                    if task.isRoutineTask {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 8))
+                            .foregroundColor(.yellow)
+                    }
+                }
+            }
+            .multilineTextAlignment(side == .left ? .leading : .trailing)
             
             // Time range
             Text("\(timeSettings.formatTime(task.startTime)) - \(timeSettings.formatTime(task.endTime))")
@@ -804,13 +1096,12 @@ struct TaskTimelineBlock: View {
         .frame(maxWidth: .infinity, minHeight: taskHeight, alignment: side == .left ? .leading : .trailing)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(categoryBackgroundColor.opacity(0.8)) // LESS TRANSPARENT
+                .fill(categoryBackgroundColor) // Already darker, no need for additional opacity
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(priorityOutlineColor.opacity(0.7), lineWidth: 2)
+                        .stroke(borderColor, lineWidth: 2) // Darker shade of same color
                 )
         )
-        .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
         .overlay(
             // Lock icon for locked tasks - BOTTOM RIGHT CORNER
             Group {
@@ -860,79 +1151,145 @@ struct TaskBlockTimelineView: View {
     }
     
     private var categoryColor: Color {
-        // Use the category color of the first task, or default to blue
+        // Use the category color of the first task, or default to blue - MORE TRANSPARENT
         if let firstTask = tasks.first {
-            return firstTask.category.color()
+            return firstTask.category.color().opacity(0.5) // Increased transparency from 0.85
         }
-        return .blue
+        return Color.blue.opacity(0.5) // Increased transparency from 0.85
     }
     
+    // ⭐️ FIX 2: Break body into helper views
+    
     var body: some View {
-        VStack(alignment: side == .left ? .leading : .trailing, spacing: 4) {
-            // Block title
-            Text(taskBlock.title)
-                .font(.caption)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
-                .lineLimit(1)
-                .multilineTextAlignment(side == .left ? .leading : .trailing)
-            
-            // Task count
-            Text("\(tasks.count) tasks")
-                .font(.caption2)
-                .foregroundColor(.white.opacity(0.8))
-            
-            // Time range
-            if let firstTask = tasks.first, let lastTask = tasks.last {
-                let sortedTasks = tasks.sorted { $0.startTime < $1.startTime }
-                let startTime = sortedTasks.first?.startTime ?? firstTask.startTime
-                let endTime = sortedTasks.last?.endTime ?? lastTask.endTime
-                
-                Text("\(timeSettings.formatTime(startTime)) - \(timeSettings.formatTime(endTime))")
-                    .font(.caption2)
-                    .foregroundColor(.white.opacity(0.8))
-            }
-            
-            // Priority indicator
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(blockColor)
-                    .frame(width: 6, height: 6)
-                
-                Text(taskBlock.priority.rawValue.capitalized)
-                    .font(.caption2)
-                    .foregroundColor(.white.opacity(0.7))
+        ZStack(alignment: .topLeading) {
+            // Beautiful storage container design with overlapped tasks visualization
+            VStack(alignment: side == .left ? .leading : .trailing, spacing: 0) {
+                headerView
+                stackedTasksView
+                timeRangeView
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
         .frame(maxWidth: .infinity, minHeight: blockHeight, alignment: side == .left ? .leading : .trailing)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(categoryColor.opacity(0.8)) // LESS TRANSPARENT
+            // Beautiful storage container with darker border
+            RoundedRectangle(cornerRadius: 12)
+                .fill(categoryColor)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(blockColor.opacity(0.7), lineWidth: 3)
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(categoryColor.opacity(0.6), lineWidth: 2) // Darker shade of same color
                 )
         )
-        .shadow(color: .black.opacity(0.4), radius: 3, x: 0, y: 2)
-        .overlay(
-            // Lock icon for locked task blocks
-            Group {
-                if taskBlock.isLocked {
-                    Image(systemName: "lock.fill")
-                        .font(.caption2)
-                        .foregroundColor(.white)
-                        .padding(4)
-                        .background(
-                            Circle()
-                                .fill(Color.black.opacity(0.6))
-                        )
-                        .offset(x: -8, y: -8) // Bottom-right corner - within element space
+        .overlay(lockOverlay, alignment: .bottomTrailing)
+    }
+    
+    @ViewBuilder
+    private var headerView: some View {
+        HStack(spacing: 6) {
+            // Priority indicator
+            Circle()
+                .fill(blockColor)
+                .frame(width: 8, height: 8)
+            
+            Text(taskBlock.title)
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .lineLimit(1)
+            
+            Spacer()
+            
+            // Task count badge
+            Text("\(tasks.count)")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    Capsule()
+                        .fill(Color.white.opacity(0.25))
+                )
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+    
+    @ViewBuilder
+    private var stackedTasksView: some View {
+        // Overlapped tasks visualization - show first few task titles stacked
+        if tasks.count > 1 {
+            VStack(alignment: side == .left ? .leading : .trailing, spacing: -4) {
+                ForEach(Array(tasks.prefix(3).enumerated()), id: \.element.id) { index, task in
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(task.category.color().opacity(0.9))
+                            .frame(width: 4, height: 4)
+                        
+                        Text(task.title)
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundColor(.white.opacity(0.9))
+                            .lineLimit(1)
+                    }
+    
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(task.category.color().opacity(0.3))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(task.category.color().opacity(0.5), lineWidth: 1)
+                            )
+                    )
+                    .offset(x: CGFloat(index * 3), y: CGFloat(index * 2))
+                    .zIndex(Double(tasks.count - index))
                 }
-            },
-            alignment: .bottomTrailing
-        )
+                
+                if tasks.count > 3 {
+                    Text("+\(tasks.count - 3) more")
+                        .font(.system(size: 9, weight: .regular, design: .rounded))
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .offset(x: CGFloat(3 * 3), y: CGFloat(3 * 2))
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 8)
+        }
+    }
+    
+    @ViewBuilder
+    private var timeRangeView: some View {
+        // Time range
+        if let firstTask = tasks.first, let lastTask = tasks.last {
+            let sortedTasks = tasks.sorted { $0.startTime < $1.startTime }
+            let startTime = sortedTasks.first?.startTime ?? firstTask.startTime
+            let endTime = sortedTasks.last?.endTime ?? lastTask.endTime
+            
+            // Time range without clock icon (removed per user request)
+            Text("\(timeSettings.formatTime(startTime)) - \(timeSettings.formatTime(endTime))")
+                .font(.system(size: 10, weight: .regular, design: .rounded))
+                .foregroundColor(.white.opacity(0.8))
+                .padding(.horizontal, 10)
+                .padding(.bottom, 8)
+        }
+    }
+    
+    @ViewBuilder
+    private var lockOverlay: some View {
+        // Lock icon for locked task blocks
+        Group {
+            if taskBlock.isLocked {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 11))
+                    .foregroundColor(.white)
+                    .padding(5)
+                    .background(
+                        Circle()
+                            .fill(Color.black.opacity(0.7))
+                    )
+                    .offset(x: -8, y: -8)
+            }
+        }
     }
 }
 

@@ -37,7 +37,23 @@ class FirebaseStorageService: ObservableObject {
         ]
         
         // Upload with progress tracking (optional)
-        let _ = try await photoRef.putData(imageData, metadata: metadata)
+        // putData returns a StorageUploadTask immediately, upload happens in background
+        let uploadTask = photoRef.putData(imageData, metadata: metadata)
+        
+        // Wait for upload to complete before getting download URL
+        // Convert callback-based API to async/await
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            uploadTask.observe(.success) { _ in
+                continuation.resume()
+            }
+            uploadTask.observe(.failure) { snapshot in
+                if let error = snapshot.error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(throwing: StorageError.uploadFailed)
+                }
+            }
+        }
         
         // Get download URL
         let downloadURL = try await photoRef.downloadURL()
@@ -63,7 +79,23 @@ class FirebaseStorageService: ObservableObject {
         ]
         
         // Upload
-        let _ = try await attachmentRef.putData(data, metadata: metadata)
+        // putData returns a StorageUploadTask immediately, upload happens in background
+        let uploadTask = attachmentRef.putData(data, metadata: metadata)
+        
+        // Wait for upload to complete before getting download URL
+        // Convert callback-based API to async/await
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            uploadTask.observe(.success) { _ in
+                continuation.resume()
+            }
+            uploadTask.observe(.failure) { snapshot in
+                if let error = snapshot.error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(throwing: StorageError.uploadFailed)
+                }
+            }
+        }
         
         // Get download URL
         let downloadURL = try await attachmentRef.downloadURL()

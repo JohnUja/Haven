@@ -9,8 +9,9 @@ import SwiftUI
 import FirebaseAuth
 
 struct UserDetailsView: View {
-    @EnvironmentObject var authService: FirebaseAuthService
+    @Environment(FirebaseAuthService.self) var authService
     @Environment(\.dismiss) private var dismiss
+    @Environment(ThemeManager.self) private var themeManager
     @State private var displayName: String = ""
     @State private var showingEditName = false
     
@@ -101,8 +102,13 @@ struct UserDetailsView: View {
 }
 
 struct EditDisplayNameView: View {
-    @EnvironmentObject var authService: FirebaseAuthService
+    @Environment(FirebaseAuthService.self) var authService
     @Environment(\.dismiss) private var dismiss
+    
+    // --- THIS WAS MISSING ---
+    @Environment(ThemeManager.self) private var themeManager
+    // ------------------------
+    
     @State private var displayName: String = ""
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -111,8 +117,14 @@ struct EditDisplayNameView: View {
         NavigationView {
             Form {
                 Section {
-                    TextField("Display Name", text: $displayName)
-                        .autocapitalization(.words)
+                    // Make sure 'transparentTextField' is defined in your project
+                    // If not, use a standard TextField("Display Name", text: $displayName)
+                    transparentTextField(
+                        placeholder: "Display Name",
+                        text: $displayName,
+                        theme: themeManager.currentTheme
+                    )
+                    .autocapitalization(.words)
                 } header: {
                     Text("Display Name")
                 } footer: {
@@ -144,27 +156,27 @@ struct EditDisplayNameView: View {
     }
     
     private func saveDisplayName() {
-        guard let user = authService.currentUser else { return }
-        isLoading = true
-        errorMessage = nil
-        
-        let changeRequest = user.createProfileChangeRequest()
-        changeRequest.displayName = displayName
-        
-        _Concurrency.Task {
-            do {
-                try await changeRequest.commitChanges()
-                await MainActor.run {
-                    isLoading = false
-                    dismiss()
-                }
-            } catch {
-                await MainActor.run {
-                    isLoading = false
-                    errorMessage = error.localizedDescription
+            guard let user = authService.currentUser else { return }
+            isLoading = true
+            errorMessage = nil
+            
+            let changeRequest = user.createProfileChangeRequest()
+            changeRequest.displayName = displayName
+            
+            // Fixed: Added _Concurrency to avoid conflict with your own 'Task' model
+            _Concurrency.Task {
+                do {
+                    try await changeRequest.commitChanges()
+                    await MainActor.run {
+                        isLoading = false
+                        dismiss()
+                    }
+                } catch {
+                    await MainActor.run {
+                        isLoading = false
+                        errorMessage = error.localizedDescription
+                    }
                 }
             }
         }
-    }
 }
-

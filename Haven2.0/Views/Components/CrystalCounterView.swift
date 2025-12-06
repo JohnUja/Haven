@@ -22,52 +22,36 @@ struct CrystalCounterView: View {
     
     var body: some View {
         HStack(spacing: 8) {
-            // Custom 3D crystal icon
-            Crystal3DView()
+            // Sparkles emoji instead of crystal icon
+            Text("✨")
+                .font(.system(size: 18))
                 .scaleEffect(isAnimating ? 1.3 : 1.0)
                 .animation(.spring(response: 0.3, dampingFraction: 0.6).repeatCount(3, autoreverses: true), value: isAnimating)
             
-            // Crystal count with more space
-            Text("\(displayedCrystals)")
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
-                .contentTransition(.numericText())
-                .frame(minWidth: 30) // Ensure enough space for numbers
+            // Crystal count with shadow/outline - NO BACKGROUND
+            ZStack {
+                // Shadow/outline layer
+                ForEach([-1, 0, 1], id: \.self) { x in
+                    ForEach([-1, 0, 1], id: \.self) { y in
+                        if x != 0 || y != 0 {
+                            Text("\(displayedCrystals)")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundColor(.black.opacity(0.8))
+                                .offset(x: CGFloat(x), y: CGFloat(y))
+                        }
+                    }
+                }
+                // Main text layer
+                Text("\(displayedCrystals)")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .contentTransition(.numericText())
+            }
+            .frame(minWidth: 30) // Ensure enough space for numbers
         }
         .padding(.horizontal, 14) // Increased horizontal padding
         .padding(.vertical, 7) // Slightly increased vertical padding
-        .background(
-            ZStack {
-                // Distinct background with gradient for better contrast
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.black.opacity(0.5),
-                                Color.black.opacity(0.4)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                
-                // Subtle border for definition
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                Color.yellow.opacity(0.4),
-                                Color.orange.opacity(0.3)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1.5
-                    )
-            }
-        )
-        .shadow(color: .black.opacity(0.4), radius: 8, x: 0, y: 4)
-        .shadow(color: .yellow.opacity(0.3), radius: 4, x: 0, y: 2)
+        // NO BACKGROUND - removed background fill
         .onChange(of: currentCrystals) { oldValue, newValue in
             // Animate counter increment
             if newValue > oldValue {

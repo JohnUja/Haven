@@ -61,6 +61,22 @@ class RoutineService {
         try? context.save()
     }
     
+    // MARK: - Remove Tasks for Routine
+    func removeTasks(for routine: DailyRoutine, in context: ModelContext) {
+        let routineID = routine.id
+        let descriptor = FetchDescriptor<Task>(
+            predicate: #Predicate<Task> { task in
+                (task.routineID ?? "") == routineID
+            }
+        )
+        
+        if let routineTasks = try? context.fetch(descriptor) {
+            for task in routineTasks {
+                context.delete(task)
+            }
+        }
+    }
+    
     // MARK: - Create Default Routines (Sleep, Eat)
     func createDefaultRoutines(userID: String, in context: ModelContext) -> [DailyRoutine] {
         var routines: [DailyRoutine] = []

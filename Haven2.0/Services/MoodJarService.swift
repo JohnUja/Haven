@@ -16,11 +16,20 @@ enum MoodJarService {
     static func canCheckIn(currentTime: Date = Date()) -> (allowed: Bool, period: CheckInTime?) {
         let calendar = Calendar.current
         let hour = calendar.component(.hour, from: currentTime)
+        let minute = calendar.component(.minute, from: currentTime)
         
         // Check each time window
         for period in CheckInTime.allCases {
             let window = period.timeWindow
-            if hour >= window.start && hour <= window.end {
+            let currentTimeMinutes = hour * 60 + minute
+            
+            // Morning: 5:00 AM - 11:59 AM (300 - 719 minutes)
+            // Afternoon: 12:00 PM - 4:59 PM (720 - 1079 minutes)
+            // Night: 5:00 PM - 11:59 PM (1020 - 1439 minutes)
+            let windowStartMinutes = window.start * 60
+            let windowEndMinutes = window.end * 60 + 59 // Include 59 minutes
+            
+            if currentTimeMinutes >= windowStartMinutes && currentTimeMinutes <= windowEndMinutes {
                 return (true, period)
             }
         }
@@ -97,7 +106,8 @@ enum MoodJarService {
         // Create mood entry
         let entry = MoodEntry(
             userID: user.id,
-            moodType: mood,
+            coreMood: mood.coreMood,
+            subMood: mood.subMood,
             timestamp: Date(),
             checkInTime: checkInPeriod,
             notes: notes
@@ -114,7 +124,7 @@ enum MoodJarService {
         context.insert(entry)
         
         // Check for rewards
-        if let rewards = calculateMoodRewards(user: user, context: context) {
+        if calculateMoodRewards(user: user, context: context) != nil {
             // Rewards will be applied by caller
             return true
         }
@@ -136,7 +146,9 @@ enum MoodJarService {
         // Count mood distribution
         var moodDistribution: [MoodType: Int] = [:]
         for entry in recentEntries {
-            moodDistribution[entry.moodType, default: 0] += 1
+            // Convert CoreMood to MoodType for compatibility
+            let moodType = moodTypeFromCoreMood(entry.coreMood)
+            moodDistribution[moodType, default: 0] += 1
         }
         
         // Find dominant mood
@@ -161,7 +173,6 @@ enum MoodJarService {
     static func calculateTrend(entries: [MoodEntry]) -> MoodTrend {
         guard entries.count >= 5 else { return .stable }
         
-        let calendar = Calendar.current
         let sortedEntries = entries.sorted { $0.timestamp < $1.timestamp }
         
         // Split into first half and second half
@@ -171,7 +182,10 @@ enum MoodJarService {
         
         // Calculate average mood score (positive moods = 1, negative = -1)
         func averageMoodScore(_ entries: [MoodEntry]) -> Double {
-            let scores = entries.map { $0.moodType.isPositive ? 1.0 : -1.0 }
+            let scores = entries.map { entry in
+                let moodType = moodTypeFromCoreMood(entry.coreMood)
+                return moodType.isPositive ? 1.0 : -1.0
+            }
             return scores.reduce(0, +) / Double(scores.count)
         }
         
@@ -215,7 +229,7 @@ enum MoodJarService {
         }
         
         // Mood Collection: 10+ of specific mood type
-        for (mood, count) in pattern.moodDistribution {
+        for (_, count) in pattern.moodDistribution {
             if count >= 10 {
                 crystals = (crystals ?? 0) + 300
                 xp = (xp ?? 0) + 150
@@ -224,7 +238,10 @@ enum MoodJarService {
         }
         
         // Balanced Week: Equal mix of positive/neutral moods
-        let positiveCount = recentEntries.filter { $0.moodType.isPositive }.count
+        let positiveCount = recentEntries.filter { entry in
+            let moodType = moodTypeFromCoreMood(entry.coreMood)
+            return moodType.isPositive
+        }.count
         let totalCount = recentEntries.count
         if totalCount >= 14 && Double(positiveCount) / Double(totalCount) >= 0.5 {
             crystals = (crystals ?? 0) + 250
@@ -252,7 +269,7 @@ enum MoodJarService {
             user.moodJarCompletions += 1
             
             // Update user level if needed
-            if let levelUp = LevelService.checkLevelUp(user: user, newXP: user.currentXP) {
+            if LevelService.checkLevelUp(user: user, newXP: user.currentXP) != nil {
                 // Handle level up (caller should show animation)
             }
             
@@ -279,7 +296,10 @@ enum MoodJarService {
             
             switch pattern {
             case "balanced":
-                let positiveCount = moodHistory.filter { $0.moodType.isPositive }.count
+                let positiveCount = moodHistory.filter { entry in
+                    let moodType = moodTypeFromCoreMood(entry.coreMood)
+                    return moodType.isPositive
+                }.count
                 let totalCount = moodHistory.count
                 return totalCount >= 14 && Double(positiveCount) / Double(totalCount) >= 0.5
                 
@@ -301,7 +321,9 @@ enum MoodJarService {
         // Check mood count requirements
         var moodCounts: [MoodType: Int] = [:]
         for entry in moodHistory {
-            moodCounts[entry.moodType, default: 0] += 1
+            // Convert CoreMood to MoodType for compatibility
+            let moodType = moodTypeFromCoreMood(entry.coreMood)
+            moodCounts[moodType, default: 0] += 1
         }
         
         for requiredMood in requirement.requiredMoods {
@@ -323,6 +345,20 @@ struct MoodPattern {
 
 enum MoodTrend {
     case improving, declining, stable
+}
+
+// MARK: - Helper Functions
+
+/// Convert CoreMood to MoodType for backwards compatibility
+private func moodTypeFromCoreMood(_ coreMood: CoreMood) -> MoodType {
+    switch coreMood {
+    case .happy: return .happy
+    case .sad: return .sad
+    case .anxious: return .anxious
+    case .calm: return .calm
+    case .energetic: return .energetic
+    case .tired: return .tired
+    }
 }
 
 struct MoodReward {

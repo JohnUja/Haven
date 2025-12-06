@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct IndividualMoodJar: View {
-    let moodType: MoodType
+    let coreMood: CoreMood
     let count: Int
     let onCashIn: () -> Void
     
@@ -22,19 +22,17 @@ struct IndividualMoodJar: View {
     
     var body: some View {
         VStack(spacing: 12) {
-            // Mood type label with SF Symbol icon
+            // Core mood label with SF Symbol icon
             HStack {
-                Image(systemName: moodType.icon)
-                    .font(.title2)
-                    .foregroundColor(moodType.iconColor)
+                Image(systemName: coreMood.icon)
+                    .font(.system(size: 20, weight: .medium, design: .rounded))
+                    .foregroundColor(coreMood.color)
                     .frame(width: 24, height: 24)
-                Text(moodType.displayName)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                Text(coreMood.displayName)
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
                 Spacer()
                 Text("\(count)/15")
-                    .font(.caption)
-                    .fontWeight(.medium)
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary)
             }
             
@@ -82,8 +80,8 @@ struct IndividualMoodJar: View {
                                     .fill(
                                         RadialGradient(
                                             colors: [
-                                                moodColor.opacity(0.9),
-                                                moodColor.opacity(0.7)
+                                                coreMood.color.opacity(0.9),
+                                                coreMood.color.opacity(0.7)
                                             ],
                                             center: .topLeading,
                                             startRadius: 5,
@@ -154,25 +152,13 @@ struct IndividualMoodJar: View {
         )
     }
     
-    private var moodColor: Color {
-        switch moodType {
-        case .happy, .excited, .energetic:
-            return .yellow
-        case .calm:
-            return .blue
-        case .sad, .tired:
-            return .gray
-        case .anxious, .frustrated:
-            return .red
-        }
-    }
 }
 
 #Preview {
     VStack(spacing: 20) {
-        IndividualMoodJar(moodType: .happy, count: 15, onCashIn: {})
-        IndividualMoodJar(moodType: .calm, count: 8, onCashIn: {})
-        IndividualMoodJar(moodType: .sad, count: 0, onCashIn: {})
+        IndividualMoodJar(coreMood: .happy, count: 15, onCashIn: {})
+        IndividualMoodJar(coreMood: .calm, count: 8, onCashIn: {})
+        IndividualMoodJar(coreMood: .sad, count: 0, onCashIn: {})
     }
     .padding()
     .background(Color.purple.opacity(0.2))

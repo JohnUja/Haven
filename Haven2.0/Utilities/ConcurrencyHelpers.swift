@@ -2,7 +2,7 @@
 //  ConcurrencyHelpers.swift
 //  Haven2.0
 //
-//  Created by AI on 2025-11-03.
+//  Created by John Uja on 2025-11-03.
 //  Helper to avoid SwiftData Task model conflict with Swift's concurrency Task
 //
 
