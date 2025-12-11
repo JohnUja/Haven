@@ -72,7 +72,7 @@ class FirebaseAuthService: NSObject {
     var errorMessage: String?
     var isGuest = false
     
-    private var authStateListenerHandle: AuthStateDidChangeListenerHandle?
+    nonisolated(unsafe) private var authStateListenerHandle: AuthStateDidChangeListenerHandle?
     
     // NOTE: appleAuthContinuation and currentNonce are no longer needed here,
     // as the view will manage the nonce for the request.

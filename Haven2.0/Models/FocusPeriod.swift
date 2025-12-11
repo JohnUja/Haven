@@ -2,7 +2,7 @@
 //  FocusPeriod.swift
 //  Haven2.0
 //
-//  Created by AI on 2025-01-XX.
+//  Created by John Uja on 2025-01-XX.
 //  Focus period categorization for dynamic home screen
 //
 

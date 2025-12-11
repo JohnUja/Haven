@@ -118,10 +118,10 @@ struct TaskBlockCardView: View {
                 }
             }) {
                 HStack(spacing: 12) {
-                    // Block color indicator
-                    Circle()
-                        .fill(Color.blue)
-                        .frame(width: 24, height: 24)
+                    // Block icon (no color indicator)
+                    Image(systemName: "square.stack.3d.up.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(theme.textSecondary)
                     
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
@@ -133,7 +133,7 @@ struct TaskBlockCardView: View {
                             Text(blockTitle)
                                 .font(theme.bodyFont)
                                 .fontWeight(.semibold)
-                                .foregroundColor(.white) // WHITE TEXT
+                                .foregroundColor(theme.textPrimary) // Theme text
                                 .strikethrough(isBlockComplete) // CROSS OUT WHEN COMPLETE
                                 .opacity(isBlockComplete ? 0.6 : 1.0)
                             
@@ -141,52 +141,48 @@ struct TaskBlockCardView: View {
                             
                             Text("\(completedCount)/\(tasks.count)")
                                 .font(.caption)
-                                .foregroundColor(.white.opacity(0.8)) // WHITE TEXT
+                                .foregroundColor(theme.textSecondary) // Theme text
                         }
                         
-                            // Priority text for the block - MATCH PRIORITY COLOR
+                            // Priority text for the block - Theme text (no colors)
                             HStack {
                                 Text("Priority: \(blockPriorityText)")
                                     .font(.system(size: 11, weight: .regular))
-                                    .foregroundColor(blockPriorityColor) // MATCH PRIORITY COLOR (Green/Blue/Orange/Red)
+                                    .foregroundColor(theme.textSecondary) // Theme text
                                 Spacer()
                             }
                         
                         // Progress bar
                         ProgressView(value: Double(completedCount), total: Double(tasks.count))
-                            .progressViewStyle(LinearProgressViewStyle(tint: .white.opacity(0.5))) // WHITE PROGRESS BAR
+                            .progressViewStyle(LinearProgressViewStyle(tint: theme.textSecondary.opacity(0.5))) // Theme progress bar
                             .scaleEffect(y: 0.5)
                         
                         // Time range for the block
                         HStack {
                             Text(timeRangeText)
                                 .font(.caption2)
-                                .foregroundColor(.white.opacity(0.7)) // WHITE TEXT
+                                .foregroundColor(theme.textSecondary) // Theme text
                             Spacer()
                         }
                     }
                     
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.caption)
-                        .foregroundColor(.white.opacity(0.7)) // WHITE TEXT
+                        .foregroundColor(theme.textSecondary) // Theme text
                 }
                 .padding(16)
                 .background(
                     ZStack {
-                        // MUCH PALER category color background with HIGH transparency - use taskBlock color if available
-                        let backgroundColor = taskBlock.map { colorFromString($0.color).opacity(0.25) } ?? blockCategoryColor.opacity(0.25)
+                        // Plain white/transparent background (no colors)
                         RoundedRectangle(cornerRadius: theme.cardCornerRadius)
-                            .fill(isBlockComplete ? backgroundColor.opacity(0.3) : backgroundColor)
+                            .fill(theme.glassBackground.opacity(0.5))
                             .overlay(
-                                // Subtle category color stroke
+                                // Simple border stroke (no colors)
                                 RoundedRectangle(cornerRadius: theme.cardCornerRadius)
-                                    .stroke(
-                                        taskBlock.map { colorFromString($0.color).opacity(0.6) } ?? blockCategoryColor.opacity(0.6),
-                                        lineWidth: theme.cardBorderWidth
-                                    )
+                                    .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
                             )
                         
-                        // Simple completion highlight
+                        // Simple completion highlight (green stroke only when complete)
                         if isBlockComplete {
                             RoundedRectangle(cornerRadius: theme.cardCornerRadius)
                                 .stroke(Color.green, lineWidth: 2)
@@ -253,7 +249,7 @@ struct TaskBlockCardView: View {
                                         
                                         // Gamification rewards (only when completing, not uncompleting, and not already rewarded)
                                         if task.isComplete && !wasComplete && !task.hasBeenRewarded {
-                                            let goal = goals.first(where: { $0.id == task.goalID })
+                                            let goal = task.goal
                                             let momentumBonus = GamificationService.getMomentumBonus(user: user)
                                             let baseRewards = GamificationService.calculateTaskRewards(
                                                 task: task,
@@ -306,13 +302,12 @@ struct TaskBlockCardView: View {
                                             
                                             // Goal/milestone bonuses
                                             if let goal = goal {
-                                                if goal.status == .completed && goal.currentValue == goal.effectiveTargetValue(tasks: allTasks.filter { $0.goalID == goal.id }) {
+                                                if goal.status == .completed && goal.currentValue == goal.effectiveTargetValue() {
                                                     let bonus = GamificationService.calculateGoalCompletionBonus()
                                                     user.gamificationCurrency += bonus.crystals
                                                     user.currentXP += bonus.xp
                                                     user.weeklyProductivityScore += bonus.score
-                                                } else if let milestoneID = task.milestoneID,
-                                                          let milestone = goal.milestones.first(where: { $0.id == milestoneID }),
+                                                } else if let milestone = task.milestone,
                                                           milestone.isComplete {
                                                     let bonus = GamificationService.calculateMilestoneCompletionBonus()
                                                     user.gamificationCurrency += bonus.crystals
@@ -341,7 +336,7 @@ struct TaskBlockCardView: View {
                                         }
                                         
                                         // Update goal progress if linked
-                                        if task.goalID != nil {
+                                        if task.goal != nil {
                                             GoalProgressUpdater.handleTaskToggle(task, context: modelContext, goals: goals)
                                             
                                             // Delay reflection prompt until animations complete (3 seconds)

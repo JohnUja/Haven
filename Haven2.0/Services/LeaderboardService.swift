@@ -43,7 +43,7 @@ enum LeaderboardService {
             }
             
             // Goal-linked bonus
-            if task.goalID != nil {
+            if task.goal != nil {
                 baseScore *= 1.3 // +30%
             }
             
@@ -56,7 +56,7 @@ enum LeaderboardService {
         var goalScore: Double = 0
         for goal in goals.filter({ $0.status == .active || $0.status == .completed }) {
             // Check if goal made progress this week
-            let goalTasks = weekTasks.filter { $0.goalID == goal.id }
+            let goalTasks = weekTasks.filter { $0.goal?.id == goal.id }
             
             if !goalTasks.isEmpty {
                 // Milestone progress bonus

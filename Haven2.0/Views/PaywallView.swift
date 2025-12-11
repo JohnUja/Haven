@@ -12,6 +12,7 @@ struct PaywallView: View {
     @Environment(ThemeManager.self) private var themeManager
     let triggerReason: PaywallTrigger
     @State private var billingPeriod: BillingPeriod = .yearly
+    @State private var selectedPlan: SubscriptionPlan = .havenPlus
     
     enum PaywallTrigger {
         case taskLimit
@@ -24,18 +25,78 @@ struct PaywallView: View {
         case yearly = "Yearly"
     }
     
+    enum SubscriptionPlan: String, CaseIterable {
+        case havenPlus = "Haven+"
+        case havenPro = "Haven Pro"
+        case havenForever = "Haven Forever"
+        
+        var monthlyPrice: String {
+            switch self {
+            case .havenPlus: return "$6.99"
+            case .havenPro: return "$9.99"
+            case .havenForever: return "—"
+            }
+        }
+        
+        var yearlyPrice: String {
+            switch self {
+            case .havenPlus: return "$59.99"
+            case .havenPro: return "$79.99"
+            case .havenForever: return "$120"
+            }
+        }
+        
+        var savings: String {
+            switch self {
+            case .havenPlus: return "Save 28%"
+            case .havenPro: return "Save 33%"
+            case .havenForever: return "One-time"
+            }
+        }
+        
+        var features: [String] {
+            switch self {
+            case .havenPlus:
+                return [
+                    "Unlimited daily tasks & blocks",
+                    "Up to 5 active routines",
+                    "Unlimited AI insights",
+                    "5 premium themes",
+                    "Advanced analytics"
+                ]
+            case .havenPro:
+                return [
+                    "Everything in Haven+",
+                    "Personalized AI model",
+                    "Mood-to-theme sync",
+                    "Unlimited cloud backups",
+                    "Offline AI model",
+                    "All premium themes"
+                ]
+            case .havenForever:
+                return [
+                    "Everything in Haven Pro",
+                    "Lifetime access",
+                    "All future themes",
+                    "Lifetime updates",
+                    "Priority support"
+                ]
+            }
+        }
+        
+        var gradient: [Color] {
+            switch self {
+            case .havenPlus: return [.purple, .pink]
+            case .havenPro: return [.blue, .purple]
+            case .havenForever: return [.orange, .red]
+            }
+        }
+    }
+    
     var body: some View {
         ZStack {
-            // Background with gradient
-            LinearGradient(
-                colors: [
-                    Color.purple.opacity(0.8),
-                    Color.blue.opacity(0.6),
-                    Color.pink.opacity(0.4)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            // Background with theme gradient
+            themeManager.currentTheme.primaryGradient
                 .ignoresSafeArea()
                 .onTapGesture {
                     dismiss()
@@ -51,9 +112,9 @@ struct PaywallView: View {
                     }) {
                         Image(systemName: "xmark")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(themeManager.currentTheme.textPrimary)
                             .padding(8)
-                            .background(Color.gray.opacity(0.2))
+                            .background(themeManager.currentTheme.glassBackground.opacity(0.3))
                             .clipShape(Circle())
                     }
                 }
@@ -65,11 +126,11 @@ struct PaywallView: View {
                         VStack(spacing: 8) {
                             Text("Unlock Full Haven")
                                 .font(.system(size: 32, weight: .bold, design: .rounded))
-                                .foregroundColor(.primary)
+                                .foregroundColor(themeManager.currentTheme.textPrimary)
                             
                             Text(triggerMessage)
                                 .font(.system(size: 16, weight: .medium, design: .rounded))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(themeManager.currentTheme.textSecondary)
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal, 20)
                         }
@@ -85,14 +146,14 @@ struct PaywallView: View {
                                 }) {
                                     Text(period.rawValue)
                                         .font(.system(size: 16, weight: .semibold, design: .rounded))
-                                        .foregroundColor(billingPeriod == period ? .white : .primary)
+                                        .foregroundColor(billingPeriod == period ? .white : themeManager.currentTheme.textPrimary)
                                         .frame(maxWidth: .infinity)
                                         .padding(.vertical, 12)
                                         .background(
                                             RoundedRectangle(cornerRadius: 12)
                                                 .fill(billingPeriod == period ? 
-                                                      LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing) :
-                                                      LinearGradient(colors: [Color.gray.opacity(0.1)], startPoint: .leading, endPoint: .trailing)
+                                                      LinearGradient(colors: [themeManager.currentTheme.accentColor, themeManager.currentTheme.accentColor.opacity(0.7)], startPoint: .leading, endPoint: .trailing) :
+                                                      LinearGradient(colors: [themeManager.currentTheme.glassBackground.opacity(0.3)], startPoint: .leading, endPoint: .trailing)
                                                 )
                                         )
                                 }
@@ -101,28 +162,49 @@ struct PaywallView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 8)
                         
-                        // Tier Comparison
-                        tierComparisonView
+                        // Plan Toggle (instead of long list)
+                        planToggleView
                             .padding(.horizontal, 20)
+                            .padding(.top, 8)
                         
-                        // Pricing Cards
-                        pricingCardsView
+                        // Selected Plan Details (shown based on toggle)
+                        selectedPlanDetailsView
                             .padding(.horizontal, 20)
+                            .padding(.top, 16)
                         
-                        // Features List
-                        featuresListView
-                            .padding(.horizontal, 20)
-                        
-                        // CTA Buttons
-                        ctaButtonsView
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 20)
+                        // CTA Button for Selected Plan
+                        Button(action: {
+                            // TODO: Implement purchase flow
+                            let price = selectedPlan == .havenForever ? selectedPlan.yearlyPrice : (billingPeriod == .monthly ? selectedPlan.monthlyPrice : selectedPlan.yearlyPrice)
+                            print("Purchase \(selectedPlan.rawValue) - \(billingPeriod.rawValue) - \(price)")
+                        }) {
+                            Text(selectedPlan == .havenForever ? "Purchase Forever" : "Upgrade to \(selectedPlan.rawValue)")
+                                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(
+                                    LinearGradient(
+                                        colors: selectedPlan.gradient,
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .cornerRadius(themeManager.currentTheme.cardCornerRadius)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+                        .padding(.bottom, 20)
                     }
                 }
             }
             .background(
                 RoundedRectangle(cornerRadius: 24)
-                    .fill(.ultraThinMaterial)
+                    .fill(themeManager.currentTheme.glassBackground.opacity(0.9))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24)
+                            .stroke(themeManager.currentTheme.glassBorder, lineWidth: themeManager.currentTheme.cardBorderWidth)
+                    )
             )
             .frame(maxWidth: 500)
             .padding(.horizontal, 20)
@@ -138,6 +220,110 @@ struct PaywallView: View {
         case .aiLimit:
             return "You've used all 3 AI insights this week. Upgrade for unlimited AI insights!"
         }
+    }
+    
+    // MARK: - Plan Toggle View
+    private var planToggleView: some View {
+        HStack(spacing: 8) {
+            ForEach(SubscriptionPlan.allCases, id: \.self) { plan in
+                Button(action: {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        selectedPlan = plan
+                    }
+                }) {
+                    Text(plan.rawValue)
+                        .font(.system(size: 14, weight: selectedPlan == plan ? .bold : .medium, design: .rounded))
+                        .foregroundColor(selectedPlan == plan ? .white : themeManager.currentTheme.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(selectedPlan == plan ? 
+                                      LinearGradient(colors: plan.gradient, startPoint: .leading, endPoint: .trailing) :
+                                      LinearGradient(colors: [themeManager.currentTheme.glassBackground.opacity(0.3)], startPoint: .leading, endPoint: .trailing)
+                                )
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(selectedPlan == plan ? Color.clear : themeManager.currentTheme.glassBorder, lineWidth: themeManager.currentTheme.cardBorderWidth)
+                        )
+                }
+            }
+        }
+    }
+    
+    // MARK: - Selected Plan Details View
+    private var selectedPlanDetailsView: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Price Display
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    if selectedPlan == .havenForever {
+                        Text(selectedPlan.yearlyPrice)
+                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .foregroundColor(themeManager.currentTheme.textPrimary)
+                        Text("One-time payment")
+                            .font(.system(size: 14, weight: .regular, design: .rounded))
+                            .foregroundColor(themeManager.currentTheme.textSecondary)
+                    } else {
+                        let price = billingPeriod == .monthly ? selectedPlan.monthlyPrice : selectedPlan.yearlyPrice
+                        Text(price)
+                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .foregroundColor(themeManager.currentTheme.textPrimary)
+                        Text(billingPeriod == .monthly ? "/month" : "/year")
+                            .font(.system(size: 14, weight: .regular, design: .rounded))
+                            .foregroundColor(themeManager.currentTheme.textSecondary)
+                        
+                        if billingPeriod == .yearly {
+                            Text(selectedPlan.savings)
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundColor(.green)
+                                .padding(.top, 2)
+                        }
+                    }
+                }
+                
+                Spacer()
+            }
+            .padding(.bottom, 8)
+            
+            // Features List
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(selectedPlan.features, id: \.self) { feature in
+                    HStack(spacing: 12) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: selectedPlan.gradient,
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                        
+                        Text(feature)
+                            .font(.system(size: 14, weight: .regular, design: .rounded))
+                            .foregroundColor(themeManager.currentTheme.textPrimary)
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: themeManager.currentTheme.cardCornerRadius)
+                .fill(themeManager.currentTheme.glassBackground.opacity(0.5))
+                .overlay(
+                    RoundedRectangle(cornerRadius: themeManager.currentTheme.cardCornerRadius)
+                        .stroke(
+                            LinearGradient(
+                                colors: selectedPlan.gradient,
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ),
+                            lineWidth: 2
+                        )
+                )
+        )
     }
     
     private var tierComparisonView: some View {
@@ -171,7 +357,7 @@ struct PaywallView: View {
                     .frame(maxWidth: .infinity)
             }
             .padding(.vertical, 12)
-            .background(Color.gray.opacity(0.1))
+            .background(themeManager.currentTheme.glassBackground.opacity(0.3))
             
             // Features comparison
             VStack(spacing: 12) {
@@ -196,29 +382,29 @@ struct PaywallView: View {
         HStack(spacing: 12) {
             Text(feature)
                 .font(.system(size: 14, weight: .medium, design: .rounded))
-                .foregroundColor(.primary)
+                .foregroundColor(themeManager.currentTheme.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
             
             Text(free)
                 .font(.system(size: 14, weight: .regular, design: .rounded))
-                .foregroundColor(.secondary)
+                .foregroundColor(themeManager.currentTheme.textSecondary)
                 .frame(maxWidth: .infinity)
             
             Text(plus)
                 .font(.system(size: 14, weight: .semibold, design: .rounded))
-                .foregroundColor(.purple)
+                .foregroundColor(themeManager.currentTheme.accentColor)
                 .frame(maxWidth: .infinity)
             
             Text(pro)
                 .font(.system(size: 14, weight: .semibold, design: .rounded))
-                .foregroundColor(.blue)
+                .foregroundColor(themeManager.currentTheme.accentColor)
                 .frame(maxWidth: .infinity)
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.white.opacity(0.5))
+                .fill(themeManager.currentTheme.glassBackground.opacity(0.5))
         )
     }
     
@@ -328,7 +514,7 @@ struct PaywallView: View {
                             .font(.system(size: 24, weight: .bold, design: .rounded))
                         Text("One-time")
                             .font(.system(size: 12, weight: .regular, design: .rounded))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(themeManager.currentTheme.textSecondary)
                     } else {
                         // Show selected billing period price
                         if billingPeriod == .monthly, let monthly = monthlyPrice {
@@ -336,13 +522,13 @@ struct PaywallView: View {
                                 .font(.system(size: 24, weight: .bold, design: .rounded))
                             Text("/month")
                                 .font(.system(size: 12, weight: .regular, design: .rounded))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(themeManager.currentTheme.textSecondary)
                         } else {
                             Text(yearlyPrice)
                                 .font(.system(size: 24, weight: .bold, design: .rounded))
                             Text("/year")
                                 .font(.system(size: 12, weight: .regular, design: .rounded))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(themeManager.currentTheme.textSecondary)
                         }
                         
                         if billingPeriod == .yearly && !yearlySavings.isEmpty {
@@ -370,7 +556,7 @@ struct PaywallView: View {
                         
                         Text(feature)
                             .font(.system(size: 14, weight: .regular, design: .rounded))
-                            .foregroundColor(.primary)
+                            .foregroundColor(themeManager.currentTheme.textPrimary)
                     }
                 }
             }
@@ -415,6 +601,7 @@ struct PaywallView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("What You Get")
                 .font(.system(size: 20, weight: .bold, design: .rounded))
+                .foregroundColor(themeManager.currentTheme.textPrimary)
                 .padding(.bottom, 4)
             
             VStack(alignment: .leading, spacing: 8) {
@@ -428,7 +615,7 @@ struct PaywallView: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color.gray.opacity(0.05))
+                .fill(themeManager.currentTheme.glassBackground.opacity(0.3))
         )
     }
     
@@ -436,18 +623,12 @@ struct PaywallView: View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 16))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.purple, .pink],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
+                .foregroundColor(themeManager.currentTheme.accentColor)
                 .frame(width: 24)
             
             Text(text)
                 .font(.system(size: 14, weight: .medium, design: .rounded))
-                .foregroundColor(.primary)
+                .foregroundColor(themeManager.currentTheme.textPrimary)
         }
     }
     
@@ -459,16 +640,16 @@ struct PaywallView: View {
             }) {
                 Text("Maybe Later")
                     .font(.system(size: 16, weight: .medium, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(themeManager.currentTheme.textSecondary)
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(Color.gray.opacity(0.1))
+                    .background(themeManager.currentTheme.glassBackground.opacity(0.3))
                     .cornerRadius(12)
             }
             
             Text("All plans include a 7-day free trial")
                 .font(.system(size: 12, weight: .regular, design: .rounded))
-                .foregroundColor(.secondary)
+                .foregroundColor(themeManager.currentTheme.textSecondary)
         }
     }
 }

@@ -23,7 +23,7 @@ struct GoalStatusInsight {
 
 enum GoalStatusManager {
     static func computeProgress(for goal: Goal, tasks: [Task] = []) -> Double {
-        goal.progressPercentage(tasks: tasks)
+        goal.progressPercentage()
     }
     
     static func evaluate(goal: Goal, tasks: [Task] = [], now: Date = Date()) -> GoalStatusInsight {
@@ -44,9 +44,9 @@ enum GoalStatusManager {
     }
     
     static func riskSeverity(for goal: Goal, progress: Double, tasks: [Task] = [], now: Date = Date()) -> GoalRiskSeverity {
-        let hasOverdueMilestone = goal.milestones.contains { milestone in
+        let hasOverdueMilestone = (goal.milestones ?? []).contains { milestone in
             guard let deadline = milestone.deadline else { return false }
-            let milestoneTasks = tasks.filter { $0.milestoneID == milestone.id }
+            let milestoneTasks = tasks.filter { $0.milestone?.id == milestone.id }
             let completed = milestoneTasks.filter { $0.isComplete }.count
             let isComplete = !milestoneTasks.isEmpty && completed == milestoneTasks.count
             return now > deadline && !isComplete

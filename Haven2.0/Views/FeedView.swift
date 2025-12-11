@@ -32,6 +32,21 @@ struct FeedView: View {
         users.first
     }
     
+    // Calculate unread notification count (reactions + comments on user's feed items)
+    private var unreadNotificationCount: Int {
+        guard let user = currentUser else { return 0 }
+        let userFeedItemIDs = personalFeedItems.map { $0.id }
+        let unreadReactions = reactions.filter { reaction in
+            userFeedItemIDs.contains(reaction.feedItemID) && 
+            reaction.userID != user.id // Not from self
+        }.count
+        let unreadComments = comments.filter { comment in
+            userFeedItemIDs.contains(comment.feedItemID) && 
+            comment.userID != user.id // Not from self
+        }.count
+        return unreadReactions + unreadComments
+    }
+    
     enum FeedMode: String, CaseIterable {
         case personal = "My Activity"
         case global = "Community"
@@ -42,48 +57,66 @@ struct FeedView: View {
     }
     
     // MARK: - Feed Items
-    private var personalFeedItems: [FeedItem] {
-        guard let user = currentUser else { return [] }
-        var items: [FeedItem] = []
-        let calendar = Calendar.current
-        let weekAgo = calendar.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-        
-        // Routine Highlights
-        let completedRoutines = routines.filter { routine in
-            routine.userID == user.id && routine.endDate != nil && routine.endDate! <= Date()
-        }
-        for routine in completedRoutines.prefix(10) {
-            items.append(.routineCompleted(user: user, routine: routine))
-        }
-        
-        // Routine Streaks
-        // TODO: Calculate routine streaks
-        
-        // Mood Logs (Private)
-        let recentMoods = moodEntries.filter { $0.userID == user.id && $0.timestamp >= weekAgo }
-        for mood in recentMoods.prefix(5) {
-            items.append(.moodLog(user: user, moodEntry: mood))
-        }
-        
-        // Level Up / XP Milestones
-        // TODO: Track level ups and add to feed
-        
-        // Goal Milestone Completions (Private)
-        for goal in goals.filter({ $0.userID == user.id }) {
-            for milestone in goal.milestones.filter({ $0.isComplete }) {
-                if let completedDate = milestone.deadline, completedDate >= weekAgo {
-                    items.append(.goalMilestoneCompleted(user: user, goal: goal, milestone: milestone))
+        private var personalFeedItems: [FeedItem] {
+            guard let user = currentUser else { return [] }
+            var items: [FeedItem] = []
+            let calendar = Calendar.current
+            let weekAgo = calendar.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+            let monthAgo = calendar.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+           
+            // Routine Highlights - Show completed routines from last month
+            let completedRoutines = routines.filter { routine in
+                routine.userID == user.id && 
+                routine.endDate != nil && 
+                routine.endDate! >= monthAgo &&
+                routine.endDate! <= Date()
+            }
+            for routine in completedRoutines.prefix(10) {
+                items.append(.routineCompleted(user: user, routine: routine))
+            }
+           
+            // Mood Logs (Private) - Show from last month
+            let recentMoods = moodEntries.filter { 
+                $0.userID == user.id && $0.timestamp >= monthAgo 
+            }
+            for mood in recentMoods.prefix(5) {
+                items.append(.moodLog(user: user, moodEntry: mood))
+            }
+           
+            // Goal Milestone Completions (Private) - Show from last month
+            for goal in goals.filter({ $0.userID == user.id }) {
+                let completedMilestones = (goal.milestones ?? []).filter { $0.isComplete }
+                
+                for milestone in completedMilestones {
+                    let milestoneDate = milestone.deadline ?? goal.createdAt
+                    if milestoneDate >= monthAgo {
+                        items.append(.goalMilestoneCompleted(user: user, goal: goal, milestone: milestone))
+                    }
                 }
             }
+           
+            // Goal Completions - Show completed goals from last month
+            let completedGoals = goals.filter { 
+                $0.userID == user.id && 
+                $0.status == .completed && 
+                $0.createdAt >= monthAgo 
+            }
+            for goal in completedGoals.prefix(5) {
+                items.append(.goalCompleted(user: user, goal: goal))
+            }
+           
+            // Level Up - Show if user leveled up recently (check if level > 1)
+            if user.level > 1 {
+                items.append(.levelUp(user: user, level: user.level))
+            }
+           
+            // Momentum Status - Always show if user has momentum
+            if user.momentumDays > 0 {
+                items.append(.momentumStatus(user: user, days: user.momentumDays))
+            }
+           
+            return items.sorted { $0.timestamp > $1.timestamp }
         }
-        
-        // Momentum Status
-        if user.momentumDays > 0 {
-            items.append(.momentumStatus(user: user, days: user.momentumDays))
-        }
-        
-        return items.sorted { $0.timestamp > $1.timestamp }
-    }
     
     private var globalFeedItems: [FeedItem] {
         var items: [FeedItem] = []
@@ -128,12 +161,12 @@ struct FeedView: View {
                 VStack(spacing: 0) {
                     // Feed Heading (reduced size, changed to "Feed")
                     HStack {
-                        // Trophy icon leading to leaderboard - Bigger size
+                        // Trophy icon leading to leaderboard - REDUCED THICKNESS
                         Button(action: {
                             showingLeaderboard = true
                         }) {
                             Image(systemName: "trophy") // Outline instead of fill
-                                .font(.system(size: 20, weight: .semibold)) // Bigger icon size
+                                .font(.system(size: 20, weight: .regular)) // REDUCED: from .semibold to .regular
                                 .foregroundColor(themeManager.currentTheme.textPrimary)
                         }
                         
@@ -146,35 +179,37 @@ struct FeedView: View {
                         
                         Spacer()
                         
-                        // Heart icon for notifications (with badge) - more spacing
+                        // Heart icon for notifications (with dynamic badge) - REDUCED THICKNESS
                         HStack(spacing: 20) { // Increased spacing between icons
                             Button(action: {
-                                // Show notifications
+                                // Show notifications/interactions
                             }) {
                                 ZStack(alignment: .topTrailing) {
                                     Image(systemName: "heart") // Outline instead of fill
-                                        .font(.system(size: 20, weight: .semibold)) // Bigger icon size
+                                        .font(.system(size: 20, weight: .regular)) // REDUCED: from .semibold to .regular
                                         .foregroundColor(themeManager.currentTheme.textPrimary)
                                     
-                                    // Notification badge - RED not purple
-                                    Circle()
-                                        .fill(Color.red) // Changed from Color.purple
-                                        .frame(width: 16, height: 16)
-                                        .overlay(
-                                            Text("5+")
-                                                .font(.system(size: 8, weight: .bold, design: .rounded))
-                                                .foregroundColor(.white)
-                                        )
-                                        .offset(x: 6, y: -6)
+                                    // Dynamic notification badge - only show if there are unread notifications
+                                    if unreadNotificationCount > 0 {
+                                        Circle()
+                                            .fill(Color.red)
+                                            .frame(width: 16, height: 16)
+                                            .overlay(
+                                                Text(unreadNotificationCount > 99 ? "99+" : "\(unreadNotificationCount)")
+                                                    .font(.system(size: 8, weight: .bold, design: .rounded))
+                                                    .foregroundColor(.white)
+                                            )
+                                            .offset(x: 6, y: -6)
+                                    }
                                 }
                             }
                             
-                            // Settings icon - Bigger size
+                            // Settings icon - REDUCED THICKNESS
                             Button(action: {
                                 showingFeedSettings = true
                             }) {
                                 Image(systemName: "gearshape") // Outline instead of fill
-                                    .font(.system(size: 20, weight: .semibold)) // Bigger icon size
+                                    .font(.system(size: 20, weight: .regular)) // REDUCED: from .semibold to .regular
                                     .foregroundColor(themeManager.currentTheme.textPrimary)
                             }
                         }

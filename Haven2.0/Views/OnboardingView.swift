@@ -148,7 +148,8 @@ struct OnboardingView: View {
         case .themeSelection:
             ThemeSelectionStepView()
         case .moodJarIntro:
-            MoodCheckInOnboardingStepView(onMoodSaved: {
+            // Use same mood check-in view as settings
+            MoodSliderCheckInView(onMoodSelected: { coreMood, subMood in
                 // Move to next step after mood is saved
                 onboardingService.nextStep(isGuest: isGuest)
             })
@@ -254,8 +255,12 @@ struct OnboardingView: View {
 // MARK: - Individual Step Views (Placeholders - to be implemented)
 
 struct WelcomeStepView: View {
+    @Environment(ThemeManager.self) private var themeManager
+    
     var body: some View {
-        VStack(spacing: 24) {
+        let theme = themeManager.currentTheme
+        
+        return VStack(spacing: 24) {
             Spacer()
             
             // App logo/icon placeholder
@@ -270,12 +275,12 @@ struct WelcomeStepView: View {
                 )
             
             Text("Welcome to Haven")
-                .font(.system(size: 12, weight: .regular, design: .rounded))
-                .foregroundColor(.white)
+                .font(theme.titleFont) // Use theme font
+                .foregroundColor(theme.textPrimary) // Use theme color
             
             Text("Your personal productivity haven")
-                .font(.system(size: 12, weight: .regular, design: .rounded))
-                .foregroundColor(.white.opacity(0.8))
+                .font(theme.bodyFont) // Use theme font
+                .foregroundColor(theme.textSecondary) // Use theme color
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
             
@@ -324,13 +329,12 @@ struct UsernameSelectionStepView: View {
                 )
             
             Text("Choose Your Username")
-                .font(.system(size: 24, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
-                .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
+                .font(themeManager.currentTheme.titleFont) // Use theme font
+                .foregroundColor(themeManager.currentTheme.textPrimary) // Use theme color
             
             Text("Pick a username to display on your profile")
-                .font(.system(size: 14, weight: .regular, design: .rounded))
-                .foregroundColor(.white.opacity(0.8))
+                .font(themeManager.currentTheme.bodyFont) // Use theme font
+                .foregroundColor(themeManager.currentTheme.textSecondary) // Use theme color
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
             
@@ -409,6 +413,7 @@ struct UsernameSelectionStepView: View {
 struct QuickWinStepView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(FirebaseAuthService.self) private var authService
+    @Environment(ThemeManager.self) private var themeManager
     @StateObject private var onboardingService = OnboardingService.shared
     @Query private var tasks: [Task]
     @State private var showingAddTask = false
@@ -419,6 +424,7 @@ struct QuickWinStepView: View {
     }
     
     var body: some View {
+        let theme = themeManager.currentTheme
         VStack(spacing: 24) {
             Spacer()
             
@@ -427,12 +433,12 @@ struct QuickWinStepView: View {
                 .foregroundColor(.green)
             
             Text("Create Your First Task")
-                .font(.system(size: 12, weight: .regular, design: .rounded))
-                .foregroundColor(.white)
+                .font(themeManager.currentTheme.titleFont) // Use theme font
+                .foregroundColor(themeManager.currentTheme.textPrimary) // Use theme color
             
             Text("Let's create your first task to get started")
-                .font(.system(size: 12, weight: .regular, design: .rounded))
-                .foregroundColor(.white.opacity(0.8))
+                .font(themeManager.currentTheme.bodyFont) // Use theme font
+                .foregroundColor(themeManager.currentTheme.textSecondary) // Use theme color
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
             
@@ -493,7 +499,10 @@ struct QuickWinStepView: View {
 }
 
 struct FeatureTourStepView: View {
+    @Environment(ThemeManager.self) private var themeManager
+    
     var body: some View {
+        let theme = themeManager.currentTheme
         VStack(spacing: 24) {
             Spacer()
             
@@ -502,12 +511,12 @@ struct FeatureTourStepView: View {
                 .foregroundColor(.blue)
             
             Text("Explore Haven")
-                .font(.system(size: 12, weight: .regular, design: .rounded))
-                .foregroundColor(.white)
+                .font(themeManager.currentTheme.titleFont) // Use theme font
+                .foregroundColor(themeManager.currentTheme.textPrimary) // Use theme color
             
             Text("Take a quick tour of Haven's features")
-                .font(.system(size: 12, weight: .regular, design: .rounded))
-                .foregroundColor(.white.opacity(0.8))
+                .font(themeManager.currentTheme.bodyFont) // Use theme font
+                .foregroundColor(themeManager.currentTheme.textSecondary) // Use theme color
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
             
@@ -535,11 +544,11 @@ struct FeatureTourStepView: View {
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                    .foregroundColor(.white)
+                    .font(themeManager.currentTheme.bodyFont) // Use theme font
+                    .foregroundColor(themeManager.currentTheme.textPrimary) // Use theme color
                 Text(description)
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                    .foregroundColor(.white.opacity(0.8))
+                    .font(themeManager.currentTheme.bodyFont) // Use theme font
+                    .foregroundColor(themeManager.currentTheme.textSecondary) // Use theme color
             }
             
             Spacer()
@@ -550,11 +559,13 @@ struct FeatureTourStepView: View {
 struct RoutineSetupStepView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(ThemeManager.self) private var themeManager
     @Query private var routines: [DailyRoutine]
     @State private var showingRoutineSetup = false
     @State private var routineCreated = false
     
     var body: some View {
+        let theme = themeManager.currentTheme
         VStack(spacing: 24) {
             Spacer()
             
@@ -563,12 +574,12 @@ struct RoutineSetupStepView: View {
                 .foregroundColor(.orange)
             
             Text("Set Up Your Routine")
-                .font(.system(size: 12, weight: .regular, design: .rounded))
-                .foregroundColor(.white)
+                .font(theme.titleFont) // Use theme font
+                .foregroundColor(theme.textPrimary) // Use theme color
             
             Text("Set up daily routines to automate your schedule")
-                .font(.system(size: 12, weight: .regular, design: .rounded))
-                .foregroundColor(.white.opacity(0.8))
+                .font(theme.bodyFont) // Use theme font
+                .foregroundColor(theme.textSecondary) // Use theme color
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
             
@@ -635,6 +646,7 @@ struct RoutineSetupStepView: View {
 
 struct ThemeSelectionStepView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(ThemeManager.self) private var themeManager
     @Query private var themes: [Theme]
     @Query private var users: [User]
     
@@ -647,26 +659,28 @@ struct ThemeSelectionStepView: View {
     }
     
     var body: some View {
-        ScrollView {
+        let theme = themeManager.currentTheme
+        
+        return ScrollView {
             VStack(spacing: 24) {
                 Image(systemName: "paintbrush.fill")
                     .font(.system(size: 80))
                     .foregroundColor(.purple)
                 
                 Text("Choose Your Theme")
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                    .foregroundColor(.white)
+                    .font(theme.titleFont) // Use theme font
+                    .foregroundColor(theme.textPrimary) // Use theme color
                 
                 Text("Pick a theme that matches your style")
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                    .foregroundColor(.white.opacity(0.8))
+                    .font(theme.bodyFont) // Use theme font
+                    .foregroundColor(theme.textSecondary) // Use theme color
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
                 
                 // Theme grid
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
-                    ForEach(defaultThemes) { theme in
-                        ThemeSelectionCard(theme: theme, currentUser: currentUser)
+                    ForEach(defaultThemes) { themeOption in
+                        ThemeSelectionCard(theme: themeOption, currentUser: currentUser, themeManager: themeManager)
                     }
                 }
                 .padding(.horizontal, 40)
@@ -680,6 +694,7 @@ struct ThemeSelectionStepView: View {
 struct ThemeSelectionCard: View {
     let theme: Theme
     let currentUser: User?
+    let themeManager: ThemeManager
     @Environment(\.modelContext) private var modelContext
     
     private var isSelected: Bool {
@@ -687,10 +702,14 @@ struct ThemeSelectionCard: View {
     }
     
     var body: some View {
-        Button(action: {
+        let currentTheme = themeManager.currentTheme
+        
+        return Button(action: {
             if let user = currentUser {
                 user.activeThemeID = theme.id
                 try? modelContext.save()
+                // Force theme update by setting theme in ThemeManager
+                themeManager.setTheme(to: theme.id)
             }
         }) {
             VStack(spacing: 12) {
@@ -699,12 +718,12 @@ struct ThemeSelectionCard: View {
                     .frame(height: 100)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(isSelected ? Color.purple : Color.clear, lineWidth: 3)
+                            .stroke(isSelected ? currentTheme.accentColor : Color.clear, lineWidth: 3)
                     )
                 
                 Text(theme.name)
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                    .foregroundColor(.white)
+                    .font(currentTheme.bodyFont) // Use theme font
+                    .foregroundColor(currentTheme.textPrimary) // Use theme color
             }
         }
     }
@@ -775,17 +794,17 @@ struct AgeSelectionStepView: View {
                     .foregroundColor(theme.textPrimary)
                 
                 Text("How old are you?")
-                    .font(.system(size: 24, weight: .semibold, design: .rounded))
+                    .font(theme.titleFont) // Use theme font
                     .foregroundColor(theme.textPrimary)
                 
                 Text("This helps us personalize your experience")
-                    .font(.system(size: 14, weight: .regular, design: .rounded))
-                    .foregroundColor(theme.textPrimary.opacity(0.8))
+                    .font(theme.bodyFont) // Use theme font
+                    .foregroundColor(theme.textSecondary) // Use theme color
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
                 
-                // Age range selection buttons
-                VStack(spacing: 16) {
+                // Age range selection buttons - REDUCED SIZE
+                VStack(spacing: 12) {
                     ForEach(AgeRange.allCases, id: \.self) { range in
                         Button(action: {
                             selectedAgeRange = range
@@ -797,21 +816,21 @@ struct AgeSelectionStepView: View {
                         }) {
                             HStack {
                                 Text(range.displayName)
-                                    .font(.system(size: 18, weight: .medium, design: .rounded))
+                                    .font(theme.bodyFont) // Use theme font instead of hardcoded
                                     .foregroundColor(theme.textPrimary)
                                 Spacer()
                                 if selectedAgeRange == range {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 20))
+                                        .font(.system(size: 16)) // Reduced from 20
                                         .foregroundColor(theme.accentColor)
                                 }
                             }
-                            .padding(.horizontal, 24)
-                    .padding(.vertical, 16)
-                    .background(
+                            .padding(.horizontal, 16) // Reduced from 24
+                            .padding(.vertical, 10) // Reduced from 16
+                            .background(
                                 RoundedRectangle(cornerRadius: theme.smallCornerRadius)
                                     .fill(selectedAgeRange == range ? theme.accentColor.opacity(0.3) : theme.glassBackground)
-                            .overlay(
+                                    .overlay(
                                         RoundedRectangle(cornerRadius: theme.smallCornerRadius)
                                             .stroke(selectedAgeRange == range ? theme.accentColor : theme.glassBorder, lineWidth: selectedAgeRange == range ? 2 : theme.cardBorderWidth)
                                     )

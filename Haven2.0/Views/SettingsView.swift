@@ -123,7 +123,7 @@ struct SettingsView: View {
             .sheet(isPresented: $showingEditProfile) {
                 NavigationView {
                     ProfileEditView()
-                        .environmentObject(authService)
+                        .environment(authService)
                 }
             }
             .alert("Sign Out", isPresented: $showingSignOutConfirmation) {
@@ -448,13 +448,13 @@ struct SettingsView: View {
                 title: "Edit Profile",
                 icon: "person.circle",
                 color: .indigo,
-                destination: AnyView(ProfileEditView().environmentObject(authService))
+                destination: AnyView(ProfileEditView().environment(authService))
             )
             .padding(.horizontal, 20)
             
             // Account Security (Email & Password)
             if authService.currentUser?.email != nil {
-                NavigationLink(destination: AccountSecurityView().environmentObject(authService)) {
+                NavigationLink(destination: AccountSecurityView().environment(authService)) {
                     settingsCardButton(
                         title: "Account Security",
                         icon: "lock.shield",
@@ -466,7 +466,7 @@ struct SettingsView: View {
             }
             
             // Delete Account (navigate to ProfileEditView)
-            NavigationLink(destination: ProfileEditView().environmentObject(authService)) {
+            NavigationLink(destination: ProfileEditView().environment(authService)) {
                 settingsCardButton(
                     title: "Delete Account",
                     icon: "trash",
@@ -699,7 +699,7 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView()
-        .environmentObject(FirebaseAuthService.shared)
+        .environment(FirebaseAuthService.shared)
         .modelContainer(for: [User.self, Theme.self], inMemory: true)
 }
 

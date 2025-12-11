@@ -2,7 +2,7 @@
 //  JournalEntry.swift
 //  TimeFlow
 //
-//  Created by AI on 2025-10-30.
+//  Created by John Uja on 2025-10-30.
 //
 
 import Foundation

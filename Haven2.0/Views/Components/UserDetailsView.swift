@@ -84,7 +84,7 @@ struct UserDetailsView: View {
             }
             .sheet(isPresented: $showingEditName) {
                 EditDisplayNameView()
-                    .environmentObject(authService)
+                    .environment(authService)
             }
         }
     }

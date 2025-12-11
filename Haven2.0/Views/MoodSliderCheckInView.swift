@@ -89,7 +89,7 @@ struct MoodSliderCheckInView: View {
                             let trackHeight: CGFloat = 50 // Increased height (was 37.5)
                             let thumbSize: CGFloat = 36 // Embedded inside, smaller than track height
                             
-                            ZStack(alignment: .leading) {
+                            ZStack(alignment: .leading) { // Changed to .leading alignment
                                 // Track Background
                                 Capsule()
                                     .fill(theme.glassBackground)
@@ -99,7 +99,7 @@ struct MoodSliderCheckInView: View {
                                             .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
                                     )
                                 
-                                // Gradient Fill (Dynamic width)
+                                // Gradient Fill (Dynamic width) - Starts from left, grows to right
                                 Capsule()
                                     .fill(
                                         LinearGradient(
@@ -112,9 +112,9 @@ struct MoodSliderCheckInView: View {
                                         )
                                     )
                                     .frame(width: max(50, width * CGFloat(sliderValue)), height: trackHeight)
-                                    .animation(.interactiveSpring(response: 0.3, dampingFraction: 0.7), value: sliderValue)
+                                    .animation(.spring(response: 0.25, dampingFraction: 0.6, blendDuration: 0.1), value: sliderValue) // Apple Health app style: fluid, responsive spring
                                 
-                                // The Thumb (Embedded inside slider, centered vertically, not protruding)
+                                // The Thumb (Embedded inside slider, centered vertically, properly aligned) - Just circle, no icon
                                 Circle()
                                     .fill(theme.glassBackground)
                                     .frame(width: thumbSize, height: thumbSize)
@@ -122,20 +122,17 @@ struct MoodSliderCheckInView: View {
                                         Circle()
                                             .stroke(theme.glassBorder, lineWidth: 1.5)
                                     )
-                                    .overlay(
-                                        Image(systemName: "chevron.left.forwardslash.chevron.right")
-                                            .font(.system(size: 10, weight: .light))
-                                            .foregroundColor(theme.textPrimary.opacity(0.6))
-                                    )
-                                    .offset(
-                                        x: (width - thumbSize) * CGFloat(sliderValue),
-                                        y: (trackHeight - thumbSize) / 2 // Center vertically inside track
+                                    .position(
+                                        x: thumbSize / 2 + (width - thumbSize) * CGFloat(sliderValue),
+                                        y: trackHeight / 2 // Center vertically inside track
                                     )
                                     .gesture(
-                                        DragGesture()
+                                        DragGesture(minimumDistance: 0)
                                             .onChanged { value in
                                                 let newValue = max(0, min(1, value.location.x / width))
-                                                sliderValue = newValue
+                                                withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                                                    sliderValue = newValue
+                                                }
                                                 triggerHapticFeedback(for: newValue)
                                             }
                                     )
@@ -164,27 +161,30 @@ struct MoodSliderCheckInView: View {
                         }
                         
                         let screenWidth = UIScreen.main.bounds.width
-                        let chipWidth = (screenWidth - 48 - 24) / 3 // 3 chips per row, 24 padding, 12 spacing between
+                        let horizontalPadding: CGFloat = 24
+                        let spacing: CGFloat = 12
+                        let chipWidth = (screenWidth - (horizontalPadding * 2) - (spacing * 2)) / 3 // Fixed calculation: 3 chips per row
                         
                         VStack(spacing: 12) {
                             ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
-                            HStack(spacing: 12) {
+                                HStack(spacing: spacing) {
                                     ForEach(row, id: \.self) { subMood in
-                                    MoodChip(
-                                        title: subMood.displayName,
-                                        isSelected: selectedSubMood == subMood || (selectedSubMood == nil && subMood == determinedCoreMood.subMoods.first),
-                                        color: determinedCoreMood.color,
-                                        theme: theme
-                                    ) {
-                                        // If tapping the already-selected default, deselect (use default)
-                                        if selectedSubMood == subMood {
-                                            selectedSubMood = nil
-                                        } else {
-                                            selectedSubMood = subMood
+                                        MoodChip(
+                                            title: subMood.displayName,
+                                            isSelected: selectedSubMood == subMood || (selectedSubMood == nil && subMood == determinedCoreMood.subMoods.first),
+                                            color: determinedCoreMood.color,
+                                            theme: theme
+                                        ) {
+                                            // If tapping the already-selected default, deselect (use default)
+                                            if selectedSubMood == subMood {
+                                                selectedSubMood = nil
+                                            } else {
+                                                selectedSubMood = subMood
+                                            }
+                                            playSelectionClick()
                                         }
-                                        playSelectionClick()
-                                    }
-                                        .frame(width: chipWidth) // Fixed width
+                                        .frame(width: chipWidth, height: 44) // Fixed width AND height to prevent shifting
+                                        .fixedSize(horizontal: false, vertical: true) // Prevent text from causing size changes
                                     }
                                     
                                     // Fill remaining space if row has less than 3 items
@@ -192,9 +192,9 @@ struct MoodSliderCheckInView: View {
                                         Spacer()
                                     }
                                 }
-                                }
                             }
-                            .padding(.horizontal, 24)
+                            .padding(.horizontal, horizontalPadding)
+                        }
                         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: determinedCoreMood)
                     }
                     
@@ -314,7 +314,11 @@ struct MoodChip: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 14, weight: isSelected ? .semibold : .medium, design: .default))
-                .padding(.horizontal, 16)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8) // Allow slight text scaling if needed
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity) // Fill available width
+                .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(
                     Capsule()

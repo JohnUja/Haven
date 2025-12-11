@@ -106,11 +106,11 @@ struct DataVisualizationView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Consistency Heatmap")
                 .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundColor(.primary)
+                .foregroundColor(themeManager.currentTheme.textPrimary)
             
             Text("Your activity over the last 6 months")
                 .font(.system(size: 14, weight: .medium, design: .rounded))
-                .foregroundColor(.secondary)
+                .foregroundColor(themeManager.currentTheme.textSecondary)
             
             if let user = currentUser {
                 let calendar = Calendar.current
@@ -139,11 +139,11 @@ struct DataVisualizationView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Activity & Mood Correlation")
                 .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundColor(.primary)
+                .foregroundColor(themeManager.currentTheme.textPrimary)
             
             Text("See how your activity affects your mood")
                 .font(.system(size: 14, weight: .medium, design: .rounded))
-                .foregroundColor(.secondary)
+                .foregroundColor(themeManager.currentTheme.textSecondary)
             
             if let user = currentUser {
                 let correlationData = DataVisualizationService.shared.getActivityMoodCorrelation(
@@ -168,7 +168,7 @@ struct DataVisualizationView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Weekly Summary")
                 .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundColor(.primary)
+                .foregroundColor(themeManager.currentTheme.textPrimary)
             
             if let user = currentUser {
                 let summary = DataVisualizationService.shared.getWeeklySummary(
@@ -217,18 +217,21 @@ struct ConsistencyHeatmapView: View {
     let heatmapData: [Date: Int]
     let startDate: Date
     let endDate: Date
+    @Environment(ThemeManager.self) private var themeManager
     
     private var maxValue: Int {
         heatmapData.values.max() ?? 1
     }
     
     var body: some View {
+        let theme = themeManager.currentTheme
+        
         VStack(alignment: .leading, spacing: 8) {
             // Legend
             HStack {
                 Text("Less")
                     .font(.system(size: 12, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(theme.textSecondary)
                 
                 HStack(spacing: 4) {
                     ForEach(0..<5) { index in
@@ -240,7 +243,7 @@ struct ConsistencyHeatmapView: View {
                 
                 Text("More")
                     .font(.system(size: 12, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(theme.textSecondary)
                 
                 Spacer()
             }
@@ -263,7 +266,7 @@ struct ConsistencyHeatmapView: View {
                             .overlay(
                                 Text("\(calendar.component(.day, from: date))")
                                     .font(.system(size: 10, design: .rounded))
-                                    .foregroundColor(intensity > 0.5 ? .white : .primary)
+                                    .foregroundColor(intensity > 0.5 ? .white : theme.textPrimary)
                             )
                     }
                 }
@@ -341,8 +344,11 @@ struct DataSummaryCard: View {
     let value: String
     let icon: String
     let color: Color
+    @Environment(ThemeManager.self) private var themeManager
     
     var body: some View {
+        let theme = themeManager.currentTheme
+        
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 24, design: .rounded))
@@ -352,11 +358,11 @@ struct DataSummaryCard: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.system(size: 14, weight: .medium, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(theme.textSecondary)
                 
                 Text(value)
                     .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
+                    .foregroundColor(theme.textPrimary)
             }
             
             Spacer()

@@ -13,7 +13,7 @@ import GoogleSignIn
 
 @main
 struct TimeFlowApp: App {
-    @State private var authService = FirebaseAuthService.shared
+    @State private var authService: FirebaseAuthService
     @State private var themeManager = ThemeManager()
     @StateObject private var timeSettings = TimeSettingsManager()
     @StateObject private var calendarManager = CalendarManager()
@@ -24,6 +24,9 @@ struct TimeFlowApp: App {
     init() {
         // Initialize Firebase FIRST, before anything else
         FirebaseApp.configure()
+        
+        // Initialize authService AFTER Firebase is configured
+        _authService = State(initialValue: FirebaseAuthService.shared)
         
         // DEBUG: Connect to Firebase Emulator Suite if running locally
         #if DEBUG

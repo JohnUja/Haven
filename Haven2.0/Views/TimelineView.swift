@@ -23,6 +23,7 @@ struct TimelineView: View {
     @State private var selectedDate = Date()
     @State private var scrollOffset: CGFloat = 0
     @State private var timer: Timer?
+    @State private var showingCalendar = false
     
     // Check if selected date is today
     private var isSelectedDateToday: Bool {
@@ -391,12 +392,57 @@ struct TimelineView: View {
                     Text("There is a schedule overlap. Would you like to group these tasks into a task block?")
                 }
             }
+            .sheet(isPresented: $showingCalendar) {
+                calendarModalView
+            }
             .onAppear {
                 startTimer()
             }
-                .onDisappear {
-                    stopTimer()
+            .onDisappear {
+                stopTimer()
+            }
+        }
+    }
+    
+    // MARK: - Calendar Modal View
+    private var calendarModalView: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                MonthCalendarView(selectedDate: Binding(
+                    get: { selectedDate },
+                    set: { newDate in
+                        selectedDate = newDate
+                        DatePersistenceService.shared.saveSelectedDate(newDate)
+                        calendarManager.loadCalendarEvents(for: newDate)
+                        let calendar = Calendar.current
+                        if calendar.dateComponents([.day], from: Date(), to: newDate).day ?? 0 > 0 {
+                            DatePersistenceService.shared.saveLastWorkedDate(newDate)
+                        }
+                    }
+                ))
+                
+                HStack(spacing: 12) {
+                    Button("Today") {
+                        withAnimation {
+                            selectedDate = Date()
+                            DatePersistenceService.shared.saveSelectedDate(Date())
+                            showingCalendar = false
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    
+                    Spacer()
+                    
+                    Button("Done") {
+                        showingCalendar = false
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
+                .padding()
+            }
+            .navigationTitle("Select Date")
+            .navigationBarTitleDisplayMode(.inline)
+            .background(Color(.systemBackground))
         }
     }
     
@@ -413,23 +459,19 @@ struct TimelineView: View {
         return VStack(spacing: 16) {
             // Month/Year Header (DEC 2025) and Today Button - Top Row
             HStack {
-                // Calendar Button (DEC 2025) - with border like work/personal tabs
+                // Calendar Button (DEC 2025) - Connected to calendar system (same as home screen)
                 Button(action: {
-                    // Scroll to today
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        selectedDate = Date()
-                        DatePersistenceService.shared.saveSelectedDate(selectedDate)
-                        calendarManager.loadCalendarEvents(for: selectedDate)
-                    }
+                    // Opens the same calendar modal used by Move Task and home screen
+                    showingCalendar = true
                 }) {
                     Text(monthYearString(from: selectedDate).uppercased())
                         .font(theme.headerFont) // Use theme headerFont (11pt, semibold)
-                        .foregroundColor(theme.textPrimary)
+                        .foregroundColor(theme.textPrimary) // Theme-controlled
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(
                             RoundedRectangle(cornerRadius: theme.smallCornerRadius)
-                                .fill(theme.glassBackground.opacity(0.3))
+                                .fill(theme.glassBackground.opacity(0.5)) // Increased opacity for visibility
                                 .overlay(
                                     RoundedRectangle(cornerRadius: theme.smallCornerRadius)
                                         .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
@@ -486,7 +528,8 @@ struct TimelineView: View {
                 },
                 hasEvents: { date in
                     calendarManager.hasEventsOnDate(date)
-                }
+                },
+                showMonthHeader: true
             )
             
             // Weather Info - Shows weather for selected date (ORIGINAL STRUCTURE)
@@ -601,7 +644,7 @@ struct TimelineView: View {
     private var taskBlocksForSelectedDate: [TaskBlock] {
         taskBlocks.filter { taskBlock in
             // Check if any task in this block falls within the selected date
-            let blockTasks = selectedDateTasks.filter { $0.taskBlockID == taskBlock.id }
+            let blockTasks = selectedDateTasks.filter { $0.taskBlock?.id == taskBlock.id }
             return !blockTasks.isEmpty
         }
     }
@@ -609,7 +652,7 @@ struct TimelineView: View {
     private func taskBlocksForHour(_ hour: Int) -> [TaskBlock] {
         taskBlocks.filter { taskBlock in
             // Check if any task in this block falls within this hour
-            let blockTasks = selectedDateTasks.filter { $0.taskBlockID == taskBlock.id }
+            let blockTasks = selectedDateTasks.filter { $0.taskBlock?.id == taskBlock.id }
             return blockTasks.contains { task in
                 Calendar.current.component(.hour, from: task.startTime) == hour
             }
@@ -693,7 +736,7 @@ struct TimelineView: View {
         
         // Get all hours that have task blocks
         for block in taskBlocksForSelectedDate {
-            let blockTasks = selectedDateTasks.filter { $0.taskBlockID == block.id }
+            let blockTasks = selectedDateTasks.filter { $0.taskBlock?.id == block.id }
             for task in blockTasks {
                 let taskHour = calendar.component(.hour, from: task.startTime)
                 hoursWithTasks.insert(taskHour)
@@ -1297,4 +1340,11 @@ struct TaskBlockTimelineView: View {
 #Preview {
     TimelineView()
         .modelContainer(for: [Task.self], inMemory: true)
+}
+struct ScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = .zero
+    
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
 }

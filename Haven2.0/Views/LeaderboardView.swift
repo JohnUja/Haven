@@ -10,6 +10,7 @@ import SwiftData
 
 struct LeaderboardView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
     @Environment(ThemeManager.self) private var themeManager
     @Query private var users: [User]
     @Query private var tasks: [Task]
@@ -123,7 +124,7 @@ struct LeaderboardView: View {
                     )
             )
                         .padding(.horizontal, 20)
-                        .padding(.top, 16)
+                        .padding(.top, 8) // Reduced from 16 to move content higher
                         
                         // Top bar with league name and time
                         HStack {
@@ -266,7 +267,7 @@ struct LeaderboardView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
-                        // Dismiss view - handled by environment dismiss
+                        dismiss()
                     }) {
                         Image(systemName: "xmark") // Use xmark for modal dismissal
                             .font(.system(size: 16, weight: .semibold))

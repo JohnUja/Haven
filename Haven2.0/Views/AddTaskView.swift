@@ -76,8 +76,10 @@ struct AddTaskView: View {
                                     .cornerRadius(theme.smallCornerRadius)
                                     .placeholder(when: title.isEmpty) {
                                         Text("Task title")
-                                            .foregroundColor(theme.textSecondary.opacity(0.6))
+                                            .foregroundColor(theme.textSecondary.opacity(0.8))
                                             .font(.system(size: 20, weight: .bold, design: .default))
+                                            .padding(.horizontal, theme.cardPadding)
+                                            .padding(.vertical, theme.cardVerticalPadding)
                                     }
                                 
                                 // Description - TextEditor
@@ -102,7 +104,7 @@ struct AddTaskView: View {
                                 .cornerRadius(theme.smallCornerRadius)
                                 
                                 // Priority Pill Selector
-                                priorityPillSelector(theme: theme)
+                                priorityMenuSelector(theme: theme)
                             }
                         }
                         
@@ -112,46 +114,36 @@ struct AddTaskView: View {
                                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                                     .font(.system(size: 16))
                                     .foregroundColor(theme.accentColor)
-                                Toggle("Flexible task (no specific time)", isOn: $isFlexibleTask)
-                                    .foregroundColor(theme.textPrimary)
-                                    .tint(theme.accentColor)
+                            Toggle("Flexible task (no specific time)", isOn: $isFlexibleTask)
+                                .foregroundColor(theme.textPrimary)
+                                .tint(theme.accentColor)
                             }
-                            .padding(.horizontal, theme.cardPadding)
-                            .padding(.vertical, theme.cardVerticalPadding)
-                            .background(transparentInputBackground(theme: theme))
-                            .cornerRadius(theme.smallCornerRadius)
-                            .onChange(of: isFlexibleTask) { _, newValue in
-                                if newValue {
-                                    hasEndTime = false
+                                .padding(.horizontal, theme.cardPadding)
+                                .padding(.vertical, theme.cardVerticalPadding)
+                                .background(transparentInputBackground(theme: theme))
+                                .cornerRadius(theme.smallCornerRadius)
+                                .onChange(of: isFlexibleTask) { _, newValue in
+                                    if newValue {
+                                        hasEndTime = false
+                                    }
                                 }
-                            }
                         }
                         
                         // Time Section
                         sectionView(title: "TIME", theme: theme) {
                             if !isFlexibleTask {
                                 VStack(spacing: 16) {
-                                    if hasEndTime {
-                                        // Horizontal layout when end time is enabled
-                                        HStack(spacing: 12) {
-                                            NumericTimeInput(time: $startTime, title: "Start time")
-                                                .onChange(of: startTime) { _, newValue in
-                                                    // Prevent past times for today
-                                                    if Calendar.current.isDateInToday(newValue) && newValue < Date() {
-                                                        startTime = Date()
-                                                    }
-                                                }
-                                            
-                                            NumericTimeInput(time: $endTime, title: "End time")
-                                        }
-                                    } else {
-                                        NumericTimeInput(time: $startTime, title: "Start time")
-                                            .onChange(of: startTime) { _, newValue in
-                                                // Prevent past times for today
-                                                if Calendar.current.isDateInToday(newValue) && newValue < Date() {
-                                                    startTime = Date()
-                                                }
+                                    // Vertical layout - one above the other
+                                    NumericTimeInput(time: $startTime, title: "Start time")
+                                        .onChange(of: startTime) { _, newValue in
+                                            // Prevent past times for today
+                                            if Calendar.current.isDateInToday(newValue) && newValue < Date() {
+                                                startTime = Date()
                                             }
+                                        }
+                                    
+                                    if hasEndTime {
+                                        NumericTimeInput(time: $endTime, title: "End time")
                                     }
                                     
                                     Toggle("Has end time", isOn: $hasEndTime)
@@ -250,19 +242,19 @@ struct AddTaskView: View {
                                 Image(systemName: "lock.fill")
                                     .font(.system(size: 16))
                                     .foregroundColor(theme.accentColor)
-                                Toggle("Lock task", isOn: Binding(
-                                    get: { isLocked },
-                                    set: { newValue in
-                                        if isRecurring {
-                                            pendingLockValue = newValue
-                                            showLockScopeDialog = true
-                                        } else {
-                                            isLocked = newValue
-                                        }
+                            Toggle("Lock task", isOn: Binding(
+                                get: { isLocked },
+                                set: { newValue in
+                                    if isRecurring {
+                                        pendingLockValue = newValue
+                                        showLockScopeDialog = true
+                                    } else {
+                                        isLocked = newValue
                                     }
-                                ))
-                                .foregroundColor(theme.textPrimary)
-                                .tint(theme.accentColor)
+                                }
+                            ))
+                            .foregroundColor(theme.textPrimary)
+                            .tint(theme.accentColor)
                             }
                             .padding(.horizontal, theme.cardPadding)
                             .padding(.vertical, theme.cardVerticalPadding)
@@ -281,7 +273,7 @@ struct AddTaskView: View {
                     Button(action: { dismiss() }) {
                         Image(systemName: "xmark")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(theme.textPrimary)
+                    .foregroundColor(theme.textPrimary)
                     }
                 }
                 
@@ -337,39 +329,37 @@ struct AddTaskView: View {
         }
     }
     
-    // MARK: - Priority Pill Selector
+    // MARK: - Priority Menu Selector (REVERTED from pills to original Menu)
     @ViewBuilder
-    private func priorityPillSelector(theme: any AppTheme) -> some View {
-        HStack(spacing: 12) {
+    private func priorityMenuSelector(theme: any AppTheme) -> some View {
+        Menu {
             ForEach(PriorityType.allCases, id: \.self) { priorityOption in
                 Button(action: {
                     priority = priorityOption
-                    // Haptic feedback
-                    let generator = UIImpactFeedbackGenerator(style: .soft)
-                    generator.prepare()
-                    generator.impactOccurred()
                 }) {
-                    Text(priorityOption.rawValue.capitalized)
-                        .font(.system(size: 14, weight: priority == priorityOption ? .bold : .regular, design: .default))
-                        .foregroundColor(priority == priorityOption ? .white : priorityColor(for: priorityOption))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(
-                            Capsule()
-                                .fill(priority == priorityOption ? priorityColor(for: priorityOption) : Color.clear)
-                                .overlay(
-                                    Capsule()
-                                        .stroke(priorityColor(for: priorityOption), lineWidth: priority == priorityOption ? 0 : 1.5)
-                                )
-                        )
+                    HStack {
+                        Text(priorityOption.rawValue.capitalized)
+                        if priority == priorityOption {
+                            Image(systemName: "checkmark")
+                        }
+                    }
                 }
-                .buttonStyle(PlainButtonStyle())
             }
+        } label: {
+            HStack {
+                Text("Priority: \(priority.rawValue.capitalized)")
+                    .font(theme.bodyFont)
+                    .foregroundColor(theme.textPrimary)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 12))
+                    .foregroundColor(theme.textSecondary)
+            }
+            .padding(.horizontal, theme.cardPadding)
+            .padding(.vertical, theme.cardVerticalPadding)
+            .background(transparentInputBackground(theme: theme))
+            .cornerRadius(theme.smallCornerRadius)
         }
-        .padding(.horizontal, theme.cardPadding)
-        .padding(.vertical, theme.cardVerticalPadding)
-        .background(transparentInputBackground(theme: theme))
-        .cornerRadius(theme.smallCornerRadius)
     }
     
     private func priorityColor(for priority: PriorityType) -> Color {

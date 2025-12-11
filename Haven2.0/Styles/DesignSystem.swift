@@ -480,7 +480,8 @@ func transparentTextField(
     .cornerRadius(theme.smallCornerRadius)
     .placeholder(when: text.wrappedValue.isEmpty) {
         Text(placeholder)
-            .foregroundColor(theme.textSecondary.opacity(0.6)) // Lighter grey placeholder
+            .foregroundColor(theme.textSecondary.opacity(0.8)) // Increased opacity for better visibility
+            .font(.system(size: 16, weight: .regular, design: .default))
     }
 }
 
@@ -508,7 +509,7 @@ func transparentTextEditor(
         if let placeholder = placeholder, text.wrappedValue.isEmpty {
             Text(placeholder)
                 .font(.system(size: 16, weight: .regular, design: .default))
-                .foregroundColor(theme.textSecondary.opacity(0.6)) // Lighter grey placeholder
+                .foregroundColor(theme.textSecondary.opacity(0.8)) // Increased opacity for better visibility
                 .padding(.horizontal, theme.cardPadding) // Same spacing as text
                 .padding(.vertical, theme.cardVerticalPadding) // Same spacing as text
         }

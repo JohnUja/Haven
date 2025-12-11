@@ -13,17 +13,20 @@ struct ProfileEditView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(ThemeManager.self) private var themeManager
     @Environment(FirebaseAuthService.self) private var authService
+    
     @State private var name: String = ""
     @State private var username: String = ""
     @State private var email: String = ""
     @State private var phoneNumber: String = ""
     @State private var password: String = ""
+    
     @State private var showingPasswordChange = false
     @State private var showingPasswordReset = false
     @State private var showingEmailVerification = false
     @State private var showingDeleteConfirmation = false
     @State private var showingDeleteUsernameEntry = false
     @State private var deleteConfirmationUsername: String = ""
+    
     @State private var isLoading = false
     @State private var errorMessage: String?
     
@@ -109,16 +112,16 @@ struct ProfileEditView: View {
                 )
             }
             .sheet(isPresented: $showingPasswordChange) {
-                AccountSecurityView()
-                    .environmentObject(authService)
+                ChangePasswordView()
+                    .environment(authService)
             }
             .sheet(isPresented: $showingPasswordReset) {
                 PasswordResetView()
-                    .environmentObject(authService)
+                    .environment(authService)
             }
             .sheet(isPresented: $showingEmailVerification) {
                 EmailVerificationView()
-                    .environmentObject(authService)
+                    .environment(authService)
             }
             .onAppear {
                 loadProfileData()
@@ -145,7 +148,7 @@ struct ProfileEditView: View {
                     } placeholder: {
                         Image(systemName: "person.circle.fill")
                             .font(.system(size: 80))
-                            .foregroundColor(.blue)
+                            .foregroundColor(themeManager.currentTheme.accentColor)
                     }
                     .frame(width: 100, height: 100)
                     .clipShape(Circle())
@@ -153,7 +156,7 @@ struct ProfileEditView: View {
                     // Fallback to system icon
                     Image(systemName: "person.circle.fill")
                         .font(.system(size: 80))
-                        .foregroundColor(.blue)
+                        .foregroundColor(themeManager.currentTheme.accentColor)
                 }
             }
             
@@ -164,7 +167,7 @@ struct ProfileEditView: View {
             }) {
                 Text("CHANGE AVATAR")
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundColor(.blue)
+                    .foregroundColor(themeManager.currentTheme.accentColor)
             }
         }
     }
@@ -236,7 +239,7 @@ struct ProfileEditView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Email Verification")
                         .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(themeManager.currentTheme.textSecondary)
                     
                     Button(action: {
                         showingEmailVerification = true
@@ -244,18 +247,16 @@ struct ProfileEditView: View {
                         HStack {
                             Text(authService.currentUser?.isEmailVerified == true ? "Email Verified" : "Verify Email")
                                 .font(.system(size: 16, weight: .regular, design: .rounded))
-                                .foregroundColor(.primary)
+                                .foregroundColor(themeManager.currentTheme.textPrimary)
                             Spacer()
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(themeManager.currentTheme.textSecondary)
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color(.systemGray6))
-                        )
+                        .background(transparentInputBackground(theme: themeManager.currentTheme))
+                        .cornerRadius(themeManager.currentTheme.smallCornerRadius)
                     }
                 }
             }
@@ -297,8 +298,8 @@ struct ProfileEditView: View {
                 text: value,
                 theme: themeManager.currentTheme
             )
-                .keyboardType(keyboardType)
-                .textInputAutocapitalization(autocapitalization)
+            .keyboardType(keyboardType)
+            .textInputAutocapitalization(autocapitalization)
         }
     }
     
@@ -335,6 +336,7 @@ struct ProfileEditView: View {
         isLoading = true
         errorMessage = nil
         
+        // 🛠️ FIX: Use _Concurrency.Task to avoid conflict with Task model
         _Concurrency.Task {
             do {
                 // Update display name in Firebase Auth
@@ -385,25 +387,32 @@ struct ProfileEditView: View {
             return
         }
         
+        // 🛠️ CRITICAL FIX: Store UID BEFORE deleting account (currentUser becomes nil after deletion)
+        guard let uid = authService.currentUser?.uid else {
+            errorMessage = "No user found. Please sign in and try again."
+            showingDeleteUsernameEntry = false
+            return
+        }
+        
         isLoading = true
         
+        // 🛠️ FIX: Use _Concurrency.Task
         _Concurrency.Task {
             do {
-                // Use FirebaseAuthService deleteAccount method
+                // Delete Firestore user data FIRST (before auth deletion)
+                let firestoreService = FirestoreService.shared
+                try? await firestoreService.deleteUser(uid: uid)
+                
+                // Then delete Firebase Auth account
                 try await authService.deleteAccount()
                 
-                // Also delete Firestore user data
-                if let uid = authService.currentUser?.uid {
-                    let firestoreService = FirestoreService.shared
-                    try? await firestoreService.deleteUser(uid: uid)
-                }
-                    
-                    // Clear local data on main thread
-                    await MainActor.run {
-                        isLoading = false
-                        deleteConfirmationUsername = ""
-                        showingDeleteUsernameEntry = false
-                        dismiss()
+                // Clear local SwiftData user data
+                await MainActor.run {
+                    // User data will be cleaned up by FirebaseAuthService
+                    isLoading = false
+                    deleteConfirmationUsername = ""
+                    showingDeleteUsernameEntry = false
+                    dismiss()
                 }
             } catch {
                 await MainActor.run {
@@ -507,12 +516,13 @@ struct ChangePasswordView: View {
         isLoading = true
         errorMessage = nil
         
+        // 🛠️ FIX: Use _Concurrency.Task
         _Concurrency.Task {
             do {
                 try await authService.changePassword(currentPassword: currentPassword, newPassword: newPassword)
-                    await MainActor.run {
-                        isLoading = false
-                        dismiss()
+                await MainActor.run {
+                    isLoading = false
+                    dismiss()
                 }
             } catch {
                 await MainActor.run {
@@ -526,6 +536,5 @@ struct ChangePasswordView: View {
 
 #Preview {
     ProfileEditView()
-        .environmentObject(FirebaseAuthService.shared)
+        .environment(FirebaseAuthService.shared)
 }
-

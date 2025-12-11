@@ -88,6 +88,11 @@ struct DynamicFocusBox: View {
     let allTaskBlocks: [TaskBlock]
     @Binding var previewTask: Task? // For Preview Mode from Agenda
     @Binding var isViewAllTasksMode: Bool // Expose mode to parent
+    var onAddTask: (() -> Void)? = nil // Callback for Add Task button
+    
+    @Environment(ThemeManager.self) private var themeManager
+    @Environment(FirebaseAuthService.self) private var authService
+    
     @State private var showingImmersive = false
     @State private var selectedTask: Task? = nil
     @State private var isPreviewMode = false
@@ -96,8 +101,9 @@ struct DynamicFocusBox: View {
     @State private var checkedTaskIDs: Set<String> = [] // Tasks checked in dynamic box (not completed yet)
     @State private var showingProgressDetails = false
     @State private var showingTaskDetails = false
+    @State private var showingSplitView = false
+    @State private var splitContextGroups: [String: [Task]] = [:]
     @Environment(\.modelContext) private var modelContext
-    @Environment(ThemeManager.self) private var themeManager
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     @Query private var goals: [Goal]
     
@@ -315,6 +321,18 @@ struct DynamicFocusBox: View {
             .fullScreenCover(isPresented: $showingImmersive, content: immersiveView)
             .sheet(isPresented: $showingProgressDetails, content: progressDetailsSheet)
             .sheet(isPresented: $showingTaskDetails, content: taskDetailsSheet)
+            .sheet(isPresented: $showingSplitView) {
+                splitViewSheet
+            }
+            .onChange(of: showingSplitView) { oldValue, newValue in
+                if newValue {
+                    // Initialize context groups when sheet appears
+                    let allDayTasks = allTasks.filter { task in
+                        Calendar.current.isDate(task.startTime, inSameDayAs: selectedDate)
+                    }.sorted { $0.startTime < $1.startTime }
+                    splitContextGroups = initializeContextGroups(allDayTasks: allDayTasks)
+                }
+            }
     }
     
     // MARK: - Main Content
@@ -350,7 +368,199 @@ struct DynamicFocusBox: View {
                 showingImmersive = false
                 selectedTask = nil
             })
+            .environment(themeManager) // Ensure theme is passed
+            .environment(authService) // Ensure auth service is passed
         }
+    }
+    
+    // MARK: - Split View Sheet (Editable Floating View)
+    @ViewBuilder
+    private var splitViewSheet: some View {
+        let theme = themeManager.currentTheme
+        
+        // Get all tasks for the selected date
+        let allDayTasks = allTasks.filter { task in
+            Calendar.current.isDate(task.startTime, inSameDayAs: selectedDate)
+        }.sorted { $0.startTime < $1.startTime }
+        
+        // Initialize context groups if empty
+        if splitContextGroups.isEmpty {
+            splitContextGroups = initializeContextGroups(allDayTasks: allDayTasks)
+        }
+        
+        return NavigationView {
+            ZStack {
+                theme.primaryGradient.ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 20) {
+                        Text("Split Tasks into Contexts")
+                            .font(theme.titleFont)
+                            .foregroundColor(theme.textPrimary)
+                            .padding(.top, 20)
+                        
+                        Text("Group your tasks by context. Drag tasks between contexts or tap to make them standalone.")
+                            .font(theme.bodyFont)
+                            .foregroundColor(theme.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 20)
+                        
+                        // Editable context groups
+                        VStack(spacing: 16) {
+                            ForEach(Array(splitContextGroups.keys.sorted()), id: \.self) { contextName in
+                                contextGroupView(
+                                    contextName: contextName,
+                                    tasks: splitContextGroups[contextName] ?? [],
+                                    theme: theme,
+                                    onEditContext: { newName in
+                                        if newName.isEmpty {
+                                            // Remove context, make tasks standalone
+                                            let tasks = splitContextGroups[contextName] ?? []
+                                            splitContextGroups.removeValue(forKey: contextName)
+                                            splitContextGroups["Standalone", default: []].append(contentsOf: tasks)
+                                        } else {
+                                            // Rename context
+                                            let tasks = splitContextGroups[contextName] ?? []
+                                            splitContextGroups.removeValue(forKey: contextName)
+                                            splitContextGroups[newName] = tasks
+                                        }
+                                    },
+                                    onMoveTask: { task, toContext in
+                                        // Move task to different context
+                                        splitContextGroups[contextName]?.removeAll { $0.id == task.id }
+                                        if splitContextGroups[contextName]?.isEmpty == true {
+                                            splitContextGroups.removeValue(forKey: contextName)
+                                        }
+                                        splitContextGroups[toContext, default: []].append(task)
+                                    },
+                                    onMakeStandalone: { task in
+                                        // Make task standalone
+                                        splitContextGroups[contextName]?.removeAll { $0.id == task.id }
+                                        if splitContextGroups[contextName]?.isEmpty == true {
+                                            splitContextGroups.removeValue(forKey: contextName)
+                                        }
+                                        splitContextGroups["Standalone", default: []].append(task)
+                                    }
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        
+                        // Add New Context Button
+                        Button(action: {
+                            let newContext = "New Context \(splitContextGroups.count + 1)"
+                            splitContextGroups[newContext] = []
+                        }) {
+                            HStack {
+                                Image(systemName: "plus.circle.fill")
+                                Text("Add Context")
+                            }
+                            .font(theme.bodyFont)
+                            .foregroundColor(theme.accentColor)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(
+                                RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                    .fill(theme.glassBackground.opacity(0.5))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                            .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                                    )
+                            )
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 20)
+                    }
+                }
+            }
+            .navigationTitle("Split Tasks")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") {
+                        // Save context groupings to task blocks
+                        saveContextGroupings(contextGroups: splitContextGroups)
+                        showingSplitView = false
+                    }
+                }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        showingSplitView = false
+                    }
+                }
+            }
+        }
+    }
+    
+    // MARK: - Context Group View
+    @ViewBuilder
+    private func contextGroupView(
+        contextName: String,
+        tasks: [Task],
+        theme: any AppTheme,
+        onEditContext: @escaping (String) -> Void,
+        onMoveTask: @escaping (Task, String) -> Void,
+        onMakeStandalone: @escaping (Task) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Editable context name
+            EditableContextNameField(
+                initialName: contextName,
+                onEdit: onEditContext,
+                theme: theme
+            )
+            
+            // Tasks in this context (draggable)
+            ForEach(tasks) { task in
+                HStack {
+                    Image(systemName: "line.3.horizontal")
+                        .foregroundColor(theme.textSecondary)
+                    
+                    Text(task.title)
+                        .font(theme.bodyFont)
+                        .foregroundColor(theme.textPrimary)
+                    
+                    Spacer()
+                    
+                    Menu {
+                        ForEach(Array(splitContextGroups.keys.sorted()), id: \.self) { targetContext in
+                            if targetContext != contextName {
+                                Button("Move to \(targetContext)") {
+                                    onMoveTask(task, targetContext)
+                                }
+                            }
+                        }
+                        Button("Make Standalone") {
+                            onMakeStandalone(task)
+                        }
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .foregroundColor(theme.textSecondary)
+                    }
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                        .fill(theme.glassBackground.opacity(0.5))
+                )
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                .fill(theme.glassBackground.opacity(0.3))
+                .overlay(
+                    RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                        .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                )
+        )
+    }
+    
+    // MARK: - Save Context Groupings
+    private func saveContextGroupings(contextGroups: [String: [Task]]) {
+        // TODO: Implement saving context groupings to task blocks
+        // This should create/update TaskBlock instances for each context
+        // and assign tasks to those blocks
     }
     
     // MARK: - Progress Details Sheet
@@ -449,24 +659,92 @@ struct DynamicFocusBox: View {
     @ViewBuilder
     private func taskDetailsContent(task: Task, theme: any AppTheme) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text(task.title)
+            VStack(alignment: .leading, spacing: 20) {
+                // Title Section
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("TITLE")
                     .font(theme.headerFont)
+                        .foregroundColor(theme.textSecondary)
+                    Text(task.title)
+                        .font(theme.titleFont)
                     .foregroundColor(theme.textPrimary)
+                }
+                .padding(.horizontal, theme.cardPadding)
+                .padding(.vertical, theme.cardVerticalPadding)
+                .background(
+                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                        .fill(theme.glassBackground.opacity(0.5))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                        )
+                )
                 
+                // Description Section
                 if let description = task.taskDescription, !description.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("DESCRIPTION")
+                            .font(theme.headerFont)
+                            .foregroundColor(theme.textSecondary)
                     Text(description)
                         .font(theme.bodyFont)
-                        .foregroundColor(theme.textSecondary)
+                            .foregroundColor(theme.textPrimary)
+                    }
+                    .padding(.horizontal, theme.cardPadding)
+                    .padding(.vertical, theme.cardVerticalPadding)
+                    .background(
+                        RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                            .fill(theme.glassBackground.opacity(0.5))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                    .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                            )
+                    )
                 }
                 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Category: \(task.category.displayName)")
-                    Text("Priority: \(task.priority.rawValue.capitalized)")
-                    Text("Time: \(formatTimeWithAMPM(task.startTime)) - \(formatTimeWithAMPM(task.endTime))")
-                }
+                // Details Section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("DETAILS")
+                        .font(theme.headerFont)
+                        .foregroundColor(theme.textSecondary)
+                    
+                    HStack {
+                        Text("Category:")
+                            .font(theme.bodyFont)
+                            .foregroundColor(theme.textSecondary)
+                        Text(task.category.displayName)
+                            .font(theme.bodyFont)
+                            .foregroundColor(theme.textPrimary)
+                    }
+                    
+                    HStack {
+                        Text("Priority:")
+                            .font(theme.bodyFont)
+                            .foregroundColor(theme.textSecondary)
+                        Text(task.priority.rawValue.capitalized)
+                            .font(theme.bodyFont)
+                            .foregroundColor(theme.textPrimary)
+                    }
+                    
+                    HStack {
+                        Text("Time:")
+                            .font(theme.bodyFont)
+                            .foregroundColor(theme.textSecondary)
+                        Text("\(formatTimeWithAMPM(task.startTime)) - \(formatTimeWithAMPM(task.endTime))")
                 .font(theme.bodyFont)
                 .foregroundColor(theme.textPrimary)
+                    }
+                }
+                .padding(.horizontal, theme.cardPadding)
+                .padding(.vertical, theme.cardVerticalPadding)
+                .background(
+                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                        .fill(theme.glassBackground.opacity(0.5))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                        )
+                )
             }
             .padding()
         }
@@ -486,52 +764,31 @@ struct DynamicFocusBox: View {
                     }
                     
                     Image(systemName: block.icon)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 16, weight: .regular))
                         .foregroundColor(theme.textPrimary)
+                        .symbolRenderingMode(.hierarchical)
                     
-                    // Context-aware heading: single task shows title, group shows context name - regular text
+                    // Context-aware heading: single task shows title, group shows context name - use same font as focus/plan tabs
                     if block.tasks.count == 1, let task = block.tasks.first {
-                        Text(task.title) // Removed .uppercased()
-                            .font(.system(size: 16, weight: .regular, design: .default)) // Changed to .regular
+                        Text(task.title)
+                            .font(theme.headerFont) // Use same font as focus/plan tabs (11pt, semibold)
                             .foregroundColor(theme.textPrimary)
                     } else {
-                        Text(block.displayName) // Removed .uppercased()
-                            .font(.system(size: 16, weight: .regular, design: .default)) // Changed to .regular
+                        Text(block.displayName)
+                            .font(theme.headerFont) // Use same font as focus/plan tabs (11pt, semibold)
                             .foregroundColor(theme.textPrimary)
                     }
                 }
             } else if isViewAllTasksMode {
-                Text("All Tasks") // Removed "ALL TASKS"
-                    .font(.system(size: 16, weight: .regular, design: .default)) // Changed to .regular
+                Text("All Tasks")
+                    .font(theme.headerFont) // Use same font as focus/plan tabs (11pt, semibold)
                     .foregroundColor(theme.textPrimary)
             }
             
             Spacer()
             
-            // Right: Toggle button + Cancel preview + Complete All + 3-dot menu
+            // Right: Cancel preview + Complete All + 3-dot menu (Toggle button moved to bottom right)
             HStack(spacing: 12) {
-                // Toggle button (moved to right)
-                Button(action: {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        isViewAllTasksMode.toggle()
-                        if isViewAllTasksMode {
-                            exitPreviewMode()
-                        }
-                    }
-                }) {
-                    Image(systemName: isViewAllTasksMode ? "sparkles" : "list.bullet")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(theme.textPrimary)
-                        .frame(width: 28, height: 28)
-                        .background(
-                            Circle()
-                                .fill(theme.glassBackground.opacity(0.5))
-                                .overlay(
-                                    Circle()
-                                        .stroke(theme.glassBorder, lineWidth: 1)
-                                )
-                        )
-                }
                 // Cancel preview button
                 if isPreviewMode {
                     Button(action: {
@@ -562,24 +819,36 @@ struct DynamicFocusBox: View {
                     }
                 }
                 
-                // 3-dot menu (moved to right) - only in dynamic mode - IMPLEMENT LOGIC
+                // 3-dot menu (moved to right) - only in dynamic mode
                 if !isViewAllTasksMode && !isPreviewMode {
                     Menu {
+                        // Start option - ActivityKit integration
+                        if let block = displayedBlock, !block.tasks.isEmpty {
                         Button(action: {
-                            // Show progress details
+                                // Start immersive mode with ActivityKit
+                                if let firstTask = block.tasks.first {
+                                    selectedTask = firstTask
+                                    showingImmersive = true
+                                }
+                            }) {
+                                Label("Start", systemImage: "play.fill")
+                            }
+                        }
+                        
+                        // Split option - context grouping
+                        if let block = displayedBlock, block.tasks.count > 1 {
+                        Button(action: {
+                                showingSplitView = true
+                            }) {
+                                Label("Split", systemImage: "rectangle.split.2x1")
+                            }
+                        }
+                        
+                        // View Progress
+                        Button(action: {
                             showingProgressDetails = true
                         }) {
                             Label("View Progress", systemImage: "chart.bar.fill")
-                        }
-                        
-                        Button(action: {
-                            // Show task details
-                            if let block = displayedBlock, let firstTask = block.tasks.first {
-                                selectedTask = firstTask
-                                showingTaskDetails = true
-                            }
-                        }) {
-                            Label("Task Details", systemImage: "list.bullet")
                         }
                     } label: {
                         Image(systemName: "ellipsis")
@@ -612,6 +881,30 @@ struct DynamicFocusBox: View {
                     
                     // XP Summary at bottom
                     xpSummaryView(tasks: allTasksForDate, theme: theme)
+                    
+                    // Toggle button - bottom right (FIXED: Now visible in full list mode)
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                isViewAllTasksMode.toggle()
+                            }
+                        }) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(theme.textPrimary)
+                                .frame(width: 24, height: 24)
+                                .background(
+                                    Circle()
+                                        .fill(theme.glassBackground.opacity(0.5))
+                                        .overlay(
+                                            Circle()
+                                                .stroke(theme.glassBorder, lineWidth: 1)
+                                        )
+                                )
+                        }
+                    }
+                    .padding(.top, 8)
                 }
             }
             .padding(.horizontal, 20)
@@ -624,16 +917,34 @@ struct DynamicFocusBox: View {
         let xpGained = calculateXPForTask(task)
         
         return HStack(spacing: 12) {
-            // Checkmark button
+            // Checkmark button (square)
             Button(action: {
                 toggleTaskCompletion(task)
             }) {
-                Image(systemName: task.isComplete ? "checkmark.circle.fill" : "circle")
+                Image(systemName: task.isComplete ? "checkmark.square.fill" : "square")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundColor(task.isComplete ? theme.accentColor : theme.textPrimary.opacity(0.6))
             }
             
-            // XP Badge (before category icon)
+            // Category icon
+            Image(systemName: task.category.icon)
+                .font(.system(size: 12))
+                .foregroundColor(theme.textPrimary.opacity(0.6))
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(task.title)
+                    .appTextStyle(.body, theme: theme)
+                    .strikethrough(task.isComplete)
+                    .opacity(task.isComplete ? 0.6 : 1.0)
+                    
+                    Text(timeRangeString(for: task))
+                        .appTextStyle(.caption, theme: theme)
+                        .opacity(0.7)
+            }
+            
+            Spacer()
+            
+            // XP Badge - MOVED TO RIGHT SIDE
             if task.isComplete {
                 // Grey XP for completed tasks
                 Text("+\(xpGained) XP")
@@ -654,24 +965,6 @@ struct DynamicFocusBox: View {
                     .cornerRadius(4)
                     .shadow(color: theme.accentColor.opacity(0.5), radius: 4)
             }
-            
-            // Category icon
-                    Image(systemName: task.category.icon)
-                        .font(.system(size: 12))
-                        .foregroundColor(theme.textPrimary.opacity(0.6))
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(task.title)
-                    .appTextStyle(.body, theme: theme)
-                    .strikethrough(task.isComplete)
-                    .opacity(task.isComplete ? 0.6 : 1.0)
-                    
-                    Text(timeRangeString(for: task))
-                        .appTextStyle(.caption, theme: theme)
-                        .opacity(0.7)
-            }
-            
-            Spacer()
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 16)
@@ -714,6 +1007,7 @@ struct DynamicFocusBox: View {
         VStack(spacing: 0) {
             // Content with Pagination (2 pages)
             if let block = displayedBlock {
+                VStack(spacing: 0) {
                 TabView(selection: $currentPage) {
                     // Page 0: Active Context Block
                     contextBlockView(block: block, theme: theme)
@@ -726,36 +1020,89 @@ struct DynamicFocusBox: View {
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .automatic))
-                .frame(minHeight: 250) // Increased height to prevent cutoff
-            } else {
-                emptyStateView(theme: theme)
-            }
-            
-            // Progress Bar - Plain (only show when there are tasks)
-            if let block = displayedBlock, !block.tasks.isEmpty {
-                let checkedCount = block.tasks.filter { checkedTaskIDs.contains($0.id) }.count
-                let totalCount = block.tasks.count
-                let progress = totalCount > 0 ? CGFloat(checkedCount) / CGFloat(totalCount) : 0.0
-                
+                    .frame(minHeight: 200) // Reduced to make room for progress bar
+                    
+                    // Progress Bar - INSIDE the box, 40% width on left, with context due time and XP below
+                    if !block.tasks.isEmpty {
+                        let checkedCount = block.tasks.filter { checkedTaskIDs.contains($0.id) }.count
+                        let totalCount = block.tasks.count
+                        let progress = totalCount > 0 ? CGFloat(checkedCount) / CGFloat(totalCount) : 0.0
+                        
+                        // Calculate context end time (latest endTime of all tasks in block)
+                        let contextEndTime = block.tasks.map { $0.endTime }.max() ?? Date()
+                        
+                        // Calculate XP for all tasks in block
+                        let totalXP = block.tasks.reduce(0) { $0 + calculateXPForTask($1) }
+                        let perTaskXP = block.tasks.count > 0 ? totalXP / block.tasks.count : 0
+                        
+                        HStack(alignment: .bottom) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                // Progress Bar - 40% width on left
             HStack {
                 GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            // Background - plain grey
+                                        let progressBarWidth = geometry.size.width * 0.4 // 40% of available width
+                                        ZStack(alignment: .leading) {
+                                            // Background - plain grey
                     Rectangle()
-                                .fill(theme.textPrimary.opacity(0.2))
-                                .frame(height: 4)
-                            
-                            // Progress - plain grey (no accent color)
-                            Rectangle()
-                                .fill(theme.textPrimary.opacity(0.5))
-                                .frame(width: geometry.size.width * progress, height: 4)
-                        }
+                                                .fill(theme.textPrimary.opacity(0.2))
+                                                .frame(width: progressBarWidth, height: 4)
+                                            
+                                            // Progress - plain grey (no accent color)
+                                            Rectangle()
+                                                .fill(theme.textPrimary.opacity(0.5))
+                                                .frame(width: progressBarWidth * progress, height: 4)
+                                        }
                 }
                 .frame(height: 4)
+                                    
                 Spacer()
+                                }
+                                
+                                // Context due time and XP below progress bar (more spacing)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Due: \(formatTimeWithAMPM(contextEndTime))")
+                                        .font(.system(size: 11, weight: .regular, design: .default))
+                                        .foregroundColor(theme.textSecondary.opacity(0.7))
+                                    
+                                    Text("\(totalXP) XP total • ~\(perTaskXP) XP/task")
+                                        .font(.system(size: 10, weight: .regular, design: .default))
+                                        .foregroundColor(theme.textSecondary.opacity(0.6))
+                                }
+                                .padding(.top, 8) // Added spacing above due/XP
+                            }
+                            
+                            Spacer()
+                            
+                            // Toggle button - bottom right, below progress bar (more spacing)
+                            Button(action: {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                    isViewAllTasksMode.toggle()
+                                    if isViewAllTasksMode {
+                                        exitPreviewMode()
+                                    }
+                                }
+                            }) {
+                                Image(systemName: isViewAllTasksMode ? "sparkles" : "list.bullet")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(theme.textPrimary)
+                                    .frame(width: 24, height: 24)
+                                    .background(
+                                        Circle()
+                                            .fill(theme.glassBackground.opacity(0.5))
+                                            .overlay(
+                                                Circle()
+                                                    .stroke(theme.glassBorder, lineWidth: 1)
+                                            )
+                                    )
+                            }
+                            .padding(.top, 8) // Added spacing above toggle button
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, 12)
+            .padding(.bottom, 16) // Increased from 12 to 16 for more spacing
+                    }
+                }
+            } else {
+                emptyStateView(theme: theme)
             }
         }
         .frame(height: fixedHeight - 60) // Subtract header height
@@ -795,10 +1142,11 @@ struct DynamicFocusBox: View {
                         
                         Spacer()
                         
-                        // Category icon on right side
+                        // Category icon on right side - white/outline
                         Image(systemName: task.category.icon)
-                            .font(.system(size: 48, weight: .medium))
-                            .foregroundColor(theme.accentColor.opacity(0.6))
+                            .font(.system(size: 48, weight: .light))
+                            .foregroundColor(theme.textPrimary.opacity(0.6))
+                            .symbolRenderingMode(.hierarchical)
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
@@ -859,13 +1207,13 @@ struct DynamicFocusBox: View {
                 }
                 AudioServicesPlaySystemSound(1520)
             }) {
-                Image(systemName: isChecked ? "checkmark.circle.fill" : "circle")
+                Image(systemName: isChecked ? "checkmark.square.fill" : "square")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundColor(isChecked ? .white : theme.textPrimary.opacity(0.6))
             }
             
             Text(task.title)
-                .font(.system(size: 14, weight: .regular, design: .default))
+                .font(theme.headerFont) // Use same font as focus/plan tabs (11pt, semibold)
                 .foregroundColor(isChecked ? theme.textPrimary.opacity(0.5) : theme.textPrimary)
                 .strikethrough(isChecked)
             
@@ -905,22 +1253,50 @@ struct DynamicFocusBox: View {
     // Added these to fix the "Cannot find in scope" errors.
     // If you have these defined in another file, you can delete them here.
     
+    // MARK: - Context Menu (Long Press)
+    @ViewBuilder
     private func contextMenuItems(theme: any AppTheme) -> some View {
-        Group {
+        // 🎯 PRIMARY ACTION: Start Focus - Begin immersive focus mode with ActivityKit
+        if let block = displayedBlock, !block.tasks.isEmpty {
             Button(action: {
-                showingProgressDetails = true
-            }) {
-                Label("View Progress", systemImage: "chart.bar.fill")
-            }
-            
-            if let task = currentSingleTask {
-                Button(action: {
-                    showingTaskDetails = true
-                    selectedTask = task
-                }) {
-                    Label("Task Details", systemImage: "info.circle.fill")
+                if let firstTask = block.tasks.first {
+                    selectedTask = firstTask
+                    showingImmersive = true
+                    
+                    // Start ActivityKit Live Activity for Dynamic Island
+                    if #available(iOS 16.1, *) {
+                        let timeRemaining = firstTask.endTime.timeIntervalSince(Date())
+                        _Concurrency.Task {
+                            do {
+                                try await ActivityKitService.shared.startImmersiveActivity(
+                                    taskTitle: firstTask.title,
+                                    timeRemaining: timeRemaining
+                                )
+                            } catch {
+                                print("ActivityKit: Failed to start activity: \(error)")
+                            }
+                        }
+                    }
                 }
+            }) {
+                Label("Start Focus", systemImage: "play.circle.fill")
             }
+        }
+        
+        // Split - Context grouping (allows user to split day based on their own context)
+        if let block = displayedBlock, block.tasks.count > 1 {
+                Button(action: {
+                showingSplitView = true
+            }) {
+                Label("Split", systemImage: "rectangle.split.2x1")
+            }
+        }
+        
+        // Add Task - Add a task to this context/block
+        Button(action: {
+            onAddTask?()
+        }) {
+            Label("Add Task", systemImage: "plus.circle.fill")
         }
     }
     
@@ -952,9 +1328,45 @@ struct DynamicFocusBox: View {
     }
     
     private func emptyStateView(theme: any AppTheme) -> some View {
-        Text("No Tasks Found")
+        VStack(spacing: 16) {
+            Image(systemName: "tray")
+                .font(.system(size: 48, weight: .light))
+                .foregroundColor(theme.textSecondary.opacity(0.5))
+                .symbolRenderingMode(.hierarchical)
+            
+            Text("No tasks for today")
+                .font(theme.bodyFont)
+                .foregroundColor(theme.textPrimary)
+            
+            Text("Create your first task to get started")
+                .font(.system(size: 10, weight: .regular, design: .default)) // Use small font instead of captionFont
             .foregroundColor(theme.textSecondary)
-            .padding()
+                .multilineTextAlignment(.center)
+            
+            Button(action: {
+                onAddTask?()
+            }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 16))
+                    Text("Add Task")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .foregroundColor(theme.textPrimary)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                        .fill(theme.glassBackground.opacity(0.5))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                        )
+                )
+            }
+        }
+        .padding(40)
+        .frame(maxWidth: .infinity)
     }
     
     private func progressBarView(theme: any AppTheme) -> some View {
@@ -1000,5 +1412,87 @@ struct DynamicFocusBox: View {
         Text(timeRangeString(for: task))
             .font(theme.bodyFont)
             .foregroundColor(theme.textSecondary)
+    }
+    
+    // MARK: - Initialize Context Groups
+    private func initializeContextGroups(allDayTasks: [Task]) -> [String: [Task]] {
+        var groups: [String: [Task]] = [:]
+        var assignedTaskIDs: Set<String> = []
+
+        // Group by existing task blocks
+        for block in allTaskBlocks.filter({ Calendar.current.isDate($0.createdDate, inSameDayAs: selectedDate) }) {
+            let tasksInBlock = allDayTasks.filter { $0.taskBlock?.id == block.id }
+            if !tasksInBlock.isEmpty {
+                groups[block.title] = tasksInBlock
+                assignedTaskIDs.formUnion(tasksInBlock.map { $0.id })
+            }
+        }
+
+        // Add standalone tasks
+        let standaloneTasks = allDayTasks.filter { !assignedTaskIDs.contains($0.id) }
+        if !standaloneTasks.isEmpty {
+            groups["Standalone"] = standaloneTasks
+        }
+        
+        // Sort tasks within each group
+        for (key, value) in groups {
+            groups[key] = value.sorted { $0.startTime < $1.startTime }
+        }
+        
+        // Ensure "Standalone" is always last if it exists
+        if let standalone = groups["Standalone"] {
+            groups.removeValue(forKey: "Standalone")
+            groups["Standalone"] = standalone
+        }
+        
+        return groups
+    }
+}
+
+// MARK: - Editable Context Name Field
+private struct EditableContextNameField: View {
+    let initialName: String
+    let onEdit: (String) -> Void
+    let theme: any AppTheme
+    
+    @State private var editableName: String
+    
+    init(initialName: String, onEdit: @escaping (String) -> Void, theme: any AppTheme) {
+        self.initialName = initialName
+        self.onEdit = onEdit
+        self.theme = theme
+        _editableName = State(initialValue: initialName)
+    }
+    
+    var body: some View {
+        HStack {
+            TextField("Context name", text: $editableName)
+                .font(theme.titleFont)
+                .foregroundColor(theme.textPrimary)
+                .textFieldStyle(.plain)
+                .onSubmit {
+                    onEdit(editableName)
+                }
+            
+            Spacer()
+            
+            Menu {
+                Button("Rename", role: .none) {
+                    onEdit(editableName)
+                }
+                Button("Delete Context", role: .destructive) {
+                    onEdit("") // Empty string removes context
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .foregroundColor(theme.textSecondary)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                .fill(theme.glassBackground.opacity(0.3))
+        )
     }
 }

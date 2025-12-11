@@ -714,7 +714,7 @@ struct ContinuousTimelineView: View {
     private var workTasks: [Task] {
         // Show work category tasks, plus other categories on the work side
         tasks.filter { 
-            $0.taskBlockID == nil && 
+            $0.taskBlock == nil && 
             ($0.category == .work || $0.category == .fixed || $0.category == .growth || $0.category == .reading)
         }
     }
@@ -722,7 +722,7 @@ struct ContinuousTimelineView: View {
     private var personalTasks: [Task] {
         // Show personal category tasks, plus other categories on the personal side
         tasks.filter { 
-            $0.taskBlockID == nil && 
+            $0.taskBlock == nil && 
             ($0.category == .personal || $0.category == .flexible || $0.category == .hobbies || 
              $0.category == .selfCare || $0.category == .leisure || $0.category == .skinCare)
         }
@@ -971,38 +971,38 @@ struct TimelineTaskDetailView: View {
                     
                     HStack {
                         Text("Title")
-                            .foregroundColor(isDarkMode ? theme.textSecondary : .secondary)
+                            .foregroundColor(theme.textSecondary)
                         Spacer()
                         Text(task.title)
-                            .foregroundColor(isDarkMode ? theme.textPrimary : .primary)
+                            .foregroundColor(theme.textPrimary)
                     }
                     
                     HStack {
                         Text("Time")
-                            .foregroundColor(isDarkMode ? theme.textSecondary : .secondary)
+                            .foregroundColor(theme.textSecondary)
                         Spacer()
                         Text("\(timeSettings.formatTime(task.startTime)) - \(timeSettings.formatTime(task.endTime))")
-                            .foregroundColor(isDarkMode ? theme.textPrimary : .primary)
+                            .foregroundColor(theme.textPrimary)
                     }
                     
                     HStack {
                         Text("Category")
-                            .foregroundColor(isDarkMode ? theme.textSecondary : .secondary)
+                            .foregroundColor(theme.textSecondary)
                         Spacer()
                         HStack {
                             Image(systemName: task.category.icon)
                                 .foregroundColor(task.category.color())
                             Text(task.category.displayName)
-                                .foregroundColor(isDarkMode ? theme.textPrimary : .primary)
+                                .foregroundColor(theme.textPrimary)
                         }
                     }
                     
                     HStack {
                         Text("Priority")
-                            .foregroundColor(isDarkMode ? theme.textSecondary : .secondary)
+                            .foregroundColor(theme.textSecondary)
                         Spacer()
                         Text(task.priority.rawValue.capitalized)
-                            .foregroundColor(isDarkMode ? theme.textSecondary : priorityColor) // Grey on dark mode
+                            .foregroundColor(theme.textSecondary)
                     }
                     
                     // Lock/Unlock button - Always visible (persistent)
@@ -1010,14 +1010,14 @@ struct TimelineTaskDetailView: View {
                         Image(systemName: task.isLocked ? "lock.fill" : "lock.open.fill")
                             .foregroundColor(task.isLocked ? .orange : .green)
                         Text(task.isLocked ? "Task is Locked" : "Task is Unlocked")
-                            .foregroundColor(isDarkMode ? theme.textSecondary : .secondary)
+                            .foregroundColor(theme.textSecondary)
                             Spacer()
                             Button(action: {
                             task.isLocked.toggle()
                                 try? modelContext.save()
                             }) {
                             Text(task.isLocked ? "Unlock" : "Lock")
-                                .foregroundColor(isDarkMode ? theme.textSecondary : .blue) // Grey on dark mode
+                                .foregroundColor(theme.accentColor)
                         }
                     }
                 }

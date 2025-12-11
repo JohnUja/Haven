@@ -2,7 +2,7 @@
 //  GoalProgressUpdater.swift
 //  TimeFlow
 //
-//  Created by AI on 2025-10-30.
+//  Created by John Uja on 2025-10-30.
 //
 
 import Foundation
@@ -10,13 +10,11 @@ import SwiftData
 
 enum GoalProgressUpdater {
     static func handleTaskToggle(_ task: Task, context: ModelContext, goals: [Goal]) {
-        guard let goalID = task.goalID,
-              let goal = goals.first(where: { $0.id == goalID }) else { return }
+        guard let goal = task.goal else { return }
 
         // Get all tasks for this goal to calculate effective target
-        let allTasks = try? context.fetch(FetchDescriptor<Task>())
-        let goalTasks = allTasks?.filter { $0.goalID == goalID } ?? []
-        let effectiveTarget = goal.effectiveTargetValue(tasks: goalTasks)
+        let goalTasks = goal.tasks ?? []
+        let effectiveTarget = goal.effectiveTargetValue()
         
         // Use effective target if > 0, otherwise fall back to stored targetValue
         let target = effectiveTarget > 0 ? effectiveTarget : goal.targetValue
@@ -29,9 +27,9 @@ enum GoalProgressUpdater {
 
         // Update status based on effective target
         if goal.currentValue >= target && target > 0 {
-            goal.status = .completed
-        } else if goal.status == .completed && target > 0 {
-            goal.status = .active
+            goal.status = GoalStatus.completed
+        } else if goal.status == GoalStatus.completed && target > 0 {
+            goal.status = GoalStatus.active
         }
 
         try? context.save()
@@ -39,8 +37,7 @@ enum GoalProgressUpdater {
     
     // Sync targetValue from linked tasks (call when tasks are added/removed)
     static func syncTargetValue(for goal: Goal, context: ModelContext) {
-        let allTasks = try? context.fetch(FetchDescriptor<Task>())
-        let effectiveTarget = goal.effectiveTargetValue(tasks: allTasks ?? [])
+        let effectiveTarget = goal.effectiveTargetValue()
         if effectiveTarget > 0 {
             goal.targetValue = effectiveTarget
         }

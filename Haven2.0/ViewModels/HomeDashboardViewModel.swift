@@ -2,7 +2,7 @@
 //  HomeDashboardViewModel.swift
 //  Haven2.0
 //
-//  Created by AI on 2025-01-XX.
+//  Created by John Uja
 //  MVVM Architecture: All business logic, state, and data fetching for HomeDashboardView
 //
 
@@ -754,11 +754,12 @@ final class HomeDashboardViewModel {
         // Get recent tasks (last 10) - query on demand
         let recentTasks: [Task]
         if let modelContext = modelContext {
-            let descriptor = FetchDescriptor<Task>(
+            var descriptor = FetchDescriptor<Task>(
                 sortBy: [SortDescriptor(\Task.startTime, order: .reverse)]
             )
             descriptor.fetchLimit = 10
-            recentTasks = (try? modelContext.fetch(descriptor)) ?? []
+            let fetched = try? modelContext.fetch(descriptor)
+            recentTasks = fetched ?? []
         } else {
             recentTasks = []
         }
@@ -771,11 +772,12 @@ final class HomeDashboardViewModel {
         // Get recent task blocks (last 5) - query on demand
         let recentBlocks: [TaskBlock]
         if let modelContext = modelContext {
-            let descriptor = FetchDescriptor<TaskBlock>(
+            var descriptor = FetchDescriptor<TaskBlock>(
                 sortBy: [SortDescriptor(\TaskBlock.createdDate, order: .reverse)]
             )
             descriptor.fetchLimit = 5
-            recentBlocks = (try? modelContext.fetch(descriptor)) ?? []
+            let fetched = try? modelContext.fetch(descriptor)
+            recentBlocks = fetched ?? []
         } else {
             recentBlocks = []
         }

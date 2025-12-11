@@ -2,7 +2,7 @@
 //  MoodEntry.swift
 //  TimeFlow
 //
-//  Created by AI on 2025-10-30.
+//  Created by John Uja on 2025-10-30.
 //  Updated: Redesigned with 6 core moods and sub-moods system
 //
 

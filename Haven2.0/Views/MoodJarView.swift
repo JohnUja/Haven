@@ -56,20 +56,20 @@ struct MoodJarView: View {
                                 .font(.system(size: 50))
                                 .foregroundStyle(
                                     LinearGradient(
-                                        colors: [.purple, .pink, .blue],
+                                        colors: [themeManager.currentTheme.accentColor, themeManager.currentTheme.accentColor.opacity(0.7)],
                                         startPoint: .topLeading,
                                         endPoint: .bottomTrailing
                                     )
                                 )
-                                .shadow(color: .purple.opacity(0.5), radius: 10)
+                                .shadow(color: themeManager.currentTheme.accentColor.opacity(0.5), radius: 10)
                             
                             Text("Mood Jar")
-                                .font(.system(size: 34, weight: .bold, design: .rounded))
-                                .foregroundColor(.primary)
+                                .font(themeManager.currentTheme.titleFont) // Use theme font
+                                .foregroundColor(themeManager.currentTheme.textPrimary) // Use theme color
                             
                             Text("Fill up mood jars to unlock mood themes")
-                                .font(.system(size: 16, weight: .medium, design: .rounded))
-                                .foregroundColor(.secondary)
+                                .font(themeManager.currentTheme.bodyFont) // Use theme font
+                                .foregroundColor(themeManager.currentTheme.textSecondary) // Use theme color
                                 .multilineTextAlignment(.center)
                         }
                         .padding(.top, 20)
@@ -78,6 +78,7 @@ struct MoodJarView: View {
                     jarVisualView
                         .frame(maxHeight: 600)
                         .padding(.horizontal)
+                        .padding(.bottom, 24) // Add spacing before Today's Check-in
                     
                     // Today's Check-ins
                     todayCheckInsView
@@ -116,7 +117,7 @@ struct MoodJarView: View {
         return LazyVGrid(columns: [
                 GridItem(.flexible(), spacing: 16),
                 GridItem(.flexible(), spacing: 16)
-            ], spacing: 20) {
+            ], spacing: 24) { // Increased spacing to prevent overlapping
                 ForEach(CoreMood.allCases, id: \.self) { coreMood in
                     IndividualMoodJar(
                         coreMood: coreMood,
@@ -125,9 +126,11 @@ struct MoodJarView: View {
                             cashInJar(coreMood: coreMood)
                         }
                     )
+                    .fixedSize(horizontal: false, vertical: true) // Prevent compression
                 }
             }
-            .padding(20)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 24) // Increased vertical padding to prevent bottom overlap
             .drawingGroup() // Performance optimization
     }
     
@@ -178,15 +181,17 @@ struct MoodJarView: View {
     
     // MARK: - Today's Check-ins View
     private var todayCheckInsView: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let theme = themeManager.currentTheme
+        
+        return VStack(alignment: .leading, spacing: 12) {
             Text("Today's Check-ins")
-                .font(.headline)
-                .fontWeight(.semibold)
+                .font(theme.headerFont) // Use theme font
+                .foregroundColor(theme.textPrimary) // Use theme color
             
             if todayEntries.isEmpty {
                 Text("No check-ins yet today")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .font(theme.bodyFont) // Use theme font
+                    .foregroundColor(theme.textSecondary) // Use theme color
                     .italic()
             } else {
                 VStack(spacing: 8) {
@@ -199,20 +204,21 @@ struct MoodJarView: View {
                             
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(entry.subMood.displayName)
-                                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                    .font(theme.bodyFont) // Use theme font
+                                    .foregroundColor(theme.textPrimary) // Use theme color
                                 
                                 Text(entry.coreMood.displayName)
-                                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                                    .foregroundColor(.secondary)
+                                    .font(theme.bodyFont) // Use theme font
+                                    .foregroundColor(theme.textSecondary) // Use theme color
                                 
                                 Text(entry.checkInTime.displayName)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .font(theme.bodyFont) // Use theme font
+                                    .foregroundColor(theme.textSecondary) // Use theme color
                                 
                                 if let notes = entry.notes, !notes.isEmpty {
                                     Text(notes)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                                        .font(theme.bodyFont) // Use theme font
+                                        .foregroundColor(theme.textSecondary) // Use theme color
                                         .lineLimit(2)
                                 }
                             }
@@ -220,50 +226,50 @@ struct MoodJarView: View {
                             Spacer()
                             
                             Text(entry.timestamp, style: .time)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .font(theme.bodyFont) // Use theme font
+                                .foregroundColor(theme.textSecondary) // Use theme color
                         }
-                        .padding(12)
-                        .padding(12)
+                        .padding(12) // Removed duplicate padding
                         .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(.ultraThinMaterial.opacity(0.7))
+                            RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                                .fill(theme.glassBackground.opacity(0.5))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 16)
-                                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                                    RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                                        .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
                                 )
                         )
                     }
                 }
             }
         }
-        .padding()
+        .padding(theme.cardPadding)
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial.opacity(0.7))
+            RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                .fill(theme.glassBackground.opacity(0.5))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                        .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
                 )
         )
     }
     
     // MARK: - Stats View
     private var moodStatsView: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let theme = themeManager.currentTheme
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let weekAgo = calendar.date(byAdding: .day, value: -7, to: today) ?? today
+        let weekEntries = moodHistory.filter { $0.timestamp >= weekAgo }
+        
+        return VStack(alignment: .leading, spacing: 12) {
             Text("This Week")
-                .font(.headline)
-                .fontWeight(.semibold)
-            
-            let calendar = Calendar.current
-            let today = calendar.startOfDay(for: Date())
-            let weekAgo = calendar.date(byAdding: .day, value: -7, to: today) ?? today
-            let weekEntries = moodHistory.filter { $0.timestamp >= weekAgo }
+                .font(theme.headerFont) // Use theme font
+                .foregroundColor(theme.textPrimary) // Use theme color
             
             if weekEntries.isEmpty {
                 Text("No check-ins this week")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .font(theme.bodyFont) // Use theme font
+                    .foregroundColor(theme.textSecondary) // Use theme color
             } else {
                 // Mood distribution by core mood
                 let moodDistribution = Dictionary(grouping: weekEntries) { $0.coreMood }
@@ -278,31 +284,36 @@ struct MoodJarView: View {
                                     .frame(width: 20, height: 20)
                                 
                                 Text(coreMood.displayName)
-                                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                                    .font(theme.bodyFont) // Use theme font
+                                    .foregroundColor(theme.textPrimary) // Use theme color
                                 
                                 Spacer()
                                 
                                 Text("\(entries.count)")
-                                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                    .font(theme.bodyFont) // Use theme font
+                                    .foregroundColor(theme.textPrimary) // Use theme color
                             }
                         }
                     }
                 }
             }
         }
-        .padding()
+        .padding(theme.cardPadding)
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial.opacity(0.7))
+            RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                .fill(theme.glassBackground.opacity(0.5))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                        .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
                 )
         )
     }
     
     // MARK: - Check-in Button
+    @ViewBuilder
     private var checkInButtonView: some View {
+        let theme = themeManager.currentTheme
+        
         Button(action: {
             showingCheckIn = true
         }) {
@@ -311,24 +322,40 @@ struct MoodJarView: View {
                     .font(.title3)
                 
                 Text(hasMaxCheckIns ? "Max Check-ins Reached" : "Check In")
-                    .font(.headline)
+                    .font(theme.titleFont) // Use theme font
                     .fontWeight(.semibold)
             }
-            .foregroundColor(.white)
+            .foregroundColor(hasMaxCheckIns ? theme.textSecondary : theme.textPrimary) // Use theme color
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
-            .background(
-                Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: hasMaxCheckIns ? [.gray, .gray.opacity(0.7)] : [.purple, .pink],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-            )
+            .background(buttonBackground(theme: theme))
         }
         .disabled(hasMaxCheckIns)
+    }
+    
+    @ViewBuilder
+    private func buttonBackground(theme: any AppTheme) -> some View {
+        if hasMaxCheckIns {
+            Capsule()
+                .fill(theme.glassBackground.opacity(0.3))
+                .overlay(
+                    Capsule()
+                        .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                )
+        } else {
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [theme.accentColor, theme.accentColor.opacity(0.7)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                )
+        }
     }
     
     // MARK: - Helper

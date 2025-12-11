@@ -83,7 +83,7 @@ struct ProfileView: View {
                 .navigationBarTitleDisplayMode(.inline) // Remove large heading
                 .toolbar {
                     ToolbarItem(placement: .navigationBarTrailing) {
-                        NavigationLink(destination: SettingsView().environmentObject(authService)) {
+                        NavigationLink(destination: SettingsView().environment(authService)) {
                             Image(systemName: "gearshape.fill")
                                 .font(.system(size: 20, weight: .medium, design: .rounded))
                                 .foregroundColor(themeManager.currentTheme.textPrimary)
@@ -119,7 +119,7 @@ struct ProfileView: View {
                 .sheet(isPresented: $showingEditProfile) {
                     NavigationView {
                         ProfileEditView()
-                            .environmentObject(authService)
+                            .environment(authService)
                     }
                     }
                 }
@@ -740,7 +740,7 @@ struct ProfileView: View {
                 )
                 
                 // Account
-                NavigationLink(destination: ProfileEditView().environmentObject(authService)) {
+                NavigationLink(destination: ProfileEditView().environment(authService)) {
                     profileSettingsButtonView(title: "Account", icon: "person.circle")
                 }
                 

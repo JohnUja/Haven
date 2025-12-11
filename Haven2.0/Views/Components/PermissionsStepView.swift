@@ -12,8 +12,8 @@ import EventKit
 
 struct PermissionsStepView: View {
     @Environment(ThemeManager.self) private var themeManager
-    @StateObject private var permissionManager = PermissionManager.shared
-    @StateObject private var calendarManager = CalendarManager.shared
+    private let permissionManager = PermissionManager.shared
+    private let calendarManager = CalendarManager.shared
     
     let onComplete: () -> Void
     
@@ -55,7 +55,9 @@ struct PermissionsStepView: View {
                     isGranted: locationPermissionStatus == .authorizedWhenInUse || locationPermissionStatus == .authorizedAlways,
                     action: {
                         permissionManager.requestLocationPermission { granted in
-                            locationPermissionStatus = CLLocationManager().authorizationStatus
+                            DispatchQueue.main.async {
+                                locationPermissionStatus = CLLocationManager().authorizationStatus
+                            }
                         }
                     }
                 )
@@ -68,7 +70,9 @@ struct PermissionsStepView: View {
                     isGranted: calendarPermissionStatus == .authorized,
                     action: {
                         calendarManager.requestAccess { granted in
-                            calendarPermissionStatus = EKEventStore.authorizationStatus(for: .event)
+                            DispatchQueue.main.async {
+                                calendarPermissionStatus = EKEventStore.authorizationStatus(for: .event)
+                            }
                         }
                     }
                 )

@@ -121,7 +121,7 @@ struct RoutineSetupView: View {
                 Section("Default Tasks") {
                     Text("These are daily tasks everyone needs. Toggle them on/off:")
                         .font(.system(size: 12, weight: .regular, design: .rounded))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(themeManager.currentTheme.textSecondary)
                     
                     ForEach(defaultTemplates) { template in
                         Toggle(isOn: Binding(
@@ -139,7 +139,7 @@ struct RoutineSetupView: View {
                                     .font(.system(size: 16, weight: .semibold, design: .rounded))
                                 Text(template.timeOfDay)
                                     .font(.system(size: 12, weight: .regular, design: .rounded))
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(themeManager.currentTheme.textSecondary)
                             }
                         }
                     }
@@ -162,7 +162,7 @@ struct RoutineSetupView: View {
                                     .font(.system(size: 16, weight: .semibold, design: .rounded))
                                 Text("\(task.timeOfDay) • \(task.durationMinutes) min")
                                     .font(.system(size: 12, weight: .regular, design: .rounded))
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(themeManager.currentTheme.textSecondary)
                             }
                         }
                     }
@@ -191,7 +191,7 @@ struct RoutineSetupView: View {
                     } else {
                         Text("Tasks will be generated until the end of the current month. You'll be prompted to update on the first of next month.")
                             .font(.system(size: 12, weight: .regular, design: .rounded))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(themeManager.currentTheme.textSecondary)
                     }
                 }
                 

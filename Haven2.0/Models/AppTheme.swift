@@ -116,12 +116,12 @@ struct PurpleTheme: AppTheme {
     let textPrimary = Color.white // White text for purple theme
     let textSecondary = Color.white.opacity(0.8) // White with opacity for secondary
     
-    // Shared Backgrounds
+    // Shared Backgrounds - DARKENED purple gradient
     let primaryGradient = LinearGradient(
         colors: [
-            Color.purple.opacity(0.8),
-            Color.blue.opacity(0.6),
-            Color.pink.opacity(0.4)
+            Color(red: 0.4, green: 0.2, blue: 0.7).opacity(0.95), // Darker purple
+            Color(red: 0.2, green: 0.3, blue: 0.7).opacity(0.85), // Darker blue
+            Color(red: 0.6, green: 0.2, blue: 0.5).opacity(0.75) // Darker pink
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
