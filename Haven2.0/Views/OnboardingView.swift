@@ -705,11 +705,14 @@ struct ThemeSelectionCard: View {
         let currentTheme = themeManager.currentTheme
         
         return Button(action: {
-            if let user = currentUser {
-                user.activeThemeID = theme.id
-                try? modelContext.save()
-                // Force theme update by setting theme in ThemeManager
-                themeManager.setTheme(to: theme.id)
+            // Use MainActor to ensure UI updates on main thread
+            _Concurrency.Task { @MainActor in
+                if let user = currentUser {
+                    // Update theme immediately (no delay needed)
+                    themeManager.setTheme(to: theme.id)
+                    user.activeThemeID = theme.id
+                    try? modelContext.save()
+                }
             }
         }) {
             VStack(spacing: 12) {

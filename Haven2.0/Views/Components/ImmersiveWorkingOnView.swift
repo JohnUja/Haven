@@ -70,9 +70,10 @@ struct ImmersiveWorkingOnView: View {
         let theme = themeManager.currentTheme
         
         ZStack {
-            // Theme-aware background
+            // Theme-aware background - ensure gradient renders properly
             theme.primaryGradient
-                .ignoresSafeArea()
+                .ignoresSafeArea(.all)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             
             VStack(spacing: 0) {
                 // Top section - Task block tasks list (if applicable)

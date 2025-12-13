@@ -465,10 +465,10 @@ func transparentTextField(
 ) -> some View {
     Group {
         if let lineLimit = lineLimit {
-            TextField(placeholder, text: text, axis: axis)
+            TextField("", text: text, axis: axis) // Empty placeholder to avoid duplicate
                 .lineLimit(lineLimit)
         } else {
-            TextField(placeholder, text: text)
+            TextField("", text: text) // Empty placeholder to avoid duplicate
         }
     }
     .font(.system(size: 16, weight: .regular, design: .default))

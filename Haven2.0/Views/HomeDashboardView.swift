@@ -287,6 +287,18 @@ struct HomeDashboardView: View {
                     }
                     .store(in: &vm.levelUpNotificationObserver)
             }
+            .onChange(of: vm.selectedDate) { _, _ in
+                // Refresh data when selected date changes
+                vm.refreshSelectedDateData()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OnboardingTaskCreated"))) { _ in
+                // Refresh data when task is created
+                vm.refreshSelectedDateData()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .NSManagedObjectContextDidSave)) { _ in
+                // Refresh data when SwiftData context saves (task/block created/updated/deleted)
+                vm.refreshSelectedDateData()
+            }
     }
     // MARK: - Root Content
     @ViewBuilder
@@ -298,48 +310,68 @@ struct HomeDashboardView: View {
             
             ScrollView {
                 LazyVStack(spacing: 20) {
-                    // Timeline Header Structure (from GitHub) - ALWAYS at top for both Focus and Plan
-                    timelineHeaderStructure(theme: theme)
-                        .padding(.top, 8)
+            // Top Row: Add Task/Block buttons (left) and DEC 2025 / Today button (right)
+            HStack {
+                // Add Task and Add Block buttons on left
+                HStack(spacing: 8) {
+                    Button(action: {
+                        vm.showingAddTask = true
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 14, weight: .medium))
+                            Text("Add Task")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .foregroundColor(theme.textPrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                .fill(theme.glassBackground.opacity(0.5))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                        .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                                )
+                        )
+                    }
+                    
+                    Button(action: {
+                        vm.showingAddBlock = true
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.stack.fill")
+                                .font(.system(size: 14, weight: .medium))
+                            Text("Add Block")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .foregroundColor(theme.textPrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                .fill(theme.glassBackground.opacity(0.5))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                        .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                                )
+                        )
+                    }
+                }
+                
+                Spacer()
+                
+                // DEC 2025 button and Today button (if needed) on right
+                timelineHeaderStructure(theme: theme)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
                     
                     // Plan vs Focus Toggle
                     modeToggleView
-                    .padding(.horizontal, 20)
-                    
-                    // Date, Time Crystals, and Progression Ring - Only on Focus tab (no container)
-                    if vm.homeMode == .focus, let user = currentUser {
-                        HStack(spacing: 16) {
-                            // Date Text (2 points larger than titleFont)
-                            Text(vm.selectedDate.formatted(date: .abbreviated, time: .omitted))
-                                .font(.system(size: 20, weight: .semibold, design: .default)) // titleFont is typically 18, so 20 is 2 points larger
-                                .foregroundColor(theme.textPrimary)
-                            
-                            Spacer()
-                            
-                            // Time Crystals
-                            CrystalCounterView(currentCrystals: user.gamificationCurrency)
-                            
-                            // Level Ring (popup on tap - show level inside ring)
-                            Button(action: {
-                                showingCompletionRingPopup.toggle()
-                            }) {
-                                ZStack {
-                                    completionRingView(theme: theme)
-                                    // Level text inside ring (same font as plan/focus tabs)
-                                    if let user = currentUser {
-                                        Text("\(user.level)")
-                                            .font(theme.headerFont) // Same font as plan/focus tabs (11pt, semibold)
-                                            .foregroundColor(theme.textPrimary)
-                                    }
-                                }
-                            }
-                            .popover(isPresented: $showingCompletionRingPopup) {
-                                levelRingMenuContent(user: user, theme: theme)
-                                .presentationCompactAdaptation(.popover)
-                            }
-                        }
                         .padding(.horizontal, 20)
-                    }
+                    
+                    // REMOVED: Date, Time Crystals, and Progression Ring section - now handled by tappable green circle in daily scroller
                     
                     // Content based on mode
                     if vm.homeMode == .focus {
@@ -655,7 +687,7 @@ struct HomeDashboardView: View {
                 Circle()
                     .trim(from: 0, to: progress)
                     .stroke(
-                        LinearGradient(colors: [.green, .green.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        LinearGradient(colors: [theme.successColor, theme.successColor.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing),
                         style: StrokeStyle(lineWidth: 6, lineCap: .round)
                     )
                     .frame(width: 60, height: 60)
@@ -779,7 +811,7 @@ struct HomeDashboardView: View {
                 )
                 .padding(.horizontal, 20)
                 
-                // Add Task and Add Task Block buttons - below dynamic box, bigger buttons (not text)
+                // Add Task and Add Task Block buttons - below dynamic box (same size as Add Reflection)
                 HStack(spacing: 12) {
                     Button(action: {
                         vm.showingAddTask = true
@@ -792,7 +824,7 @@ struct HomeDashboardView: View {
                         }
                         .foregroundColor(theme.textPrimary)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 20) // Increased from 14 to make button bigger
+                        .padding(.vertical, 16) // Same as Add Reflection (swapped)
                         .background(
                             RoundedRectangle(cornerRadius: theme.smallCornerRadius)
                                 .fill(theme.glassBackground.opacity(0.5))
@@ -814,7 +846,7 @@ struct HomeDashboardView: View {
                         }
                         .foregroundColor(theme.textPrimary)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 20) // Increased from 14 to make button bigger
+                        .padding(.vertical, 16) // Same as Add Reflection (swapped)
                         .background(
                             RoundedRectangle(cornerRadius: theme.smallCornerRadius)
                                 .fill(theme.glassBackground.opacity(0.5))
@@ -828,7 +860,7 @@ struct HomeDashboardView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 16)
             
-                // Add Daily Journal / Reflection box - placeholder (no implementation yet)
+                // Add Daily Journal / Reflection box - bigger (same size as old Add Task/Block)
                 Button(action: {
                     // TODO: Implement reflection/journal entry
                 }) {
@@ -840,7 +872,7 @@ struct HomeDashboardView: View {
                     }
                     .foregroundColor(theme.textPrimary)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, 20) // Increased from 16 to match old Add Task/Block size
                     .background(
                         RoundedRectangle(cornerRadius: theme.cardCornerRadius)
                             .fill(theme.glassBackground.opacity(0.5))
@@ -884,19 +916,67 @@ struct HomeDashboardView: View {
         }
     }
     
+    // MARK: - Plan Item Helper (for unified task/block ordering)
+    private struct PlanItem: Identifiable {
+        let id: String
+        let startTime: Date
+        let isComplete: Bool
+        let isBlock: Bool
+    }
+    
+    // MARK: - Helper: Get Sorted Plan Items (tasks and blocks unified, time-sensitive order)
+    private func getSortedPlanItems() -> ([PlanItem], [String: [Task]]) {
+        let filteredTasks = getFilteredTasks()
+        
+        // Get all items with their start times
+        var allItems: [PlanItem] = []
+        
+        // Add standalone tasks
+        let standaloneTasks = filteredTasks.filter { $0.taskBlock == nil }
+        for task in standaloneTasks {
+            allItems.append(PlanItem(
+                id: task.id,
+                startTime: task.startTime,
+                isComplete: task.isComplete,
+                isBlock: false
+            ))
+        }
+        
+        // Add task blocks (use earliest task start time in block)
+        let tasksByBlock = Dictionary(grouping: filteredTasks) { $0.taskBlock?.id ?? "" }
+        let taskBlocks = tasksByBlock.filter { $0.key != "" }
+        for (blockID, blockTasks) in taskBlocks {
+            if let firstTask = blockTasks.sorted(by: { $0.startTime < $1.startTime }).first {
+                allItems.append(PlanItem(
+                    id: blockID,
+                    startTime: firstTask.startTime,
+                    isComplete: blockTasks.allSatisfy { $0.isComplete },
+                    isBlock: true
+                ))
+            }
+        }
+        
+        // Sort by time-sensitive: incomplete first, then by start time (most approaching at top)
+        let sortedItems = allItems.sorted { item1, item2 in
+            // Incomplete items first
+            if item1.isComplete != item2.isComplete {
+                return !item1.isComplete
+            }
+            // Then by start time (earliest/most approaching at top)
+            return item1.startTime < item2.startTime
+        }
+        
+        return (sortedItems, tasksByBlock)
+    }
+    
     // MARK: - Simple Chronological Task List (for Plan tab)
     @ViewBuilder
     private func simpleChronologicalTaskListView(theme: any AppTheme) -> some View {
-        let filteredTasks = getFilteredTasks()
-            .sorted { task1, task2 in
-                // Incomplete tasks first, then by time
-                if task1.isComplete != task2.isComplete {
-                    return !task1.isComplete
-                }
-                return task1.startTime < task2.startTime
-            }
+        // Get sorted items and task blocks mapping (logic moved outside ViewBuilder)
+        let (sortedItems, tasksByBlock) = getSortedPlanItems()
+        let standaloneTasks = getFilteredTasks().filter { $0.taskBlock == nil }
         
-        if filteredTasks.isEmpty {
+        if sortedItems.isEmpty {
             VStack(spacing: 16) {
                 Image(systemName: "tray")
                     .font(.system(size: 48, weight: .light))
@@ -938,28 +1018,26 @@ struct HomeDashboardView: View {
             .frame(maxWidth: .infinity)
         } else {
             LazyVStack(alignment: .leading, spacing: 16) {
-                // Group tasks by taskBlockID - show blocks as single cards
-                let tasksByBlock = Dictionary(grouping: filteredTasks) { $0.taskBlock?.id ?? "" }
-                let standaloneTasks = tasksByBlock[""] ?? []
-                let taskBlocks = tasksByBlock.filter { $0.key != "" }
-                
-                // Display task blocks first
-                ForEach(Array(taskBlocks.keys), id: \.self) { blockID in
-                    if let blockTasks = taskBlocks[blockID], !blockTasks.isEmpty,
-                       let taskBlock = vm.getTaskBlock(for: blockID) {
-                        taskBlockCardView(tasks: blockTasks, taskBlock: taskBlock, theme: theme)
-                            .padding(.horizontal, 20)
-                    }
-                }
-                
-                // Then display standalone tasks in chronological order
-                ForEach(standaloneTasks, id: \.id) { task in
-                    taskCardView(task: task, theme: theme)
-                        .padding(.horizontal, 20)
-                        .onTapGesture {
-                            vm.showingEditTask = task
+                // Display items in unified order (tasks and blocks together)
+                ForEach(sortedItems) { item in
+                    if item.isBlock {
+                        // Display task block
+                        if let blockTasks = tasksByBlock[item.id], !blockTasks.isEmpty,
+                           let taskBlock = vm.getTaskBlock(for: item.id) {
+                            taskBlockCardView(tasks: blockTasks, taskBlock: taskBlock, theme: theme)
+                                .padding(.horizontal, 20)
                         }
-                        .id(task.id)
+                    } else {
+                        // Display standalone task
+                        if let task = standaloneTasks.first(where: { $0.id == item.id }) {
+                            taskCardView(task: task, theme: theme, isInPlanView: true)
+                                .padding(.horizontal, 20)
+                                .onTapGesture {
+                                    vm.showingEditTask = task
+                                }
+                                .id(task.id)
+                        }
+                    }
                 }
             }
         }
@@ -1337,6 +1415,7 @@ struct HomeDashboardView: View {
                         .frame(width: 24, height: 24)
                 }
                 .padding(16)
+                .frame(maxWidth: .infinity) // Make task blocks wider/stretched
                 .background(
                     // Plain white/transparent background (no colors) - like "skincare" block
                     RoundedRectangle(cornerRadius: theme.cardCornerRadius)
@@ -2069,11 +2148,11 @@ struct TaskCardView: View {
     }
     
     private var mainContent: some View {
-        HStack(spacing: 12) {
-            // Square tick on left
+        HStack(alignment: .center, spacing: 12) {
+            // Left: Checkbox at center left (same size as task blocks)
             Button(action: { handleTaskCompletion() }) {
                 Image(systemName: task.isComplete ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 20, weight: .medium))
+                    .font(.system(size: 20, weight: .medium)) // Same size as task blocks
                     .foregroundColor(task.isComplete ? completionColor : theme.textSecondary)
             }
             
@@ -2081,20 +2160,22 @@ struct TaskCardView: View {
             
             Spacer()
             
-            // Category icon on right - with contrasting outline
-            Image(systemName: task.category.icon)
-                .font(.title3)
-                .foregroundColor(task.category.color())
-                .frame(width: 24, height: 24)
-                .background(
-                    Circle()
-                        .fill(theme.glassBackground.opacity(0.5))
-                        .overlay(
-                            Circle()
-                                .stroke(task.category.color().opacity(0.6), lineWidth: 1.5)
-                        )
-                )
-                .frame(width: 32, height: 32)
+            // Right side: Category icon and time
+            VStack(alignment: .trailing, spacing: 4) {
+                // Category icon on right (no fill background)
+                Image(systemName: task.category.icon)
+                    .font(.title3)
+                    .foregroundColor(task.category.color())
+                    .frame(width: 24, height: 24)
+                
+                // Time below category icon
+                Text(timeSpanText)
+                    .font(theme.bodyFont)
+                    .fontWeight(.bold)
+                    .textCase(.uppercase)
+                    .foregroundColor(theme.textPrimary.opacity(0.8))
+                    .opacity(task.isComplete ? 0.6 : 1.0)
+            }
         }
         .frame(maxWidth: .infinity) // Take up more width
     }
@@ -2111,18 +2192,17 @@ struct TaskCardView: View {
     private var taskContent: some View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                    Text(task.title).appTextStyle(.taskTitle, theme: theme).strikethrough(task.isComplete).opacity(task.isComplete ? theme.textTertiaryOpacity : 1.0)
+                    // Task title - use headerFont (11pt, semibold) to match task block title size
+                    Text(task.title)
+                        .font(theme.headerFont) // Use same font as task block title (11pt, semibold)
+                        .foregroundColor(theme.textPrimary)
+                        .strikethrough(task.isComplete)
+                        .opacity(task.isComplete ? theme.textTertiaryOpacity : 1.0)
                     if task.isRoutineTask { Image(systemName: "star.fill").font(.system(size: 10)).foregroundColor(.yellow) }
                 }
                 if task.goal != nil { goalMilestoneBadges }
             
-            // Time span display (3PM-4PM) in BOLD all caps - using theme smallFontSize
-            Text(timeSpanText)
-                .font(theme.bodyFont) // Using theme bodyFont
-                .fontWeight(.bold)
-                .textCase(.uppercase)
-                .foregroundColor(theme.textPrimary.opacity(0.8))
-                .opacity(task.isComplete ? 0.6 : 1.0)
+                // Time removed from here - now under category icon
             
                 Text("Priority: \(task.priority.rawValue.capitalized)").font(.system(size: 11)).foregroundColor(priorityColor).opacity(task.isComplete ? 0.6 : 1.0)
                 if let description = task.taskDescription { Text(description).font(.caption).foregroundColor(.white.opacity(0.7)).lineLimit(2).opacity(task.isComplete ? 0.6 : 1.0) }
@@ -2144,32 +2224,15 @@ struct TaskCardView: View {
     // REMOVED: taskActionButtons moved to mainContent
     
     private var cardBackground: some View {
-            // Only purple theme should use colored tasks in plan view (category colors)
-            // All other themes and views use empty fills (glassBackground/glassBorder)
-            let isPurpleTheme = theme.id == "purple"
-            let useColoredTasks = isPurpleTheme && isInPlanView
-            // Reduced corner radius (from 16 to 8)
-            let cornerRadius: CGFloat = 8
-            return ZStack {
-                if useColoredTasks {
-                    // Purple theme in plan view: Use category colors
-                    RoundedRectangle(cornerRadius: cornerRadius)
-                        .fill(task.category.color().opacity(0.25))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: cornerRadius)
-                                .stroke(task.category.color().opacity(0.6), lineWidth: theme.cardBorderWidth)
-                        )
-                } else {
-                    // All other cases: Use empty fills (glassBackground/glassBorder)
-                    RoundedRectangle(cornerRadius: cornerRadius)
-                        .fill(theme.glassBackground)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: cornerRadius)
-                                .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
-                        )
-                }
-            }
-        }
+        // Use empty fill (same as task blocks) for ALL tasks - NO category fill background
+        // Use task block border radius (theme.cardCornerRadius) for tasks
+        return RoundedRectangle(cornerRadius: theme.cardCornerRadius) // Use task block border radius
+            .fill(theme.glassBackground.opacity(0.5)) // Same fill as task blocks
+            .overlay(
+                RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                    .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+            )
+    }
         
         // REMOVED: Old reflection implementation
         // @ViewBuilder private var goalReflectionPulse: some View { if task.goalID != nil && !task.isComplete { GoalReflectionPulseView() } }

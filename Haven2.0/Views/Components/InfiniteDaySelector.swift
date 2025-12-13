@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AudioToolbox
+import UIKit
 
 struct InfiniteDaySelector: View {
     @Binding var selectedDate: Date
@@ -19,6 +20,8 @@ struct InfiniteDaySelector: View {
     @State private var days: [Date] = []
     @State private var lastHapticDay: Date?
     @State private var isInitializing = false
+    @State private var scrollDebounceTask: _Concurrency.Task<Void, Never>?
+    @State private var lastNotifiedDate: Date?
     
     private let calendar = Calendar.current
     
@@ -52,8 +55,10 @@ struct InfiniteDaySelector: View {
                                             withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.8)) {
                                                 proxy.scrollTo(index, anchor: .center)
                                             }
-                                            // Haptic on tap
-                                            AudioServicesPlaySystemSound(1057)
+                                            // More vibrational haptic on tap
+                                            let generator = UIImpactFeedbackGenerator(style: .medium)
+                                            generator.prepare()
+                                            generator.impactOccurred()
                                         }
                                     )
                                     .id(index)
@@ -159,14 +164,35 @@ struct InfiniteDaySelector: View {
         guard index >= 0 && index < days.count else { return }
         let centeredDay = days[index]
         
-        // Haptic feedback whenever day position changes during scroll
+        // Update selectedDate immediately for UI responsiveness
         if let lastDay = lastHapticDay, !calendar.isDate(centeredDay, inSameDayAs: lastDay) {
-            AudioServicesPlaySystemSound(1057)
+            // More vibrational haptic feedback
+            let generator = UIImpactFeedbackGenerator(style: .medium)
+            generator.prepare()
+            generator.impactOccurred()
+            
             lastHapticDay = centeredDay
-            selectedDate = centeredDay
-            onDateChanged(centeredDay)
+                selectedDate = centeredDay
+            
+            // Debounce onDateChanged to prevent excessive recomputations
+            scrollDebounceTask?.cancel()
+            scrollDebounceTask = _Concurrency.Task { @MainActor in
+                // Only notify if date hasn't changed in 200ms (scroll has settled)
+                try? await _Concurrency.Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
+                
+                // Check if this is still the current date (not cancelled)
+                if let lastNotified = lastNotifiedDate, calendar.isDate(lastNotified, inSameDayAs: centeredDay) {
+                    return // Already notified for this date
+                }
+                
+                if calendar.isDate(centeredDay, inSameDayAs: selectedDate) {
+                    onDateChanged(centeredDay)
+                    lastNotifiedDate = centeredDay
+                }
+            }
         } else if lastHapticDay == nil {
             lastHapticDay = centeredDay
+            selectedDate = centeredDay
         }
     }
 }
@@ -198,6 +224,16 @@ struct DayCell: View {
                         .stroke(theme.warningColor.opacity(0.9), lineWidth: 3)
                         .frame(width: 32, height: 32)
                         .shadow(color: theme.warningColor.opacity(0.3), radius: 3)
+                        .transition(.scale.combined(with: .opacity))
+                }
+                
+                // Show green ring when selected
+                if isSelected {
+                    Circle()
+                        .stroke(theme.successColor.opacity(0.9), lineWidth: 3)
+                        .frame(width: 32, height: 32)
+                        .shadow(color: theme.successColor.opacity(0.5), radius: 5)
+                        .transition(.scale.combined(with: .opacity))
                 }
                 
                 Text("\(calendar.component(.day, from: day))")
@@ -205,6 +241,8 @@ struct DayCell: View {
                     .foregroundColor(theme.textPrimary)
             }
             .frame(width: 32, height: 32)
+            .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isSelected)
+            .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isToday)
             
             Circle()
                 .fill(hasEvents ? theme.accentColor : Color.clear)
@@ -255,5 +293,12 @@ struct DayCenterController: View {
             showMonthHeader: true
         )
         .environment(ThemeManager())
+    }
+}
+// MARK: - Preference Keys
+struct ScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = .zero
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
