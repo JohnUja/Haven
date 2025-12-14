@@ -313,7 +313,7 @@ struct DynamicFocusBox: View {
                     HStack(spacing: 8) {
                         Image(systemName: block.icon)
                             .font(.system(size: 16, weight: .regular))
-                            .foregroundColor(theme.textPrimary)
+                .foregroundColor(theme.textPrimary)
                             .symbolRenderingMode(.hierarchical)
                         
                         if currentPage == 1 {
@@ -348,16 +348,16 @@ struct DynamicFocusBox: View {
                                         .foregroundColor(theme.textPrimary)
                                     
                                     Text(formatTimeWithAMPM(task.startTime))
-                                        .font(theme.headerFont)
-                                        .foregroundColor(theme.textPrimary)
-                                    
+                    .font(theme.headerFont)
+                    .foregroundColor(theme.textPrimary)
+                
                                     Text("-")
                                         .font(theme.headerFont)
                                         .foregroundColor(theme.textPrimary)
                                     
                                     Image(systemName: task.category.icon)
                                         .font(.system(size: 14, weight: .regular))
-                                        .foregroundColor(theme.textPrimary)
+                .foregroundColor(theme.textPrimary)
                                         .symbolRenderingMode(.hierarchical)
                                     
                                     Text(task.title)
@@ -367,29 +367,29 @@ struct DynamicFocusBox: View {
                             } else {
                                 Text("Upcoming")
                                     .font(theme.headerFont)
-                                    .foregroundColor(theme.textPrimary)
+                        .foregroundColor(theme.textPrimary)
                             }
                         } else {
                             // Normal page: task title or context name
-                            if block.tasks.count == 1, let task = block.tasks.first {
+                    if block.tasks.count == 1, let task = block.tasks.first {
                                 Text(task.title)
                                     .font(theme.headerFont)
-                                    .foregroundColor(theme.textPrimary)
-                            } else {
+                            .foregroundColor(theme.textPrimary)
+                    } else {
                                 Text(block.displayName)
                                     .font(theme.headerFont)
-                                    .foregroundColor(theme.textPrimary)
+                            .foregroundColor(theme.textPrimary)
                             }
-                        }
                     }
-                } else if isViewAllTasksMode {
+                }
+            } else if isViewAllTasksMode {
                     Text("All Tasks")
                         .font(theme.headerFont)
-                        .foregroundColor(theme.textPrimary)
-                }
-                
-                Spacer()
-                
+                    .foregroundColor(theme.textPrimary)
+            }
+            
+            Spacer()
+            
                 if isPreviewMode {
                     Button(action: { exitPreviewMode() }) {
                         Image(systemName: "xmark.circle.fill")
@@ -409,48 +409,69 @@ struct DynamicFocusBox: View {
         VStack(spacing: 0) {
             if let block = displayedBlock {
                 VStack(spacing: 0) {
-                    // Progress bar and percentage ABOVE pagination (for multiple tasks)
-                    if block.tasks.count > 1 {
-                        multiTaskProgressView(block: block, theme: theme)
-                            .padding(.horizontal, 20)
-                            .padding(.bottom, 8)
-                    }
-                    
                     TabView(selection: $currentPage) {
-                        contextBlockView(block: block, theme: theme)
-                            .tag(0)
+                        VStack(spacing: 0) {
+                            // Task list content
+                            contextBlockView(block: block, theme: theme)
+                            
+                            // Progress bar and percentage BELOW task list, ABOVE pagination (for multiple tasks)
+                            if block.tasks.count > 1 {
+                                multiTaskProgressView(block: block, theme: theme)
+                                    .padding(.horizontal, 20)
+                                    .padding(.top, 8)
+                                    .padding(.bottom, 4)
+                            }
+                        }
+                        .tag(0)
                         
                         if let nextBlock = nextMajorBlock {
-                            contextBlockView(block: nextBlock, theme: theme)
+                            VStack(spacing: 0) {
+                                contextBlockView(block: nextBlock, theme: theme)
+                                
+                                if nextBlock.tasks.count > 1 {
+                                    multiTaskProgressView(block: nextBlock, theme: theme)
+                                        .padding(.horizontal, 20)
+                                        .padding(.top, 8)
+                                        .padding(.bottom, 4)
+                                }
+                            }
                             .tag(1)
                         }
                     }
                     .tabViewStyle(.page(indexDisplayMode: nextMajorBlock != nil ? .always : .never)) // Hide pagination when only one page
                     .frame(minHeight: 200)
                     
-                    // Bottom: Single task info OR Toggle button
+                    // Bottom: Due time and total XP at bottom left, Info button and Toggle button at bottom right
                     HStack(alignment: .bottom) {
-                        if block.tasks.count == 1, let task = block.tasks.first {
-                            // Single task: XP before time interval
-                            let xpGained = calculateXPForTask(task)
-                            
-                            HStack(spacing: 8) {
-                                // XP number right before time interval
+                        // Left: Due time and total XP (left aligned)
+                        VStack(alignment: .leading, spacing: 4) {
+                            if block.tasks.count == 1, let task = block.tasks.first {
+                                // Single task: Due time and XP
+                                Text("Due: \(formatTimeWithAMPM(task.endTime))")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(theme.textSecondary.opacity(0.7))
+                                
+                                let xpGained = calculateXPForTask(task)
                                 Text("\(xpGained) XP")
                                     .font(.system(size: 11, weight: .semibold))
-                                    .foregroundColor(theme.accentColor) // Theme-controlled
-                                
-                                // Due time - BOLD
-                                Text("Due: \(formatTimeWithAMPM(task.endTime))")
-                                    .font(.system(size: 11, weight: .bold)) // Made bold
+                                    .foregroundColor(theme.accentColor)
+                            } else {
+                                // Multiple tasks: Due time and total XP
+                                let contextEndTime = block.tasks.map { $0.endTime }.max() ?? Date()
+                                Text("Due: \(formatTimeWithAMPM(contextEndTime))")
+                                    .font(.system(size: 11, weight: .bold))
                                     .foregroundColor(theme.textSecondary.opacity(0.7))
+                                
+                                let totalXP = block.tasks.reduce(0) { $0 + calculateXPForTask($1) }
+                                Text("\(totalXP) XP")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(theme.accentColor)
                             }
-                            
-                            Spacer()
-                        } else {
-                            Spacer()
                         }
                         
+                        Spacer()
+                        
+                        // Right: Toggle button only (info moved to 3-dot menu)
                         Button(action: {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                 isViewAllTasksMode.toggle()
@@ -472,6 +493,7 @@ struct DynamicFocusBox: View {
                     .padding(.bottom, 16)
                 }
             } else {
+                // Empty state - NO footer/content, just empty state view
                 emptyStateView(theme: theme)
             }
         }
@@ -483,45 +505,27 @@ struct DynamicFocusBox: View {
         let totalCount = block.tasks.count
         let progress = totalCount > 0 ? CGFloat(checkedCount) / CGFloat(totalCount) : 0.0
         let percentage = Int(progress * 100)
-        let contextEndTime = block.tasks.map { $0.endTime }.max() ?? Date()
-        let totalXP = block.tasks.reduce(0) { $0 + calculateXPForTask($1) }
         
-        return HStack(alignment: .center) {
-            // Progress bar and percentage on left
+        return HStack(alignment: .center, spacing: 8) {
+            // Progress bar on left
             GeometryReader { geometry in
                 let progressBarWidth = geometry.size.width * 0.4
-                HStack(alignment: .center, spacing: 8) {
-                    ZStack(alignment: .leading) {
-                        Rectangle()
-                            .fill(theme.textPrimary.opacity(0.2))
-                            .frame(width: progressBarWidth, height: 4)
-                        Rectangle()
-                            .fill(theme.textPrimary.opacity(0.5))
-                            .frame(width: progressBarWidth * progress, height: 4)
-                    }
-                    .frame(height: 4)
-                    
-                    Text("\(percentage)%")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(theme.textPrimary)
+                ZStack(alignment: .leading) {
+                    Rectangle()
+                        .fill(theme.textPrimary.opacity(0.2))
+                        .frame(width: progressBarWidth, height: 4)
+                    Rectangle()
+                        .fill(theme.textPrimary.opacity(0.5))
+                        .frame(width: progressBarWidth * progress, height: 4)
                 }
+                .frame(height: 4)
             }
             .frame(height: 4)
             
-            Spacer()
-            
-            // Due time and XP on right (same order as default view)
-            VStack(alignment: .trailing, spacing: 4) {
-                // Due time - BOLD (above XP)
-                Text("Due: \(formatTimeWithAMPM(contextEndTime))")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(theme.textSecondary.opacity(0.7))
-                
-                // XP below due time
-                Text("\(totalXP) XP")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(theme.accentColor) // Theme-controlled
-            }
+            // Percentage on right of progress bar
+            Text("\(percentage)%")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(theme.textPrimary)
         }
     }
     
@@ -576,35 +580,8 @@ struct DynamicFocusBox: View {
     }
     
     private func freeTimeView(theme: any AppTheme) -> some View {
-        let calendar = Calendar.current
-        let referenceTime = calendar.isDateInToday(selectedDate) ? Date() : calendar.startOfDay(for: selectedDate)
-        let nextTask = allTasks.filter {
-            Calendar.current.isDate($0.startTime, inSameDayAs: selectedDate) &&
-            $0.startTime > referenceTime && !$0.isComplete
-        }.sorted { $0.startTime < $1.startTime }.first
-        
-        return VStack(spacing: 16) {
-            Text("No tasks for now")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(theme.textPrimary)
-            
-            Text("Enjoy your free time")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundColor(theme.textPrimary.opacity(0.7))
-            
-            if let nextTask = nextTask {
-                VStack(spacing: 4) {
-                    Text("Next: \(nextTask.title)")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(theme.textPrimary)
-                    Text("at \(formatTimeWithAMPM(nextTask.startTime))")
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundColor(theme.textPrimary.opacity(0.7))
-                }
-                .padding(.top, 8)
-            }
-        }
-        .padding(40)
+        // Use the same empty state as Plan view (basket icon, text, Add Task button)
+        return emptyStateView(theme: theme)
     }
     
     // MARK: - View All Tasks Content
@@ -729,7 +706,7 @@ struct DynamicFocusBox: View {
                 if isCurrentDay {
                     if isChecked { checkedTaskIDs.remove(task.id) }
                     else { checkedTaskIDs.insert(task.id) }
-                    AudioServicesPlaySystemSound(1520)
+                AudioServicesPlaySystemSound(1520)
                 }
             }) {
                 Image(systemName: isChecked ? "checkmark.square.fill" : "square")
@@ -752,14 +729,14 @@ struct DynamicFocusBox: View {
                     .font(.system(size: 9, weight: .semibold)) // Reduced from 11 to 9
                     .foregroundColor(theme.accentColor) // Theme-controlled
                 
-                Text(formatTimeWithAMPM(task.startTime) + " - " + formatTimeWithAMPM(task.endTime))
+            Text(formatTimeWithAMPM(task.startTime) + " - " + formatTimeWithAMPM(task.endTime))
                     .font(theme.headerFont)
-                    .foregroundColor(theme.textPrimary.opacity(0.7))
+                .foregroundColor(theme.textPrimary.opacity(0.7))
             }
         }
         .padding(.horizontal, 20)
     }
-
+    
     private func timeInfoView(for task: Task, theme: any AppTheme) -> some View {
         Text(timeRangeString(for: task))
             .font(theme.bodyFont)
@@ -793,22 +770,32 @@ struct DynamicFocusBox: View {
     }
     
     private func emptyStateView(theme: any AppTheme) -> some View {
+        // EXACT same as Plan view empty state - matching font sizes and layout
         VStack(spacing: 16) {
+            // Basket icon (tray icon like Plan view)
             Image(systemName: "tray")
                 .font(.system(size: 48, weight: .light))
                 .foregroundColor(theme.textSecondary.opacity(0.5))
                 .symbolRenderingMode(.hierarchical)
+            
+            // "No tasks for today" - same font as Plan view (theme.bodyFont)
             Text("No tasks for today")
                 .font(theme.bodyFont)
                 .foregroundColor(theme.textPrimary)
+            
+            // "Create your first task to get started" - same font size as Plan view
             Text("Create your first task to get started")
-                .font(.system(size: 10, weight: .regular))
+                .font(.system(size: 10, weight: .regular, design: .default))
                 .foregroundColor(theme.textSecondary)
                 .multilineTextAlignment(.center)
+            
+            // "+ Add Task" button - same styling as Plan view
             Button(action: { onAddTask?() }) {
                 HStack(spacing: 8) {
-                    Image(systemName: "plus.circle.fill").font(.system(size: 16))
-                    Text("Add Task").font(.system(size: 14, weight: .semibold))
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 16))
+                    Text("Add Task")
+                        .font(.system(size: 14, weight: .semibold))
                 }
                 .foregroundColor(theme.textPrimary)
                 .padding(.horizontal, 20)
@@ -816,7 +803,10 @@ struct DynamicFocusBox: View {
                 .background(
                     RoundedRectangle(cornerRadius: theme.smallCornerRadius)
                         .fill(theme.glassBackground.opacity(0.5))
-                        .overlay(RoundedRectangle(cornerRadius: theme.smallCornerRadius).stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                        )
                 )
             }
         }
@@ -844,7 +834,7 @@ struct DynamicFocusBox: View {
         let rewards = GamificationService.calculateTaskRewards(task: task, goal: goal, momentumBonus: momentumBonus)
         return rewards.xp
     }
-
+    
     private func formatTimeWithAMPM(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "h:mm a"
@@ -873,6 +863,15 @@ struct DynamicFocusBox: View {
     
     @ViewBuilder
     private func contextMenuItems(theme: any AppTheme) -> some View {
+        // Info button (i) - show task/block details
+        if let block = displayedBlock {
+            Button(action: {
+                showingTaskDetails = true
+            }) {
+                Label("Info", systemImage: "info.circle")
+            }
+        }
+        
         if let block = displayedBlock, !block.tasks.isEmpty {
             Button(action: {
                 if let firstTask = block.tasks.first {
@@ -973,7 +972,7 @@ struct DynamicFocusBox: View {
                 let safeProgress = progress.isFinite && !progress.isNaN ? progress : 0.0
                 Text("\(Int(safeProgress * 100))% Complete")
                     .font(theme.bodyFont)
-                    .foregroundColor(theme.textSecondary)
+            .foregroundColor(theme.textSecondary)
             } else {
                 Text("No tasks to complete")
                     .font(theme.bodyFont)
@@ -982,7 +981,7 @@ struct DynamicFocusBox: View {
             }
             Spacer()
         }
-        .padding()
+            .padding()
     }
     
     @ViewBuilder private func taskDetailsSheet() -> some View {
@@ -1079,7 +1078,7 @@ struct DynamicFocusBox: View {
                         }
                         .padding(.horizontal, 20)
                         
-                        Button(action: {
+        Button(action: {
                             let newContext = "New Context \(splitContextGroups.count + 1)"
                             splitContextGroups[newContext] = []
                         }) {
@@ -1090,7 +1089,7 @@ struct DynamicFocusBox: View {
                             .font(theme.bodyFont)
                             .foregroundColor(theme.accentColor)
                             .frame(maxWidth: .infinity)
-                            .padding()
+                .padding()
                             .background(RoundedRectangle(cornerRadius: theme.smallCornerRadius).fill(theme.glassBackground.opacity(0.5)).overlay(RoundedRectangle(cornerRadius: theme.smallCornerRadius).stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)))
                         }
                         .padding(.horizontal, 20)
@@ -1205,7 +1204,7 @@ private struct EditableContextNameField: View {
                 Button("Delete Context", role: .destructive) { onEdit("") }
             } label: {
                 Image(systemName: "ellipsis")
-                    .foregroundColor(theme.textSecondary)
+            .foregroundColor(theme.textSecondary)
             }
         }
         .padding(.horizontal, 16)

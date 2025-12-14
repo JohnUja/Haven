@@ -65,20 +65,22 @@ struct AddTaskView: View {
                         // Task Details Section
                         sectionView(title: "TASK DETAILS", theme: theme) {
                             VStack(spacing: 16) {
-                                // Task Title - Larger and Bold
+                                // Task Title - Reduced size to match theme
                                 TextField("Task title", text: $title)
-                                    .font(.system(size: 20, weight: .bold, design: .default))
-                                    .foregroundColor(theme.textPrimary)
+                                    .font(theme.bodyFont) // Use theme bodyFont for consistency
+                                    .foregroundColor(.white) // White text
                                     .accentColor(theme.accentColor)
-                                    .padding(.horizontal, theme.cardPadding)
+                                    .padding(.leading, theme.cardPadding) // Add spacing before text
+                                    .padding(.trailing, theme.cardPadding)
                                     .padding(.vertical, theme.cardVerticalPadding)
                                     .background(transparentInputBackground(theme: theme))
                                     .cornerRadius(theme.smallCornerRadius)
                                     .placeholder(when: title.isEmpty) {
                                         Text("Task title")
-                                            .foregroundColor(theme.textSecondary.opacity(0.8))
-                                            .font(.system(size: 20, weight: .bold, design: .default))
-                                            .padding(.horizontal, theme.cardPadding)
+                                            .foregroundColor(.white.opacity(0.6)) // White with opacity for placeholder
+                                            .font(theme.bodyFont) // Match theme font size
+                                            .padding(.leading, theme.cardPadding) // Match spacing
+                                            .padding(.trailing, theme.cardPadding)
                                             .padding(.vertical, theme.cardVerticalPadding)
                                     }
                                 
@@ -266,8 +268,9 @@ struct AddTaskView: View {
                     .padding(.vertical, 16)
                 }
             }
-            .navigationTitle("Add Task")
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {

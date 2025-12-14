@@ -15,6 +15,7 @@ struct HomeDashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(ThemeManager.self) private var themeManager
     @EnvironmentObject private var timeSettings: TimeSettingsManager
+    @EnvironmentObject private var calendarManager: CalendarManager
     
     // MARK: - Data Queries
     // Only query small datasets (users, routines)
@@ -39,6 +40,10 @@ struct HomeDashboardView: View {
     @State private var showingProgressDetails = false
     @State private var showingRecents = false
     @State private var viewMode: HomeViewMode = .tasks
+    
+    // Debounce date changes to prevent hangs during rapid scrolling (same as TimelineView)
+    @State private var pendingDateChange: Date? = nil
+    @State private var dateChangeTask: _Concurrency.Task<Void, Never>? = nil
     
     // Undo/Move Logic State
     @State private var undoMoveTimer: Timer?
@@ -101,16 +106,29 @@ struct HomeDashboardView: View {
             .onAppear {
                 updateViewModel()
             }
-            .onChange(of: users) { _, _ in updateViewModel() }
-            .onChange(of: routines) { _, _ in updateViewModel() }
+            .onChange(of: users) { _, _ in
+                // Move state modification outside view update cycle
+                _Concurrency.Task { @MainActor in
+                    updateViewModel()
+                }
+            }
+            .onChange(of: routines) { _, _ in
+                // Move state modification outside view update cycle
+                _Concurrency.Task { @MainActor in
+                    updateViewModel()
+                }
+            }
             .onChange(of: vm.selectedDate) { _, _ in
-                vm.onSelectedDateChanged()
+                // Move state modification outside view update cycle
+                _Concurrency.Task { @MainActor in
+                    vm.onSelectedDateChanged()
+                }
             }
             .sheet(isPresented: $vm.showingAddTask) {
                 AddTaskView(selectedDate: vm.selectedDate)
             }
             .sheet(isPresented: $vm.showingCalendar) {
-                calendarModalView(theme: theme)
+                themeCalendarView(theme: theme)
                     .presentationDetents([.medium])
                     .presentationDragIndicator(.visible)
             }
@@ -260,6 +278,13 @@ struct HomeDashboardView: View {
             .overlay(completionRingOverlay)
             .onAppear {
                 updateViewModel()
+                
+                // Restore saved date state for sync with timeline
+                if let savedDate = DatePersistenceService.shared.restoreSelectedDate() {
+                    vm.selectedDate = savedDate
+                    calendarManager.loadCalendarEvents(for: savedDate)
+                }
+                
                 vm.checkEarnedRewardsOnAppOpen()
                 
                 if let user = currentUser {
@@ -288,8 +313,10 @@ struct HomeDashboardView: View {
                     .store(in: &vm.levelUpNotificationObserver)
             }
             .onChange(of: vm.selectedDate) { _, _ in
-                // Refresh data when selected date changes
-                vm.refreshSelectedDateData()
+                // Move state modification outside view update cycle
+                _Concurrency.Task { @MainActor in
+                    vm.refreshSelectedDateData()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OnboardingTaskCreated"))) { _ in
                 // Refresh data when task is created
@@ -298,6 +325,12 @@ struct HomeDashboardView: View {
             .onReceive(NotificationCenter.default.publisher(for: .NSManagedObjectContextDidSave)) { _ in
                 // Refresh data when SwiftData context saves (task/block created/updated/deleted)
                 vm.refreshSelectedDateData()
+            }
+            .onDisappear {
+                // Cancel any pending date change tasks to prevent hangs
+                dateChangeTask?.cancel()
+                dateChangeTask = nil
+                pendingDateChange = nil
             }
     }
     // MARK: - Root Content
@@ -310,22 +343,19 @@ struct HomeDashboardView: View {
             
             ScrollView {
                 LazyVStack(spacing: 20) {
-            // Top Row: Add Task/Block buttons (left) and DEC 2025 / Today button (right)
+                    // Top Row: DEC 2025 button (left) and Action buttons (right) - animated
+                    let isSelectedDateToday = Calendar.current.isDateInToday(vm.selectedDate)
+                    
             HStack {
-                // Add Task and Add Block buttons on left
-                HStack(spacing: 8) {
+                        // DEC 2025 Calendar Button - left side
                     Button(action: {
-                        vm.showingAddTask = true
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 14, weight: .medium))
-                            Text("Add Task")
-                                .font(.system(size: 12, weight: .semibold))
-                        }
+                            vm.showingCalendar = true
+                        }) {
+                            Text(monthYearString(from: vm.selectedDate).uppercased())
+                                .font(theme.headerFont)
                         .foregroundColor(theme.textPrimary)
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                                .padding(.vertical, 6)
                         .background(
                             RoundedRectangle(cornerRadius: theme.smallCornerRadius)
                                 .fill(theme.glassBackground.opacity(0.5))
@@ -336,36 +366,110 @@ struct HomeDashboardView: View {
                         )
                     }
                     
-                    Button(action: {
-                        vm.showingAddBlock = true
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "square.stack.fill")
-                                .font(.system(size: 14, weight: .medium))
-                            Text("Add Block")
-                                .font(.system(size: 12, weight: .semibold))
-                        }
-                        .foregroundColor(theme.textPrimary)
+                        Spacer()
+                        
+                        // Action buttons on right: Add Task icon, Add Block icon, Today button (when not today)
+                        HStack(spacing: 8) {
+                            // Add Task icon button - smaller size
+                            Button(action: {
+                                vm.showingAddTask = true
+                            }) {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(theme.textPrimary)
+                                    .frame(width: 28, height: 28)
+                            }
+                            
+                            // Add Block icon button - smaller size
+                            Button(action: {
+                                vm.showingAddBlock = true
+                            }) {
+                                Image(systemName: "square.stack.fill")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(theme.textPrimary)
+                                    .frame(width: 28, height: 28)
+                            }
+                            
+                            // Today Button - slides in from right when not on today
+                            if !isSelectedDateToday {
+                                Button(action: {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                        vm.selectedDate = Date()
+                                        DatePersistenceService.shared.saveSelectedDate(vm.selectedDate)
+                                        calendarManager.loadCalendarEvents(for: vm.selectedDate)
+                                    }
+                                }) {
+                                    Text("Today")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundColor(.white)
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                                        .padding(.vertical, 6)
                         .background(
                             RoundedRectangle(cornerRadius: theme.smallCornerRadius)
-                                .fill(theme.glassBackground.opacity(0.5))
+                                                .fill(
+                                                    LinearGradient(
+                                                        colors: [theme.accentColor, theme.accentColor.opacity(0.7)],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
                                 .overlay(
                                     RoundedRectangle(cornerRadius: theme.smallCornerRadius)
-                                        .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
-                                )
-                        )
+                                                        .stroke(theme.accentColor, lineWidth: theme.cardBorderWidth)
+                                                )
+                                        )
+                                }
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .trailing).combined(with: .opacity).animation(.spring(response: 0.3, dampingFraction: 0.7)),
+                                    removal: .move(edge: .trailing).combined(with: .opacity).animation(.spring(response: 0.25, dampingFraction: 0.8))
+                                ))
+                            }
+                        }
                     }
-                }
-                
-                Spacer()
-                
-                // DEC 2025 button and Today button (if needed) on right
-                timelineHeaderStructure(theme: theme)
-            }
+                    .padding(.horizontal, 20)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelectedDateToday)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
+                    
+                    // ONLY InfiniteDaySelector (daily scroller) - synced with TimelineView
+                    InfiniteDaySelector(
+                        selectedDate: Binding(
+                            get: { vm.selectedDate },
+                            set: { newDate in
+                                // Update immediately for UI responsiveness
+                                vm.selectedDate = newDate
+                                
+                                // Debounce date changes to prevent hangs during rapid scrolling
+                                pendingDateChange = newDate
+                                
+                                // Cancel previous task
+                                dateChangeTask?.cancel()
+                                
+                                // Create new task with delay
+                                dateChangeTask = _Concurrency.Task { @MainActor in
+                                    try? await _Concurrency.Task.sleep(nanoseconds: 300_000_000) // 0.3 second delay
+                                    
+                                    // Check if this is still the pending date (not cancelled)
+                                    if let pending = pendingDateChange, Calendar.current.isDate(pending, inSameDayAs: newDate) {
+                                        // Persist selected date for state preservation
+                                        DatePersistenceService.shared.saveSelectedDate(pending)
+                                        calendarManager.loadCalendarEvents(for: pending)
+                                        pendingDateChange = nil
+                                    }
+                                }
+                            }
+                        ),
+                        onDateChanged: { newDate in
+                            // ViewModel handles date change internally via didSet
+                        },
+                        hasEvents: { date in
+                            // Optimize: Use cached check instead of heavy computation
+                            calendarManager.hasEventsOnDate(date)
+                        },
+                        showMonthHeader: true
+                    )
             .padding(.horizontal, 20)
-            .padding(.top, 8)
+                    .padding(.bottom, 8)
                     
                     // Plan vs Focus Toggle
                     modeToggleView
@@ -1715,82 +1819,59 @@ struct HomeDashboardView: View {
         .padding(.horizontal, 20)
     }
     
-    // MARK: - Timeline Header Structure (from GitHub)
+    // MARK: - Theme-Controlled Calendar View
     @ViewBuilder
-    private func timelineHeaderStructure(theme: any AppTheme) -> some View {
-        let isSelectedDateToday = Calendar.current.isDateInToday(vm.selectedDate)
-        
-        VStack(spacing: 16) {
-            // Month/Year Header (DEC 2025) and Today Button - Top Row
-            HStack {
-                // Calendar Button (DEC 2025) - Connected to calendar system
-                Button(action: {
-                    vm.showingCalendar = true
-                }) {
-                    Text(monthYearString(from: vm.selectedDate).uppercased())
-                        .font(theme.headerFont)
-                        .foregroundColor(theme.textPrimary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: theme.smallCornerRadius)
-                                .fill(theme.glassBackground.opacity(0.5))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
-                                        .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
-                                )
-                        )
+    private func themeCalendarView(theme: any AppTheme) -> some View {
+        // Simple sheet with cohesive background - no NavigationView header
+        VStack(spacing: 0) {
+            // Month/Year navigation and calendar
+            MonthCalendarView(selectedDate: Binding(
+                get: { vm.selectedDate },
+                set: { newDate in
+                    vm.selectedDate = newDate
+                    DatePersistenceService.shared.saveSelectedDate(newDate)
+                    calendarManager.loadCalendarEvents(for: newDate)
+                    let calendar = Calendar.current
+                    if calendar.dateComponents([.day], from: Date(), to: newDate).day ?? 0 > 0 {
+                        DatePersistenceService.shared.saveLastWorkedDate(newDate)
+                    }
                 }
-                .buttonStyle(PlainButtonStyle())
+            ))
+            
+            // Bottom buttons
+            HStack(spacing: 12) {
+                Button("Today") {
+                    withAnimation {
+                        vm.selectedDate = Date()
+                        DatePersistenceService.shared.saveSelectedDate(Date())
+                        vm.showingCalendar = false
+                    }
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                        .fill(Color.white.opacity(0.2))
+                )
                 
                 Spacer()
                 
-                // Today Button - Top Right
-                if !isSelectedDateToday {
-                    Button(action: {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            vm.selectedDate = Date()
-                            DatePersistenceService.shared.saveSelectedDate(vm.selectedDate)
-                        }
-                    }) {
-                        Text("Today")
-                            .font(theme.titleFont)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                RoundedRectangle(cornerRadius: theme.smallCornerRadius)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [theme.accentColor, theme.accentColor.opacity(0.7)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: theme.smallCornerRadius)
-                                            .stroke(theme.accentColor, lineWidth: theme.cardBorderWidth)
-                                    )
-                            )
-                    }
-                    .transition(.scale.combined(with: .opacity))
+                Button("Done") {
+                    vm.showingCalendar = false
                 }
+                .foregroundColor(.white)
+                .fontWeight(.semibold)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                        .fill(theme.accentColor)
+                )
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 4)
-            
-            // Infinite Day Selector
-            InfiniteDaySelector(
-                selectedDate: $vm.selectedDate,
-                onDateChanged: { date in
-                    vm.selectedDate = date
-                    DatePersistenceService.shared.saveSelectedDate(date)
-                },
-                hasEvents: { _ in false },
-                showMonthHeader: true
-            )
+            .padding()
         }
+        .background(theme.primaryGradient.ignoresSafeArea())
     }
     
     // MARK: - Helper: Month Year String
@@ -1860,46 +1941,7 @@ struct HomeDashboardView: View {
         .padding()
         }
     
-    // MARK: - Calendar Modal View
-    private func calendarModalView(theme: any AppTheme) -> some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                MonthCalendarView(selectedDate: Binding(
-                        get: { vm.selectedDate },
-                    set: { newDate in
-                            vm.selectedDate = newDate
-                        DatePersistenceService.shared.saveSelectedDate(newDate)
-                        let calendar = Calendar.current
-                        if calendar.dateComponents([.day], from: Date(), to: newDate).day ?? 0 > 0 {
-                            DatePersistenceService.shared.saveLastWorkedDate(newDate)
-                        }
-                    }
-                ))
-                
-                HStack(spacing: 12) {
-                    Button("Today") {
-                        withAnimation {
-                                vm.selectedDate = Date()
-                            DatePersistenceService.shared.saveSelectedDate(Date())
-                                vm.showingCalendar = false
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    
-                    Spacer()
-                    
-                        Button("Done") {
-                            vm.showingCalendar = false
-                        }
-                    .buttonStyle(.borderedProminent)
-                    }
-                .padding()
-                }
-            .navigationTitle("Select Date")
-            .navigationBarTitleDisplayMode(.inline)
-                .background(Color(.systemBackground))
-            }
-        }
+    // MARK: - Calendar Modal View - REMOVED (will be reimplemented with theme)
     // MARK: - Date and Progress Section (Before Focus/Plan tabs)
     private func dateAndProgressSection(user: User, theme: any AppTheme) -> some View {
         HStack(spacing: 16) {
@@ -2067,8 +2109,8 @@ struct FloatingActionMenu: View {
                         Text("Move").font(.caption)
                     }
                     .foregroundColor(theme.textPrimary)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(theme.cardBackground).cornerRadius(12)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(Color.gray.opacity(0.8)).cornerRadius(10)
                 }
                 
             Button(action: onDelete) {
@@ -2106,6 +2148,10 @@ struct TaskCardView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var users: [User]
     @State private var showingReflectionPrompt: Task? = nil
+    @State private var showEarlyCompletionPrompt = false
+    @State private var earlyCompletionTask: Task? = nil
+    @State private var earlyCompletionRewards: (xp: Int, crystals: Int) = (0, 0)
+    @State private var hasShownEarlyCompletionPrompt = false // Track if prompt shown this session
     
     var body: some View {
         mainContent
@@ -2118,9 +2164,12 @@ struct TaskCardView: View {
             // .overlay(goalReflectionPulse, alignment: .trailing)
             .overlay(lockIconOverlay, alignment: .topTrailing)
             .onChange(of: task.isComplete) { oldValue, newValue in
+                // FIX: Move state modification outside view update cycle
                 // When task becomes complete, wait a few seconds then trigger reorder
                 if newValue && !oldValue {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    // Use fully qualified Task type to avoid conflict with SwiftData Task model
+                    _Concurrency.Task { @MainActor in
+                        try? await _Concurrency.Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
                         // Trigger view update to reorder tasks
                         // The parent view will handle the reordering via getFilteredTasks()
                     }
@@ -2144,6 +2193,23 @@ struct TaskCardView: View {
                 set: { if !$0 { showingReflectionPrompt = nil } }
             )) {
                 reflectionSheetContent
+            }
+            .alert("Complete \(earlyCompletionTask?.title ?? "task") already?", isPresented: $showEarlyCompletionPrompt) {
+                Button("Cancel", role: .cancel) {
+                    earlyCompletionTask = nil
+                }
+                Button("Complete Anyway") {
+                    guard let task = earlyCompletionTask else { return }
+                    // Force complete with rewards
+                    task.isComplete = true
+                    onTaskCompleted?(task.id)
+                    try? modelContext.save()
+                    earlyCompletionTask = nil
+                }
+            } message: {
+                if let task = earlyCompletionTask {
+                    Text("This task starts at \(formatTime(task.startTime)).\n\nRewards for completing:\n⭐ \(earlyCompletionRewards.xp) XP\n💎 \(earlyCompletionRewards.crystals) Crystals")
+                }
             }
     }
     
@@ -2256,10 +2322,47 @@ struct TaskCardView: View {
         private static func formatTime(_ date: Date) -> String { let f = DateFormatter(); f.timeStyle = .short; return f.string(from: date) }
     
         private func handleTaskCompletion() {
-            // Simple toggle for now
+            let calendar = Calendar.current
+            let now = Date()
+            let taskStart = task.startTime
+            
+            // If trying to complete a task that hasn't started yet
+            if !task.isComplete && now < taskStart {
+                // Only show prompt once per session to avoid overwhelming user
+                // But still provide accountability
+                if !hasShownEarlyCompletionPrompt {
+                    // Calculate potential rewards
+                    guard let user = users.first else { return }
+                    let goal = task.goal
+                    let momentumBonus = GamificationService.getMomentumBonus(user: user)
+                    let baseRewards = GamificationService.calculateTaskRewards(
+                        task: task,
+                        goal: goal,
+                        momentumBonus: momentumBonus
+                    )
+                    
+                    // Store task and rewards for prompt
+                    earlyCompletionTask = task
+                    earlyCompletionRewards = (xp: baseRewards.xp, crystals: baseRewards.crystals)
+                    showEarlyCompletionPrompt = true
+                    hasShownEarlyCompletionPrompt = true
+                    return
+                } else {
+                    // After first prompt, allow silent completion but still track
+                    // This provides accountability without overwhelming
+                }
+            }
+            
+            // Normal completion - task has started or is being unchecked
                 task.isComplete.toggle()
             if task.isComplete { onTaskCompleted?(task.id) }
                     try? modelContext.save()
+        }
+        
+        private func formatTime(_ date: Date) -> String {
+            let formatter = DateFormatter()
+            formatter.timeStyle = .short
+            return formatter.string(from: date)
         }
         
     private func syncUserStatsToFirestore(user: User) {

@@ -48,6 +48,14 @@ struct AddBlockView: View {
                 
                 ScrollView {
                     VStack(spacing: 24) {
+                        // "Add Block" title at center - white text
+                        Text("Add Block")
+                            .font(theme.titleFont)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .padding(.top, 20)
+                            .padding(.bottom, 8)
+                        
                         // Block Details Section
                         sectionView(title: "BLOCK DETAILS", theme: theme) {
                             VStack(spacing: 16) {
@@ -206,8 +214,9 @@ struct AddBlockView: View {
                     .padding(.vertical, 16)
                 }
             }
-            .navigationTitle("Add Block")
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {

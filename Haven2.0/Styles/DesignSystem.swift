@@ -471,17 +471,21 @@ func transparentTextField(
             TextField("", text: text) // Empty placeholder to avoid duplicate
         }
     }
-    .font(.system(size: 16, weight: .regular, design: .default))
-    .foregroundColor(theme.textPrimary)
+    .font(theme.bodyFont) // Use theme bodyFont for consistency
+    .foregroundColor(.white) // White text for consistency
     .accentColor(theme.accentColor)
-    .padding(.horizontal, theme.cardPadding)
+    .padding(.leading, theme.cardPadding) // Add spacing before text
+    .padding(.trailing, theme.cardPadding)
     .padding(.vertical, theme.cardVerticalPadding)
     .background(transparentInputBackground(theme: theme))
     .cornerRadius(theme.smallCornerRadius)
     .placeholder(when: text.wrappedValue.isEmpty) {
         Text(placeholder)
-            .foregroundColor(theme.textSecondary.opacity(0.8)) // Increased opacity for better visibility
-            .font(.system(size: 16, weight: .regular, design: .default))
+            .foregroundColor(.white.opacity(0.6)) // White with opacity for placeholder
+            .font(theme.bodyFont) // Match theme font size (reduced)
+            .padding(.leading, theme.cardPadding) // Match spacing
+            .padding(.trailing, theme.cardPadding)
+            .padding(.vertical, theme.cardVerticalPadding)
     }
 }
 

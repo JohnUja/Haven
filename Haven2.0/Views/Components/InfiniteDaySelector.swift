@@ -233,7 +233,10 @@ struct DayCell: View {
                         .stroke(theme.successColor.opacity(0.9), lineWidth: 3)
                         .frame(width: 32, height: 32)
                         .shadow(color: theme.successColor.opacity(0.5), radius: 5)
-                        .transition(.scale.combined(with: .opacity))
+                        .transition(.asymmetric(
+                            insertion: .scale.combined(with: .opacity).animation(.spring(response: 0.4, dampingFraction: 0.7)),
+                            removal: .scale.combined(with: .opacity).animation(.spring(response: 0.3, dampingFraction: 0.8))
+                        ))
                 }
                 
                 Text("\(calendar.component(.day, from: day))")

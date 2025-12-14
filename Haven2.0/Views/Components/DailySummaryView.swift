@@ -97,7 +97,7 @@ struct DailySummaryView: View {
                                 }
                                 
                                 VStack(alignment: .leading, spacing: 8) {
-                                    ForEach(summary.bonuses, id: \.self) { bonus in
+                                    ForEach(Array(summary.bonuses.enumerated()), id: \.offset) { index, bonus in
                                         HStack {
                                             Text("✨")
                                                 .font(.system(size: 14))
@@ -131,7 +131,7 @@ struct DailySummaryView: View {
                                 }
                                 
                                 HStack(spacing: 12) {
-                                    ForEach(summary.moodsRecorded, id: \.self) { mood in
+                                    ForEach(Array(summary.moodsRecorded.enumerated()), id: \.offset) { index, mood in
                                         VStack(spacing: 4) {
                                             Text(mood.emoji)
                                                 .font(.title2)

@@ -87,13 +87,7 @@ struct MonthCalendarView: View {
             .padding(.horizontal)
             .padding(.vertical, 12)
             .frame(height: 60) // Fixed height to prevent shifting
-            .background(
-                LinearGradient(
-                    colors: [.purple.opacity(0.6), .pink.opacity(0.4), .blue.opacity(0.3)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
+            // Background removed - will use parent's cohesive background
             
             // Days of week header - Fixed height
             HStack {
@@ -193,18 +187,15 @@ struct MonthCalendarView: View {
     @ViewBuilder
     private func backgroundForDate(_ date: Date) -> some View {
         if calendar.isDate(date, inSameDayAs: selectedDate) {
+            // Selected date: green outline (on purple theme) or theme's day scroller selection color
             Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [.orange, .pink],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .stroke(Color.green, lineWidth: 2)
+                .background(Circle().fill(Color.clear))
         } else if calendar.isDate(date, inSameDayAs: Date()) {
+            // Today: subtle indicator
             Circle()
-                .stroke(Color.purple.opacity(0.6), lineWidth: 2)
-                .background(Circle().fill(Color.purple.opacity(0.1)))
+                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                .background(Circle().fill(Color.clear))
         } else {
             Circle()
                 .fill(Color.clear)
