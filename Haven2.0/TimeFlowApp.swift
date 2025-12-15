@@ -116,21 +116,21 @@ struct TimeFlowApp: App {
                 if authService.isAuthenticated {
                     if onboardingService.isOnboardingComplete {
                         MainTabView()
-                            // DISABLED: .environment(themeManager)
+                            .environment(themeManager)
                             .environmentObject(timeSettings)
                             .environmentObject(calendarManager)
                             .environment(authService)
                             .environmentObject(DeveloperModeService.shared)
                     } else {
                         OnboardingView()
-                            // DISABLED: .environment(themeManager)
+                            .environment(themeManager)
                             .environmentObject(timeSettings)
                             .environment(authService)
                             .environmentObject(onboardingService)
                     }
                 } else {
                     FirebaseAuthenticationView()
-                        // DISABLED: .environment(themeManager)
+                        .environment(themeManager)
                         .environment(authService)
                         .environmentObject(DeveloperModeService.shared)
                 }

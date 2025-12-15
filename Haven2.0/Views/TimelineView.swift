@@ -12,9 +12,7 @@ import AudioToolbox
 
 struct TimelineView: View {
     @Environment(\.modelContext) private var modelContext
-    // DISABLED: ThemeManager temporarily disabled for debugging
-    // @Environment(ThemeManager.self) private var themeManager
-    private let defaultTheme: any AppTheme = PurpleTheme() // Hardcoded default theme
+    @Environment(ThemeManager.self) private var themeManager
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     @EnvironmentObject private var calendarManager: CalendarManager
     
@@ -29,7 +27,7 @@ struct TimelineView: View {
     @State private var showingCalendar = false
     @State private var showingAddTask = false
     @State private var showingAddTaskBlock = false
-    
+    
     // Check if selected date is today
     private var isSelectedDateToday: Bool {
         Calendar.current.isDateInToday(selectedDate)
@@ -321,7 +319,7 @@ struct TimelineView: View {
     }
     
     var body: some View {
-        let theme = defaultTheme // DISABLED: Using hardcoded theme instead of themeManager
+        let theme = themeManager.currentTheme // Cache theme to prevent multiple accesses
         
         return GeometryReader { geometry in
             ZStack(alignment: .topTrailing) {
@@ -397,24 +395,24 @@ struct TimelineView: View {
             // Calendar system removed - will be reimplemented with theme
             .sheet(isPresented: $showingAddTask) {
                 AddTaskView(selectedDate: selectedDate)
-                    // DISABLED: .environment(themeManager)
+                    .environment(themeManager)
                     .environment(\.modelContext, modelContext)
             }
             .sheet(isPresented: $showingAddTaskBlock) {
                 AddBlockView(selectedDate: selectedDate)
                     .presentationDetents([.medium])
-                    // DISABLED: .environment(themeManager)
+                    .environment(themeManager)
                     .environment(\.modelContext, modelContext)
             }
             .onAppear {
                 startTimer()
             }
-            .onDisappear {
-                stopTimer()
+                .onDisappear {
+                    stopTimer()
             }
         }
     }
-    
+    
     // MARK: - Calendar Modal View - REMOVED (will be reimplemented with theme)
     
     // MARK: - Helper Functions

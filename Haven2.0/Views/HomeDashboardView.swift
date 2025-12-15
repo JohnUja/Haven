@@ -13,9 +13,7 @@ import Combine
 
 struct HomeDashboardView: View {
     @Environment(\.modelContext) private var modelContext
-    // DISABLED: ThemeManager temporarily disabled for debugging
-    // @Environment(ThemeManager.self) private var themeManager
-    private let defaultTheme: any AppTheme = PurpleTheme() // Hardcoded default theme
+    @Environment(ThemeManager.self) private var themeManager
     @Environment(FirebaseAuthService.self) private var authService
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     @EnvironmentObject private var calendarManager: CalendarManager
@@ -111,7 +109,7 @@ struct HomeDashboardView: View {
     }
     
     var body: some View {
-        let theme: any AppTheme = defaultTheme // DISABLED: Using hardcoded theme instead of themeManager
+        let theme: any AppTheme = themeManager.currentTheme
         
         return NavigationStack { rootContent(theme: theme) }
             .onAppear {
@@ -137,7 +135,7 @@ struct HomeDashboardView: View {
             }
             .sheet(isPresented: $vm.showingAddTask) {
                 AddTaskView(selectedDate: vm.selectedDate)
-                    // DISABLED: .environment(themeManager)
+                    .environment(themeManager)
                     .environment(authService)
                     .environment(\.modelContext, modelContext)
             }
@@ -149,14 +147,14 @@ struct HomeDashboardView: View {
             .sheet(isPresented: $vm.showingAddBlock) {
                 AddBlockView(selectedDate: vm.selectedDate)
                     .presentationDetents([.medium])
-                    // DISABLED: .environment(themeManager)
+                    .environment(themeManager)
                     .environment(\.modelContext, modelContext)
             }
             .sheet(item: $vm.showingEditTask) { task in
                 // OPTIMIZED: EditTaskView uses @Query internally, no need to fetch here
                 // The allTasks parameter is optional and EditTaskView will use @Query if not provided
                 EditTaskView(task: task, allTasks: nil)
-                    // DISABLED: .environment(themeManager)
+                    .environment(themeManager)
                     .environmentObject(timeSettings)
                     .environment(\.modelContext, modelContext)
             }
@@ -215,7 +213,7 @@ struct HomeDashboardView: View {
                         tasksInBlock: editBlock.tasks,
                         allTasks: allTasks
                     )
-                    // DISABLED: .environment(themeManager)
+                    .environment(themeManager)
                     .environmentObject(timeSettings)
                     .environment(\.modelContext, modelContext)
                 }
@@ -236,12 +234,12 @@ struct HomeDashboardView: View {
             }
             .sheet(item: $vm.showingEditGoal) { goal in
                 EditGoalInlineView(goal: goal)
-                    // DISABLED: .environment(themeManager)
+                    .environment(themeManager)
                     .environment(\.modelContext, modelContext)
             }
             .sheet(item: $vm.showingAddTaskToGoal) { goal in
                 AddTaskToGoalView(goal: goal)
-                    // DISABLED: .environment(themeManager)
+                    .environment(themeManager)
                     .environment(authService)
                     .environment(\.modelContext, modelContext)
             }
@@ -314,7 +312,7 @@ struct HomeDashboardView: View {
                     ImmersiveWorkingOnView(task: currentTask) {
                         vm.showingImmersiveWorkingOn = false
                     }
-                    // DISABLED: .environment(themeManager)
+                    .environment(themeManager)
                     .environment(authService)
                     .environment(\.modelContext, modelContext)
                 }
@@ -561,7 +559,7 @@ struct HomeDashboardView: View {
                 FloatingActionMenu(
                     task: task,
                     taskBlock: nil,
-                    theme: defaultTheme,
+                    theme: themeManager.currentTheme,
                     blockLocked: nil,
                     onEdit: { vm.showingFloatingMenu = nil; vm.showingEditTask = task },
                     onChangeCategory: { vm.showingFloatingMenu = nil; vm.showingCategoryChange = task },
@@ -608,7 +606,7 @@ struct HomeDashboardView: View {
                 FloatingActionMenu(
                     task: nil,
                     taskBlock: taskBlock,
-                    theme: defaultTheme,
+                    theme: themeManager.currentTheme,
                     blockLocked: _blockObj?.isLocked ?? false,
                     onEdit: {
                         showingFloatingMenuForBlock = nil
@@ -768,7 +766,7 @@ struct HomeDashboardView: View {
                 VStack {
                     HStack {
                         Spacer()
-                        completionRingPopupView(theme: defaultTheme)
+                        completionRingPopupView(theme: themeManager.currentTheme)
                             .transition(.scale.combined(with: .opacity))
                         Spacer()
                     }
@@ -804,7 +802,7 @@ struct HomeDashboardView: View {
                         Text(dateString(for: vm.selectedDate))
                         .font(AppStyleSheet.font(for: .title))
                         .foregroundColor(.white)
-                        .appTextStyle(.title, theme: defaultTheme)
+                        .appTextStyle(.title, theme: themeManager.currentTheme)
                 }
                 
                 Spacer()
@@ -832,7 +830,7 @@ struct HomeDashboardView: View {
     
     // MARK: - Level Ring View (with toggle)
     private func levelRingView(user: User, showDailyProgress: Bool) -> some View {
-        let theme = defaultTheme
+        let theme = themeManager.currentTheme
         
         return ZStack {
             if showDailyProgress {
@@ -887,7 +885,7 @@ struct HomeDashboardView: View {
     
     // MARK: - Mode Toggle (Bubble Bounce Animation, 1/3 Width)
     private var modeToggleView: some View {
-        let theme = defaultTheme
+        let theme = themeManager.currentTheme
         
         return HStack(spacing: 0) {
             // Focus Button - Fixed Width (1/3 of total)
@@ -1503,7 +1501,7 @@ struct HomeDashboardView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(sectionTitle)
                             .appTextStyle(.sectionHeader, theme: theme)
-                                .padding(.horizontal, defaultTheme.cardPadding)
+                                .padding(.horizontal, themeManager.currentTheme.cardPadding)
                         
                             // Group tasks by taskBlockID - show blocks as single cards
                             let tasksByBlock = Dictionary(grouping: sectionTasks) { $0.taskBlock?.id ?? "" }
