@@ -341,7 +341,8 @@ struct TaskBlockCardView: View {
                                             
                                             // Delay reflection prompt until animations complete (3 seconds)
                                             if task.isComplete {
-                                                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                                                _Concurrency.Task { @MainActor in
+                                                    try? await _Concurrency.Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
                                                     // Reflection prompt handled by parent view
                                                 }
                                             }

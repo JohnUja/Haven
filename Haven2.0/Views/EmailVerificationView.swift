@@ -28,7 +28,7 @@ struct EmailVerificationView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 themeManager.currentTheme.primaryGradient
                     .ignoresSafeArea()

@@ -12,6 +12,8 @@ struct GoalsDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(ThemeManager.self) private var themeManager
+    @EnvironmentObject private var timeSettings: TimeSettingsManager
+    @Environment(FirebaseAuthService.self) private var authService
     
     let goal: Goal
     
@@ -79,9 +81,16 @@ struct GoalsDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingEdit) { EditGoalInlineView(goal: goal) }
+        .sheet(isPresented: $showingEdit) {
+            EditGoalInlineView(goal: goal)
+                .environment(themeManager)
+                .environment(\.modelContext, modelContext)
+        }
         .sheet(isPresented: $showingAddTask) {
             AddTaskToGoalView(goal: goal)
+                .environment(themeManager)
+                .environment(authService)
+                .environment(\.modelContext, modelContext)
         }
         .sheet(isPresented: Binding(
             get: { addingTaskToMilestone != nil },
@@ -90,10 +99,16 @@ struct GoalsDetailView: View {
             if let milestoneID = addingTaskToMilestone,
                let milestone = (goal.milestones ?? []).first(where: { $0.id == milestoneID }) {
                 AddTaskToGoalView(goal: goal, preselectedMilestone: milestone)
+                    .environment(themeManager)
+                    .environment(authService)
+                    .environment(\.modelContext, modelContext)
             }
         }
         .sheet(item: $editingTask) { task in
             EditTaskView(task: task, allTasks: tasks)
+                .environment(themeManager)
+                .environmentObject(timeSettings)
+                .environment(\.modelContext, modelContext)
         }
         .alert("Delete Recurring Series", isPresented: Binding(
             get: { showingDeleteSeriesConfirmation != nil },
@@ -541,7 +556,7 @@ struct EditGoalInlineView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 LinearGradient(
                     colors: [
@@ -820,7 +835,7 @@ struct UpdateProgressInlineView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section("Progress") {
                     Slider(value: $value, in: 0...Double(max(goal.targetValue, 1)), step: 1)

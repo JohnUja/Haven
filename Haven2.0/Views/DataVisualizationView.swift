@@ -37,7 +37,7 @@ struct DataVisualizationView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background using theme gradient
                 themeManager.currentTheme.primaryGradient

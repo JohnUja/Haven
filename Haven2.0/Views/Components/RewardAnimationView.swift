@@ -93,7 +93,8 @@ struct RewardAnimationView: View {
             }
             
             // Auto-dismiss after 2.5 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            _Concurrency.Task { @MainActor in
+                try? await _Concurrency.Task.sleep(nanoseconds: 2_500_000_000) // 2.5 seconds
                 withAnimation(.easeOut(duration: 0.2)) {
                     isPresented = false
                 }

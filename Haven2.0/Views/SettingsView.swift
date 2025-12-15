@@ -41,7 +41,7 @@ struct SettingsView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background matching home screen style
                 themeManager.currentTheme.primaryGradient
@@ -119,12 +119,16 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showingThemeShop) {
                 ThemeShopView()
+                    .environment(themeManager)
+                    .environment(\.modelContext, modelContext)
             }
             .sheet(isPresented: $showingEditProfile) {
-                NavigationView {
+                NavigationStack {
                     ProfileEditView()
-                        .environment(authService)
                 }
+                .environment(themeManager)
+                .environment(authService)
+                .environment(\.modelContext, modelContext)
             }
             .alert("Sign Out", isPresented: $showingSignOutConfirmation) {
                 Button("Cancel", role: .cancel) { }

@@ -13,6 +13,7 @@ import AudioToolbox
 struct GoalsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(ThemeManager.self) private var themeManager
+    @Environment(FirebaseAuthService.self) private var authService
     
     @Query private var goals: [Goal]
     @Query private var allTasks: [Task]
@@ -107,7 +108,7 @@ struct GoalsView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background - purple gradient (matching home screen)
                 themeManager.currentTheme.primaryGradient
@@ -173,17 +174,26 @@ struct GoalsView: View {
         }
         .sheet(isPresented: $showingAddGoal) {
             AddGoalView()
+                .environment(themeManager)
+                .environment(\.modelContext, modelContext)
         }
         .sheet(item: $showingEditGoal) { goal in
             EditGoalInlineView(goal: goal)
+                .environment(themeManager)
+                .environment(\.modelContext, modelContext)
         }
         .sheet(item: $showingAddTask) { goal in
             AddTaskToGoalView(goal: goal)
+                .environment(themeManager)
+                .environment(authService)
+                .environment(\.modelContext, modelContext)
         }
         .sheet(item: $selectedGoal) { goal in
-            NavigationView {
+            NavigationStack {
                 GoalsDetailView(goal: goal)
             }
+            .environment(themeManager)
+            .environment(\.modelContext, modelContext)
         }
         .alert(item: $showingDeleteConfirmation) { goal in
             Alert(
@@ -505,7 +515,7 @@ struct AddGoalView: View {
     var body: some View {
         let theme = themeManager.currentTheme
         
-        return NavigationView {
+        return NavigationStack {
             ZStack {
                 theme.primaryGradient
                 .ignoresSafeArea()

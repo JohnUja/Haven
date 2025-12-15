@@ -54,7 +54,7 @@ struct ProfileView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background matching homescreen style
                 themeManager.currentTheme.primaryGradient
@@ -92,18 +92,28 @@ struct ProfileView: View {
                 }
                 .sheet(isPresented: $showingMomentum) {
                     MomentumPageView()
+                        .environment(themeManager)
+                        .environment(\.modelContext, modelContext)
                 }
                 .sheet(isPresented: $showingThemeShop) {
                     ThemeShopView()
+                        .environment(themeManager)
+                        .environment(\.modelContext, modelContext)
                 }
                 .sheet(isPresented: $showingFeedSettings) {
                     FeedSettingsView()
+                        .environment(themeManager)
+                        .environment(\.modelContext, modelContext)
                 }
                 .sheet(isPresented: $showingDataVisualization) {
                     DataVisualizationView()
+                        .environment(themeManager)
+                        .environment(\.modelContext, modelContext)
                 }
                 .sheet(isPresented: $showingPaywall) {
                     PaywallView(triggerReason: .taskLimit)
+                        .environment(themeManager)
+                        .environment(\.modelContext, modelContext)
                 }
                 .alert("Sign Out", isPresented: $showingSignOutConfirmation) {
                     Button("Cancel", role: .cancel) { }
@@ -117,11 +127,13 @@ struct ProfileView: View {
                     popupOverlayContent
                 )
                 .sheet(isPresented: $showingEditProfile) {
-                    NavigationView {
+                    NavigationStack {
                         ProfileEditView()
-                            .environment(authService)
                     }
-                    }
+                    .environment(themeManager)
+                    .environment(authService)
+                    .environment(\.modelContext, modelContext)
+                }
                 }
             }
         }
@@ -1251,7 +1263,7 @@ struct ProfileView: View {
         }
         
         var body: some View {
-            NavigationView {
+            NavigationStack {
                 ScrollView {
                     VStack(spacing: 24) {
                         ForEach(groupedThemes, id: \.title) { group in

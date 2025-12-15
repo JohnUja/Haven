@@ -54,7 +54,7 @@ struct AddTaskView: View {
     var body: some View {
         let theme = themeManager.currentTheme
         
-        return NavigationView {
+        return NavigationStack {
             ZStack {
                 // Background using theme gradient
                 theme.primaryGradient
@@ -422,20 +422,21 @@ struct AddTaskView: View {
             NotificationCenter.default.post(name: NSNotification.Name("OnboardingTaskCreated"), object: nil)
             
             // Ensure dismiss happens on main thread
-            DispatchQueue.main.async {
+            _Concurrency.Task { @MainActor in
                 dismiss()
             }
             
             // If guest just created their first task, show prompt after saving
             if authService.isGuest && guestModeService.taskCount == 1 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                _Concurrency.Task { @MainActor in
+                    try? await _Concurrency.Task.sleep(nanoseconds: 500_000_000) // 0.5 second
                     showGuestLoginPrompt = true
                 }
             }
         } catch {
             print("Error saving task: \(error)")
             // Show error to user
-            DispatchQueue.main.async {
+            _Concurrency.Task { @MainActor in
                 // TODO: Show error alert
             }
         }

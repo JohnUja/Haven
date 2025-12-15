@@ -43,7 +43,7 @@ struct AddTaskToGoalView: View {
     var body: some View {
         let theme = themeManager.currentTheme
         
-        NavigationView {
+        NavigationStack {
             ZStack {
                 theme.primaryGradient
                     .ignoresSafeArea()

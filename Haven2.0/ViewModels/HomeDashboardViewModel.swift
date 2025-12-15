@@ -636,26 +636,39 @@ final class HomeDashboardViewModel {
             return
         }
         
-        // Sync in background (non-blocking)
+        // CRITICAL FIX: Extract primitive values from SwiftData model on MainActor before Task.detached
+        // SwiftData models are NOT thread-safe and cannot be accessed from background threads
+        let userLevel = user.level
+        let userCurrentXP = user.currentXP
+        let userNextLevelXP = user.nextLevelXP
+        let userCrystals = user.gamificationCurrency
+        let userMomentumDays = user.momentumDays
+        let userLastMomentumUpdate = user.lastMomentumUpdate
+        let userWeeklyProductivityScore = user.weeklyProductivityScore
+        let userWeeklyResetDate = user.weeklyResetDate
+        let userOwnedThemeIDs = user.ownedThemeIDs
+        let userActiveThemeID = user.activeThemeID
+        
+        // Sync in background (non-blocking) - using only primitive values
         _Concurrency.Task.detached {
             do {
                 try await FirestoreService.shared.syncGamificationStats(
                     uid: uid,
-                    level: user.level,
-                    currentXP: user.currentXP,
-                    nextLevelXP: user.nextLevelXP,
-                    crystals: user.gamificationCurrency,
-                    momentumDays: user.momentumDays,
-                    lastMomentumUpdate: user.lastMomentumUpdate,
-                    weeklyProductivityScore: user.weeklyProductivityScore,
-                    weeklyResetDate: user.weeklyResetDate
+                    level: userLevel,
+                    currentXP: userCurrentXP,
+                    nextLevelXP: userNextLevelXP,
+                    crystals: userCrystals,
+                    momentumDays: userMomentumDays,
+                    lastMomentumUpdate: userLastMomentumUpdate,
+                    weeklyProductivityScore: userWeeklyProductivityScore,
+                    weeklyResetDate: userWeeklyResetDate
                 )
                 
                 // Sync theme unlocks
                 try await FirestoreService.shared.syncThemeUnlocks(
                     uid: uid,
-                    ownedThemeIDs: user.ownedThemeIDs,
-                    activeThemeID: user.activeThemeID
+                    ownedThemeIDs: userOwnedThemeIDs,
+                    activeThemeID: userActiveThemeID
                 )
             } catch {
                 print("FirestoreService: Failed to sync user stats: \(error)")

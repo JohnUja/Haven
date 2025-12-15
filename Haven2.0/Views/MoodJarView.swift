@@ -42,7 +42,7 @@ struct MoodJarView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background using theme gradient
                 themeManager.currentTheme.primaryGradient
@@ -103,6 +103,8 @@ struct MoodJarView: View {
                     // Just close the sheet
                     showingCheckIn = false
                 })
+                .environment(themeManager)
+                .environment(\.modelContext, modelContext)
             }
         }
     }

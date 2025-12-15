@@ -31,7 +31,7 @@ struct ProfileEditView: View {
     @State private var errorMessage: String?
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background matching home screen style
                 LinearGradient(
@@ -381,7 +381,8 @@ struct ProfileEditView: View {
             errorMessage = "Username does not match. Please type your username exactly as shown: \"\(actualDisplayName)\""
             showingDeleteUsernameEntry = false
             // Show error alert
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            _Concurrency.Task { @MainActor in
+                try? await _Concurrency.Task.sleep(nanoseconds: 100_000_000) // 0.1 second
                 showingDeleteUsernameEntry = true
             }
             return
@@ -438,7 +439,7 @@ struct ChangePasswordView: View {
     @State private var errorMessage: String?
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 themeManager.currentTheme.primaryGradient
                     .ignoresSafeArea()

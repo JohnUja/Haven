@@ -40,7 +40,7 @@ struct AddBlockView: View {
     var body: some View {
         let theme = themeManager.currentTheme
         
-        return NavigationView {
+        return NavigationStack {
             ZStack {
                 // Background using theme gradient
                 theme.primaryGradient

@@ -122,7 +122,7 @@ struct TimezonePickerView: View {
         ]
         
         var body: some View {
-            NavigationView {
+            NavigationStack {
                 List {
                     ForEach(commonTimezones, id: \.identifier) { timezone in
                         Button(action: {

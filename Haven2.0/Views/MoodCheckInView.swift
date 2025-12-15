@@ -54,7 +54,7 @@ struct MoodCheckInView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background matching home screen style
                 LinearGradient(

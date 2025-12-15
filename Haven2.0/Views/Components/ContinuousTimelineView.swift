@@ -41,6 +41,7 @@ struct TimelineShape: Shape {
 // MARK: - Main Timeline View
 struct ContinuousTimelineView: View {
     @EnvironmentObject private var timeSettings: TimeSettingsManager
+    @EnvironmentObject private var calendarManager: CalendarManager
     @Environment(ThemeManager.self) private var themeManager
     
     // Data Inputs
@@ -49,6 +50,11 @@ struct ContinuousTimelineView: View {
     let calendarEvents: [EKEvent]
     let selectedDate: Date
     let currentTime: Date
+    
+    // OPTIMIZED: Pre-computed groups (optional - if provided, avoids O(N²) computation during render)
+    // Note: Using TimelineItem from TimelineViewModel (shared enum)
+    let workItemGroups: [[TimelineItem]]?
+    let personalItemGroups: [[TimelineItem]]?
     
     // Closures
     let getTasksForBlock: (TaskBlock, Int) -> [Task]
@@ -72,6 +78,7 @@ struct ContinuousTimelineView: View {
     @State private var showingTaskDetails: Task? = nil
     @State private var showingTaskBlockDetails: TaskBlock? = nil
     @State private var scrollProxy: ScrollViewProxy? = nil
+    @State private var lastHapticHour: Int = -1 // Debounce haptic feedback
     
     // Constants
     private let pointsPerHour: CGFloat = 120
@@ -116,6 +123,8 @@ struct ContinuousTimelineView: View {
                                 showingTaskDetails: $showingTaskDetails,
                                 showingTaskBlockDetails: $showingTaskBlockDetails,
                                 scrollProxy: scrollProxy,
+                                workItemGroups: workItemGroups,
+                                personalItemGroups: personalItemGroups,
                                 getAllTasksForBlock: getAllTasksForBlock,
                                 updateTaskTime: updateTaskTime,
                                 updateTaskSide: updateTaskSide,
@@ -143,8 +152,11 @@ struct ContinuousTimelineView: View {
                         }
                     )
                     .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-                        handleScrollUpdate(oldValue: scrollOffset, newValue: value)
-                        scrollOffset = value
+                        // CRITICAL FIX: Infinite Loop Prevention - only update if change is significant
+                        if abs(scrollOffset - value) > 2.0 {
+                            handleScrollUpdate(oldValue: scrollOffset, newValue: value)
+                            scrollOffset = value
+                        }
                     }
                     .onAppear {
                         let hourToScroll = Calendar.current.component(.hour, from: Date())
@@ -154,28 +166,43 @@ struct ContinuousTimelineView: View {
             }
         }
         .sheet(item: $showingTaskDetails) { task in
-            TimelineTaskDetailView(task: task, onSave: { updatedNotes in
-                task.taskDescription = updatedNotes.isEmpty ? nil : updatedNotes
-                try? modelContext.save()
-                showingTaskDetails = nil
-            }, onCancel: { showingTaskDetails = nil })
+            NavigationStack {
+                TimelineTaskDetailView(task: task, onSave: { [modelContext] updatedNotes in
+                    // FIX: Ensure modelContext.save() happens on MainActor (SwiftData requirement)
+                    task.taskDescription = updatedNotes.isEmpty ? nil : updatedNotes
+                    _Concurrency.Task { @MainActor in
+                        try? modelContext.save()
+                    }
+                    showingTaskDetails = nil
+                }, onCancel: { showingTaskDetails = nil })
+            }
             .presentationDetents([.medium, .large])
+            .environmentObject(timeSettings)
+            .environmentObject(calendarManager)
+            .environment(themeManager)
+            .environment(\.modelContext, modelContext)
         }
         .sheet(item: $showingTaskBlockDetails) { block in
-            TimelineTaskBlockDetailView(
-                taskBlock: block,
-                tasks: getAllTasksForBlock(block),
-                onDismiss: { showingTaskBlockDetails = nil }
-            )
+            NavigationStack {
+                TimelineTaskBlockDetailView(
+                    taskBlock: block,
+                    tasks: getAllTasksForBlock(block),
+                    onDismiss: { showingTaskBlockDetails = nil }
+                )
+            }
             .presentationDetents([.medium, .large])
+            .environmentObject(timeSettings)
+            .environment(themeManager)
+            .environment(\.modelContext, modelContext)
         }
     }
     
     // MARK: - Logic Helpers
     private func handleScrollUpdate(oldValue: CGFloat, newValue: CGFloat) {
-        let previousHour = Int(abs(oldValue) / 120)
         let currentHour = Int(abs(newValue) / 120)
-        if previousHour != currentHour && currentHour >= 0 && currentHour < 24 {
+        // Only play haptic if the hour actually changed and is valid
+        if currentHour != lastHapticHour && currentHour >= 0 && currentHour < 24 {
+            lastHapticHour = currentHour
             HapticSoundPlayer.shared.playTimePickerSound()
         }
     }
@@ -241,6 +268,10 @@ struct TimelineTaskLayer: View, Equatable {
     @Binding var showingTaskBlockDetails: TaskBlock?
     let scrollProxy: ScrollViewProxy?
     
+    // OPTIMIZED: Pre-computed groups (optional - if provided, avoids O(N²) computation during render)
+    let workItemGroups: [[TimelineItem]]?
+    let personalItemGroups: [[TimelineItem]]?
+    
     let getAllTasksForBlock: (TaskBlock) -> [Task]
     let updateTaskTime: (Task, Date, Date) -> Void
     let updateTaskSide: (Task, TaskTimelineBlock.TimelineSide) -> Void
@@ -253,11 +284,29 @@ struct TimelineTaskLayer: View, Equatable {
     private let pointsPerMinute: CGFloat = 2
     
     static func == (lhs: TimelineTaskLayer, rhs: TimelineTaskLayer) -> Bool {
-        return lhs.selectedDate == rhs.selectedDate &&
-               lhs.tasks.map { $0.id } == rhs.tasks.map { $0.id } &&
-               lhs.tasks.map { $0.startTime } == rhs.tasks.map { $0.startTime } &&
-               lhs.geometryWidth == rhs.geometryWidth &&
-               lhs.isAnyTaskDragging == rhs.isAnyTaskDragging
+        // OPTIMIZED: Check most likely to change first, avoid expensive array comparisons if possible
+        // If dragging state changed, we want to update (return false)
+        if lhs.isAnyTaskDragging != rhs.isAnyTaskDragging {
+            return false
+        }
+        // If date changed, we want to update
+        if lhs.selectedDate != rhs.selectedDate {
+            return false
+        }
+        // If geometry changed, we want to update
+        if lhs.geometryWidth != rhs.geometryWidth {
+            return false
+        }
+        // Only do expensive array comparisons if basic checks pass
+        let lhsTaskIDs = lhs.tasks.map { $0.id }
+        let rhsTaskIDs = rhs.tasks.map { $0.id }
+        if lhsTaskIDs != rhsTaskIDs {
+            return false
+        }
+        // Check start times only if IDs match (optimization)
+        let lhsStartTimes = lhs.tasks.map { $0.startTime }
+        let rhsStartTimes = rhs.tasks.map { $0.startTime }
+        return lhsStartTimes == rhsStartTimes
     }
     
     var body: some View {
@@ -281,8 +330,17 @@ struct TimelineTaskLayer: View, Equatable {
     
     @ViewBuilder
     private func renderTasks(for side: TaskTimelineBlock.TimelineSide, width: CGFloat) -> some View {
-        let items = getItems(for: side)
-        let groups = groupOverlappingItems(items)
+        // OPTIMIZED: Use pre-computed groups if available, otherwise compute (backward compatible)
+        // Compute groups outside @ViewBuilder context
+        let groups: [[TimelineItem]] = {
+            if let precomputedGroups = side == .left ? workItemGroups : personalItemGroups {
+                return precomputedGroups
+            } else {
+                // Fallback: compute groups (for backward compatibility)
+                let items = getItems(for: side)
+                return groupOverlappingItems(items)
+            }
+        }()
         
         ZStack(alignment: .topLeading) {
             ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
@@ -437,10 +495,9 @@ struct TimelineTaskLayer: View, Equatable {
         }
     }
     
-    private enum TimelineItem {
-        case task(Task)
-        case block(TaskBlock)
-    }
+    // OPTIMIZED: Use shared TimelineItem enum from TimelineViewModel instead of local enum
+    // This allows us to use pre-computed groups from ViewModel
+    // private enum TimelineItem { ... } - REMOVED, using TimelineItem from TimelineViewModel
 } // <--- THIS WAS THE MISSING BRACE
 
 // MARK: - Helper Views
@@ -625,10 +682,19 @@ struct TaskOverlapAlertView: View {
             .transition(.scale.combined(with: .opacity))
             .zIndex(999)
             .offset(y: position - 50)
+            .onDisappear {
+                // Ensure timer is invalidated when view disappears
+                undoTimer?.invalidate()
+                undoTimer = nil
+            }
         }
     }
     
     private func startUndoTimer() {
+        // FIX: Cancel existing timer before creating new one
+        undoTimer?.invalidate()
+        // Note: TaskOverlapAlertView is a struct (value type), so no need for [weak self]
+        // Structs don't have retain cycles. The timer will be invalidated in onDisappear.
         undoTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
             print("Block creation confirmed")
         }
@@ -656,7 +722,7 @@ struct TimelineTaskDetailView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 Section("Task Info") {
                     let theme = themeManager.currentTheme
@@ -696,8 +762,11 @@ struct TimelineTaskDetailView: View {
                             .foregroundColor(theme.textSecondary)
                         Spacer()
                         Button(action: {
+                            // FIX: Ensure modelContext.save() happens on MainActor (SwiftData requirement)
                             task.isLocked.toggle()
-                            try? modelContext.save()
+                            _Concurrency.Task { @MainActor in
+                                try? modelContext.save()
+                            }
                         }) {
                             Text(task.isLocked ? "Unlock" : "Lock").foregroundColor(theme.accentColor)
                         }
@@ -774,7 +843,7 @@ struct TimelineTaskBlockDetailView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 Section("Block") {
                     let theme = themeManager.currentTheme

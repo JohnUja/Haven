@@ -55,7 +55,7 @@ struct PermissionsStepView: View {
                     isGranted: locationPermissionStatus == .authorizedWhenInUse || locationPermissionStatus == .authorizedAlways,
                     action: {
                         permissionManager.requestLocationPermission { granted in
-                            DispatchQueue.main.async {
+                            _Concurrency.Task { @MainActor in
                                 locationPermissionStatus = CLLocationManager().authorizationStatus
                             }
                         }
@@ -70,7 +70,7 @@ struct PermissionsStepView: View {
                     isGranted: calendarPermissionStatus == .authorized,
                     action: {
                         calendarManager.requestAccess { granted in
-                            DispatchQueue.main.async {
+                            _Concurrency.Task { @MainActor in
                                 calendarPermissionStatus = EKEventStore.authorizationStatus(for: .event)
                             }
                         }

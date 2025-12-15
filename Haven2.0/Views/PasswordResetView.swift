@@ -20,7 +20,7 @@ struct PasswordResetView: View {
     @State private var successMessage: String?
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 themeManager.currentTheme.primaryGradient
                     .ignoresSafeArea()

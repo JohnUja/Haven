@@ -17,7 +17,7 @@ struct MomentumPopupView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Gradient background matching home/timeline theme
                 LinearGradient(

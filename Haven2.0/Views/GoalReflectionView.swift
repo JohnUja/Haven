@@ -62,7 +62,7 @@ struct GoalReflectionView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background matching home screen style (same as MoodCheckInView)
                 LinearGradient(

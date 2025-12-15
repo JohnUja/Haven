@@ -80,7 +80,8 @@ struct CrystalCounterView: View {
         
         for i in 0...steps {
             let delay = stepDuration * Double(i)
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            _Concurrency.Task { @MainActor in
+                try? await _Concurrency.Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) // Convert seconds to nanoseconds
                 let intermediate = start + Int((Double(difference) * Double(i) / Double(steps)).rounded())
                 withAnimation(.easeInOut(duration: stepDuration)) {
                     displayedCrystals = intermediate

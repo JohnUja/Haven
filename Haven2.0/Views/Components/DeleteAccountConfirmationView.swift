@@ -22,7 +22,7 @@ struct DeleteAccountConfirmationView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 24) {
                 // Warning Icon
                 Image(systemName: "exclamationmark.triangle.fill")

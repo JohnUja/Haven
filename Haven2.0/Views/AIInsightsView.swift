@@ -14,7 +14,7 @@ struct AIInsightsView: View {
     @State private var insights: [AIInsight] = []
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 LazyVStack(spacing: 16) {
                     // Header

@@ -86,6 +86,9 @@ struct DynamicFocusBox: View {
     @State private var showingTaskDetails = false
     @State private var showingSplitView = false
     @State private var splitContextGroups: [String: [Task]] = [:]
+    // OPTIMIZED: Cache context groups to avoid recomputing on every update
+    @State private var cachedContextGroups: [String: [Task]] = [:]
+    @State private var lastContextGroupsDate: Date? = nil
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     @Query private var goals: [Goal]
@@ -246,9 +249,21 @@ struct DynamicFocusBox: View {
                 contextMenuItems(theme: themeManager.currentTheme)
             }
             .fullScreenCover(isPresented: $showingImmersive, content: immersiveView)
-            .sheet(isPresented: $showingProgressDetails, content: progressDetailsSheet)
-            .sheet(isPresented: $showingTaskDetails, content: taskDetailsSheet)
-            .sheet(isPresented: $showingSplitView) { splitViewSheet }
+            .sheet(isPresented: $showingProgressDetails) {
+                progressDetailsSheet()
+                    .environment(themeManager)
+                    .environment(\.modelContext, modelContext)
+            }
+            .sheet(isPresented: $showingTaskDetails) {
+                taskDetailsSheet()
+                    .environment(themeManager)
+                    .environment(\.modelContext, modelContext)
+            }
+            .sheet(isPresented: $showingSplitView) {
+                splitViewSheet
+                    .environment(themeManager)
+                    .environment(\.modelContext, modelContext)
+            }
             .onChange(of: showingSplitView) { _, newValue in
                 if newValue {
                     let allDayTasks = allTasks.filter { task in
@@ -442,55 +457,82 @@ struct DynamicFocusBox: View {
                     .frame(minHeight: 200)
                     
                     // Bottom: Due time and total XP at bottom left, Info button and Toggle button at bottom right
-                    HStack(alignment: .bottom) {
-                        // Left: Due time and total XP (left aligned)
-                        VStack(alignment: .leading, spacing: 4) {
-                            if block.tasks.count == 1, let task = block.tasks.first {
-                                // Single task: Due time and XP
-                                Text("Due: \(formatTimeWithAMPM(task.endTime))")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(theme.textSecondary.opacity(0.7))
+                    // Only show when there are tasks (not in empty state)
+                    if !block.tasks.isEmpty {
+                        HStack(alignment: .bottom) {
+                            // Left: Due time and total XP (left aligned)
+                            VStack(alignment: .leading, spacing: 4) {
+                                if block.tasks.count == 1, let task = block.tasks.first {
+                                    // Single task: Due time and XP
+                                    Text("Due: \(formatTimeWithAMPM(task.endTime))")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(theme.textSecondary.opacity(0.7))
+                                    
+                                    let xpGained = calculateXPForTask(task)
+                                    Text("\(xpGained) XP")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundColor(theme.accentColor)
+                                } else {
+                                    // Multiple tasks: Due time and total XP
+                                    let contextEndTime = block.tasks.map { $0.endTime }.max() ?? Date()
+                                    Text("Due: \(formatTimeWithAMPM(contextEndTime))")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(theme.textSecondary.opacity(0.7))
+                                    
+                                    let totalXP = block.tasks.reduce(0) { $0 + calculateXPForTask($1) }
+                                    Text("\(totalXP) XP")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundColor(theme.accentColor)
+                                }
+                            }
+                            
+                            Spacer()
+                            
+                            // Right: Info button and Toggle button
+                            HStack(spacing: 8) {
+                                // Info button (i) - left of toggle
+                                if let block = displayedBlock, !block.tasks.isEmpty {
+                                    Button(action: {
+                                        // Set selectedTask if single task, otherwise show block summary
+                                        if block.tasks.count == 1, let task = block.tasks.first {
+                                            selectedTask = task
+                                        }
+                                        showingTaskDetails = true
+                                    }) {
+                                        Image(systemName: "info.circle")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundColor(theme.textPrimary)
+                                            .frame(width: 24, height: 24)
+                                            .background(
+                                                Circle()
+                                                    .fill(theme.glassBackground.opacity(0.5))
+                                                    .overlay(Circle().stroke(theme.glassBorder, lineWidth: 1))
+                                            )
+                                    }
+                                }
                                 
-                                let xpGained = calculateXPForTask(task)
-                                Text("\(xpGained) XP")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundColor(theme.accentColor)
-                            } else {
-                                // Multiple tasks: Due time and total XP
-                                let contextEndTime = block.tasks.map { $0.endTime }.max() ?? Date()
-                                Text("Due: \(formatTimeWithAMPM(contextEndTime))")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(theme.textSecondary.opacity(0.7))
-                                
-                                let totalXP = block.tasks.reduce(0) { $0 + calculateXPForTask($1) }
-                                Text("\(totalXP) XP")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundColor(theme.accentColor)
+                                // Toggle button
+                                Button(action: {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                        isViewAllTasksMode.toggle()
+                                        if isViewAllTasksMode { exitPreviewMode() }
+                                    }
+                                }) {
+                                    Image(systemName: isViewAllTasksMode ? "sparkles" : "list.bullet")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(theme.textPrimary)
+                                        .frame(width: 24, height: 24)
+                                        .background(
+                                            Circle()
+                                                .fill(theme.glassBackground.opacity(0.5))
+                                                .overlay(Circle().stroke(theme.glassBorder, lineWidth: 1))
+                                        )
+                                }
                             }
                         }
-                        
-                        Spacer()
-                        
-                        // Right: Toggle button only (info moved to 3-dot menu)
-                        Button(action: {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                isViewAllTasksMode.toggle()
-                                if isViewAllTasksMode { exitPreviewMode() }
-                            }
-                        }) {
-                            Image(systemName: isViewAllTasksMode ? "sparkles" : "list.bullet")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(theme.textPrimary)
-                                .frame(width: 24, height: 24)
-                                .background(
-                                    Circle()
-                                        .fill(theme.glassBackground.opacity(0.5))
-                                        .overlay(Circle().stroke(theme.glassBorder, lineWidth: 1))
-                                )
-                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 16)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 16)
                 }
             } else {
                 // Empty state - NO footer/content, just empty state view
@@ -864,8 +906,12 @@ struct DynamicFocusBox: View {
     @ViewBuilder
     private func contextMenuItems(theme: any AppTheme) -> some View {
         // Info button (i) - show task/block details
-        if let block = displayedBlock {
+        if let block = displayedBlock, !block.tasks.isEmpty {
             Button(action: {
+                // Set selectedTask if single task, otherwise show block summary
+                if block.tasks.count == 1, let task = block.tasks.first {
+                    selectedTask = task
+                }
                 showingTaskDetails = true
             }) {
                 Label("Info", systemImage: "info.circle")
@@ -893,30 +939,44 @@ struct DynamicFocusBox: View {
         }
     }
     
-    // MARK: - Initialize Context Groups
+    // MARK: - Initialize Context Groups (OPTIMIZED: Cached to avoid recomputing on every update)
     private func initializeContextGroups(allDayTasks: [Task]) -> [String: [Task]] {
-        var groups: [String: [Task]] = [:]
-        var assignedTaskIDs: Set<String> = []
+        // Check if cache is still valid
+        let needsRefresh = lastContextGroupsDate == nil ||
+                          !Calendar.current.isDate(lastContextGroupsDate ?? Date.distantPast, inSameDayAs: selectedDate) ||
+                          cachedContextGroups.isEmpty ||
+                          Set(allDayTasks.map { $0.id }) != Set(cachedContextGroups.values.flatMap { $0.map { $0.id } })
+        
+        if needsRefresh {
+            // Compute groups (lightweight operation, but cache to avoid repeated computation)
+            var groups: [String: [Task]] = [:]
+            var assignedTaskIDs: Set<String> = []
 
-        for block in allTaskBlocks.filter({ Calendar.current.isDate($0.createdDate, inSameDayAs: selectedDate) }) {
-            let tasksInBlock = allDayTasks.filter { $0.taskBlock?.id == block.id }
-            if !tasksInBlock.isEmpty {
-                groups[block.title] = tasksInBlock
-                assignedTaskIDs.formUnion(tasksInBlock.map { $0.id })
+            for block in allTaskBlocks.filter({ Calendar.current.isDate($0.createdDate, inSameDayAs: selectedDate) }) {
+                let tasksInBlock = allDayTasks.filter { $0.taskBlock?.id == block.id }
+                if !tasksInBlock.isEmpty {
+                    groups[block.title] = tasksInBlock
+                    assignedTaskIDs.formUnion(tasksInBlock.map { $0.id })
+                }
             }
+            let standaloneTasks = allDayTasks.filter { !assignedTaskIDs.contains($0.id) }
+            if !standaloneTasks.isEmpty {
+                groups["Standalone"] = standaloneTasks
+            }
+            for (key, value) in groups {
+                groups[key] = value.sorted { $0.startTime < $1.startTime }
+            }
+            if let standalone = groups["Standalone"] {
+                groups.removeValue(forKey: "Standalone")
+                groups["Standalone"] = standalone
+            }
+            
+            // Update cache
+            cachedContextGroups = groups
+            lastContextGroupsDate = selectedDate
         }
-        let standaloneTasks = allDayTasks.filter { !assignedTaskIDs.contains($0.id) }
-        if !standaloneTasks.isEmpty {
-            groups["Standalone"] = standaloneTasks
-        }
-        for (key, value) in groups {
-            groups[key] = value.sorted { $0.startTime < $1.startTime }
-        }
-        if let standalone = groups["Standalone"] {
-            groups.removeValue(forKey: "Standalone")
-            groups["Standalone"] = standalone
-        }
-        return groups
+        
+        return cachedContextGroups
     }
     
     // MARK: - Sheets (Immersive, Details, etc.)
@@ -928,6 +988,20 @@ struct DynamicFocusBox: View {
             })
             .environment(themeManager)
             .environment(authService)
+            .environment(\.modelContext, modelContext)
+        } else {
+            // Fallback: Show theme background if no task selected (prevents black screen)
+            ZStack {
+                themeManager.currentTheme.primaryGradient
+                    .ignoresSafeArea()
+                VStack {
+                    Text("No task selected")
+                        .foregroundColor(themeManager.currentTheme.textPrimary)
+                    Button("Close") {
+                        showingImmersive = false
+                    }
+                }
+            }
         }
     }
     
@@ -952,6 +1026,8 @@ struct DynamicFocusBox: View {
                     }
                 }
             }
+            .environment(themeManager)
+            .environment(\.modelContext, modelContext)
         }
     }
     
@@ -985,8 +1061,10 @@ struct DynamicFocusBox: View {
     }
     
     @ViewBuilder private func taskDetailsSheet() -> some View {
+        let theme = themeManager.currentTheme
+        
+        // If single task selected, show task details
         if let task = selectedTask {
-            let theme = themeManager.currentTheme
             NavigationStack {
                 ZStack {
                     theme.primaryGradient.ignoresSafeArea()
@@ -996,10 +1074,35 @@ struct DynamicFocusBox: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .navigationBarTrailing) {
-                        Button("Done") { showingTaskDetails = false }
+                        Button("Done") {
+                            showingTaskDetails = false
+                            selectedTask = nil
+                        }
                     }
                 }
             }
+            .environment(themeManager)
+            .environment(\.modelContext, modelContext)
+        } 
+        // If block with multiple tasks, show block summary
+        else if let block = displayedBlock, block.tasks.count > 1 {
+            NavigationStack {
+                ZStack {
+                    theme.primaryGradient.ignoresSafeArea()
+                    blockDetailsContent(block: block, theme: theme)
+                }
+                .navigationTitle("Block Details")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Done") {
+                            showingTaskDetails = false
+                        }
+                    }
+                }
+            }
+            .environment(themeManager)
+            .environment(\.modelContext, modelContext)
         }
     }
     
@@ -1038,12 +1141,114 @@ struct DynamicFocusBox: View {
         }
     }
     
+    // MARK: - Block Details Content (for multiple tasks)
+    @ViewBuilder private func blockDetailsContent(block: ContextBlockType, theme: any AppTheme) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                // Block Header
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("BLOCK TYPE").font(theme.headerFont).foregroundColor(theme.textSecondary)
+                    HStack(spacing: 8) {
+                        Image(systemName: block.icon)
+                            .font(.system(size: 20))
+                            .foregroundColor(theme.accentColor)
+                        Text(block.displayName)
+                            .font(theme.titleFont)
+                            .foregroundColor(theme.textPrimary)
+                    }
+                }
+                .padding(.horizontal, theme.cardPadding)
+                .padding(.vertical, theme.cardVerticalPadding)
+                .background(RoundedRectangle(cornerRadius: theme.smallCornerRadius).fill(theme.glassBackground.opacity(0.5)).overlay(RoundedRectangle(cornerRadius: theme.smallCornerRadius).stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)))
+                
+                // Summary Stats
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("SUMMARY").font(theme.headerFont).foregroundColor(theme.textSecondary)
+                    HStack { 
+                        Text("Total Tasks:").font(theme.bodyFont).foregroundColor(theme.textSecondary)
+                        Text("\(block.tasks.count)").font(theme.bodyFont).foregroundColor(theme.textPrimary)
+                    }
+                    HStack { 
+                        Text("Time Range:").font(theme.bodyFont).foregroundColor(theme.textSecondary)
+                        let startTime = block.tasks.map { $0.startTime }.min() ?? Date()
+                        let endTime = block.tasks.map { $0.endTime }.max() ?? Date()
+                        Text("\(formatTimeWithAMPM(startTime)) - \(formatTimeWithAMPM(endTime))")
+                            .font(theme.bodyFont)
+                            .foregroundColor(theme.textPrimary)
+                    }
+                    HStack { 
+                        Text("Total XP:").font(theme.bodyFont).foregroundColor(theme.textSecondary)
+                        let totalXP = block.tasks.reduce(0) { $0 + calculateXPForTask($1) }
+                        Text("\(totalXP) XP")
+                            .font(theme.bodyFont)
+                            .foregroundColor(theme.accentColor)
+                    }
+                    let checkedCount = block.tasks.filter { checkedTaskIDs.contains($0.id) }.count
+                    if checkedCount > 0 {
+                        HStack { 
+                            Text("Completed:").font(theme.bodyFont).foregroundColor(theme.textSecondary)
+                            Text("\(checkedCount) of \(block.tasks.count)")
+                                .font(theme.bodyFont)
+                                .foregroundColor(theme.textPrimary)
+                        }
+                    }
+                }
+                .padding(.horizontal, theme.cardPadding)
+                .padding(.vertical, theme.cardVerticalPadding)
+                .background(RoundedRectangle(cornerRadius: theme.smallCornerRadius).fill(theme.glassBackground.opacity(0.5)).overlay(RoundedRectangle(cornerRadius: theme.smallCornerRadius).stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)))
+                
+                // All Tasks in Block
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("TASKS").font(theme.headerFont).foregroundColor(theme.textSecondary)
+                    ForEach(block.tasks.sorted(by: { $0.startTime < $1.startTime })) { task in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(task.title)
+                                    .font(theme.bodyFont)
+                                    .foregroundColor(theme.textPrimary)
+                                HStack(spacing: 8) {
+                                    Text(formatTimeWithAMPM(task.startTime))
+                                        .font(.system(size: 10))
+                                        .foregroundColor(theme.textSecondary)
+                                    Text("•")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(theme.textSecondary)
+                                    Text(task.category.displayName)
+                                        .font(.system(size: 10))
+                                        .foregroundColor(theme.textSecondary)
+                                    Text("•")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(theme.textSecondary)
+                                    Text("\(calculateXPForTask(task)) XP")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(theme.accentColor)
+                                }
+                            }
+                            Spacer()
+                            if checkedTaskIDs.contains(task.id) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                            }
+                        }
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(theme.glassBackground.opacity(0.3)))
+                    }
+                }
+                .padding(.horizontal, theme.cardPadding)
+                .padding(.vertical, theme.cardVerticalPadding)
+                .background(RoundedRectangle(cornerRadius: theme.smallCornerRadius).fill(theme.glassBackground.opacity(0.5)).overlay(RoundedRectangle(cornerRadius: theme.smallCornerRadius).stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)))
+            }
+            .padding()
+        }
+    }
+    
     @ViewBuilder private var splitViewSheet: some View {
         let theme = themeManager.currentTheme
         if splitContextGroups.isEmpty {
             // Logic handled in onChange, but safe fallback
         }
-        NavigationView {
+        NavigationStack {
             ZStack {
                 theme.primaryGradient.ignoresSafeArea()
                 ScrollView {

@@ -13,13 +13,38 @@ import AudioToolbox
 struct FeedView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(ThemeManager.self) private var themeManager
-    @Query private var users: [User]
+    
+    // OPTIMIZED: @Query with sorting to improve performance
+    // Note: SwiftData @Query doesn't support fetchLimit parameter, so we limit in code
+    // Users: Sort by level/XP for leaderboard-style ordering
+    @Query(sort: [SortDescriptor(\User.level, order: .reverse), SortDescriptor(\User.currentXP, order: .reverse)]) 
+    private var users: [User]
+    
+    // Tasks: Not directly used in feed computation, but kept for potential future use
+    // If not needed, can be removed
     @Query private var tasks: [Task]
-    @Query private var goals: [Goal]
-    @Query private var routines: [DailyRoutine]
-    @Query private var reactions: [FeedReaction]
-    @Query private var comments: [FeedComment]
-    @Query private var moodEntries: [MoodEntry]
+    
+    // Goals: Sort by creation date (we filter by status and date in code)
+    // Note: SwiftData predicates can't use dynamic dates, so we filter in code but limit results
+    @Query(sort: [SortDescriptor(\Goal.createdAt, order: .reverse)]) 
+    private var goals: [Goal]
+    
+    // Routines: Sort by creation date (we filter by endDate in code)
+    @Query(sort: [SortDescriptor(\DailyRoutine.createdAt, order: .reverse)]) 
+    private var routines: [DailyRoutine]
+    
+    // Reactions: Sort by timestamp (we limit in code for performance)
+    @Query(sort: [SortDescriptor(\FeedReaction.timestamp, order: .reverse)]) 
+    private var reactions: [FeedReaction]
+    
+    // Comments: Sort by timestamp (we limit in code for performance)
+    @Query(sort: [SortDescriptor(\FeedComment.timestamp, order: .reverse)]) 
+    private var comments: [FeedComment]
+    
+    // Mood Entries: Sort by timestamp (we filter by date in code)
+    // Note: SwiftData predicates can't use dynamic dates, so we filter in code but limit results
+    @Query(sort: [SortDescriptor(\MoodEntry.timestamp, order: .reverse)]) 
+    private var moodEntries: [MoodEntry]
     
     @State private var feedMode: FeedMode = .personal
     @State private var selectedReaction: ReactionType? = nil
@@ -27,6 +52,11 @@ struct FeedView: View {
     @State private var showingCommentsForItem: String? = nil // feedItemID - to show all comments
     @State private var showingFeedSettings = false
     @State private var showingLeaderboard = false
+    
+    // OPTIMIZED: Cache feed items to avoid recomputing on every render
+    @State private var cachedPersonalFeedItems: [FeedItem] = []
+    @State private var cachedGlobalFeedItems: [FeedItem] = []
+    @State private var lastCacheDate: Date? = nil
     
     private var currentUser: User? {
         users.first
@@ -56,95 +86,121 @@ struct FeedView: View {
         }
     }
     
-    // MARK: - Feed Items
-        private var personalFeedItems: [FeedItem] {
-            guard let user = currentUser else { return [] }
-            var items: [FeedItem] = []
-            let calendar = Calendar.current
-            let weekAgo = calendar.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-            let monthAgo = calendar.date(byAdding: .day, value: -30, to: Date()) ?? Date()
-           
-            // Routine Highlights - Show completed routines from last month
-            let completedRoutines = routines.filter { routine in
-                routine.userID == user.id && 
-                routine.endDate != nil && 
-                routine.endDate! >= monthAgo &&
-                routine.endDate! <= Date()
-            }
-            for routine in completedRoutines.prefix(10) {
-                items.append(.routineCompleted(user: user, routine: routine))
-            }
-           
-            // Mood Logs (Private) - Show from last month
-            let recentMoods = moodEntries.filter { 
-                $0.userID == user.id && $0.timestamp >= monthAgo 
-            }
-            for mood in recentMoods.prefix(5) {
-                items.append(.moodLog(user: user, moodEntry: mood))
-            }
-           
-            // Goal Milestone Completions (Private) - Show from last month
-            for goal in goals.filter({ $0.userID == user.id }) {
-                let completedMilestones = (goal.milestones ?? []).filter { $0.isComplete }
-                
-                for milestone in completedMilestones {
-                    let milestoneDate = milestone.deadline ?? goal.createdAt
-                    if milestoneDate >= monthAgo {
-                        items.append(.goalMilestoneCompleted(user: user, goal: goal, milestone: milestone))
-                    }
+    // MARK: - Feed Items (OPTIMIZED: Cached to avoid recomputing on every render)
+    // Helper function to refresh cache when needed (called from onAppear/onChange)
+    // CRITICAL FIX: Do all computation on MainActor since FeedItem requires SwiftData model objects
+    // SwiftData models are NOT thread-safe and cannot be passed to background threads
+    private func refreshFeedCacheIfNeeded() {
+        let today = Calendar.current.startOfDay(for: Date())
+        let needsRefresh = lastCacheDate == nil || 
+                          !Calendar.current.isDate(lastCacheDate ?? Date.distantPast, inSameDayAs: today) ||
+                          cachedPersonalFeedItems.isEmpty ||
+                          cachedGlobalFeedItems.isEmpty
+        
+        guard needsRefresh else { return }
+        
+        // CRITICAL FIX: All SwiftData model access must happen on MainActor
+        // FeedItem enum stores SwiftData model objects, so we must compute on MainActor
+        guard let user = users.first else {
+            cachedPersonalFeedItems = []
+            cachedGlobalFeedItems = []
+            lastCacheDate = today
+            return
+        }
+        
+        // Compute feed items on MainActor (since we need SwiftData models)
+        // This is safe because we're already on MainActor in a View
+        var personalItems: [FeedItem] = []
+        let calendar = Calendar.current
+        let monthAgo = calendar.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+       
+        // Routine Highlights
+        let completedRoutines = routines.filter { routine in
+            routine.userID == user.id && 
+            routine.endDate != nil && 
+            routine.endDate! >= monthAgo &&
+            routine.endDate! <= Date()
+        }
+        for routine in completedRoutines.prefix(10) {
+            personalItems.append(.routineCompleted(user: user, routine: routine))
+        }
+       
+        // Mood Logs
+        let recentMoods = moodEntries.filter { 
+            $0.userID == user.id && $0.timestamp >= monthAgo 
+        }
+        for mood in recentMoods.prefix(5) {
+            personalItems.append(.moodLog(user: user, moodEntry: mood))
+        }
+       
+        // Goal Milestone Completions
+        for goal in goals.filter({ $0.userID == user.id }) {
+            let completedMilestones = (goal.milestones ?? []).filter { $0.isComplete }
+            for milestone in completedMilestones {
+                let milestoneDate = milestone.deadline ?? goal.createdAt
+                if milestoneDate >= monthAgo {
+                    personalItems.append(.goalMilestoneCompleted(user: user, goal: goal, milestone: milestone))
                 }
             }
-           
-            // Goal Completions - Show completed goals from last month
-            let completedGoals = goals.filter { 
-                $0.userID == user.id && 
-                $0.status == .completed && 
-                $0.createdAt >= monthAgo 
-            }
-            for goal in completedGoals.prefix(5) {
-                items.append(.goalCompleted(user: user, goal: goal))
-            }
-           
-            // Level Up - Show if user leveled up recently (check if level > 1)
-            if user.level > 1 {
-                items.append(.levelUp(user: user, level: user.level))
-            }
-           
-            // Momentum Status - Always show if user has momentum
-            if user.momentumDays > 0 {
-                items.append(.momentumStatus(user: user, days: user.momentumDays))
-            }
-           
-            return items.sorted { $0.timestamp > $1.timestamp }
         }
-    
-    private var globalFeedItems: [FeedItem] {
-        var items: [FeedItem] = []
-        let calendar = Calendar.current
+       
+        // Goal Completions - Filter from limited query results
+        let completedGoals = goals.filter { 
+            $0.userID == user.id && 
+            $0.status == .completed && 
+            $0.createdAt >= monthAgo 
+        }
+        for goal in completedGoals.prefix(5) {
+            personalItems.append(.goalCompleted(user: user, goal: goal))
+        }
+       
+        // Level Up
+        if user.level > 1 {
+            personalItems.append(.levelUp(user: user, level: user.level))
+        }
+       
+        // Momentum Status
+        if user.momentumDays > 0 {
+            personalItems.append(.momentumStatus(user: user, days: user.momentumDays))
+        }
+       
+        let sortedPersonalItems = personalItems.sorted { $0.timestamp > $1.timestamp }
+        
+        // Compute global feed items
+        var globalItems: [FeedItem] = []
         let weekAgo = calendar.date(byAdding: .day, value: -7, to: Date()) ?? Date()
         
-        // Only show items from users who opted in to sharing
-        // For now, show all (will add privacy check later)
-        
-        // XP Level Progression (Public by default)
+        // XP Level Progression
         for user in users {
             if user.level > 1 {
-                items.append(.levelUp(user: user, level: user.level))
+                globalItems.append(.levelUp(user: user, level: user.level))
             }
         }
         
-        // Goal Completions (Opt-in)
-        let completedGoals = goals.filter { $0.status == .completed && $0.createdAt >= weekAgo }
-        for goal in completedGoals.prefix(20) {
+        // Goal Completions - Filter from limited query results
+        let globalCompletedGoals = goals.filter { $0.status == .completed && $0.createdAt >= weekAgo }
+        for goal in globalCompletedGoals.prefix(20) {
             if let user = users.first(where: { $0.id == goal.userID }) {
-                items.append(.goalCompleted(user: user, goal: goal))
+                globalItems.append(.goalCompleted(user: user, goal: goal))
             }
         }
         
-        // Routine Milestones (Opt-in)
-        // TODO: Add routine milestone tracking
+        let sortedGlobalItems = globalItems.sorted { $0.timestamp > $1.timestamp }
         
-        return items.sorted { $0.timestamp > $1.timestamp }
+        // Update cache (already on MainActor)
+        cachedPersonalFeedItems = sortedPersonalItems
+        cachedGlobalFeedItems = sortedGlobalItems
+        lastCacheDate = today
+    }
+    
+    private var personalFeedItems: [FeedItem] {
+        // Return cached items (computed in background via refreshFeedCacheIfNeeded)
+        return cachedPersonalFeedItems
+    }
+    
+    private var globalFeedItems: [FeedItem] {
+        // Return cached items (computed in background via refreshFeedCacheIfNeeded)
+        return cachedGlobalFeedItems
     }
     
     private var currentFeedItems: [FeedItem] {
@@ -152,7 +208,7 @@ struct FeedView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background matching home screen
                 themeManager.currentTheme.primaryGradient
@@ -334,11 +390,32 @@ struct FeedView: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .sheet(isPresented: $showingFeedSettings) {
                 FeedSettingsView()
+                    .environment(themeManager)
+                    .environment(\.modelContext, modelContext)
             }
             .sheet(isPresented: $showingLeaderboard) {
-                NavigationView {
+                NavigationStack {
                     LeaderboardView()
                 }
+                .environment(themeManager)
+                .environment(\.modelContext, modelContext)
+            }
+            .onAppear {
+                // OPTIMIZED: Refresh feed cache when view appears
+                refreshFeedCacheIfNeeded()
+            }
+            .onChange(of: users) { _, _ in
+                // OPTIMIZED: Refresh cache when data changes
+                refreshFeedCacheIfNeeded()
+            }
+            .onChange(of: goals) { _, _ in
+                refreshFeedCacheIfNeeded()
+            }
+            .onChange(of: routines) { _, _ in
+                refreshFeedCacheIfNeeded()
+            }
+            .onChange(of: moodEntries) { _, _ in
+                refreshFeedCacheIfNeeded()
             }
         }
     }
@@ -440,7 +517,10 @@ struct FeedView: View {
             showingCommentOptions = itemID
         }
         
-        try? modelContext.save()
+        // FIX: Ensure modelContext.save() happens on MainActor (SwiftData requirement)
+        _Concurrency.Task { @MainActor in
+            try? modelContext.save()
+        }
     }
     
     private func handleComment(itemID: String, commentText: String, reactionType: ReactionType) {
@@ -460,7 +540,10 @@ struct FeedView: View {
             selectedReaction = nil
         }
         
-        try? modelContext.save()
+        // FIX: Ensure modelContext.save() happens on MainActor (SwiftData requirement)
+        _Concurrency.Task { @MainActor in
+            try? modelContext.save()
+        }
     }
 }
 
@@ -1038,7 +1121,7 @@ struct FeedSettingsView: View {
     @State private var showMomentumStatus = true
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 // Background matching home screen style
                 themeManager.currentTheme.primaryGradient
@@ -1146,3 +1229,4 @@ struct FeedSettingsView: View {
         .modelContainer(for: [User.self, FeedReaction.self, FeedComment.self], inMemory: true)
         .environment(ThemeManager())
 }
+

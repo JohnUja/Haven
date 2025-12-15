@@ -120,43 +120,57 @@ final class TimelineViewModel {
         let startOfDay = calendar.startOfDay(for: selectedDate)
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? selectedDate
         
-        // Query tasks that overlap with selected date (database-level filtering)
-        let taskPredicate = #Predicate<Task> { task in
-            task.startTime < endOfDay && task.endTime >= startOfDay
-        }
+        // CRITICAL: Check cache first - only fetch if date changed or cache is invalid
+        let currentTaskIDs = Set(_selectedDateTasks.map { $0.id })
+        let cacheIsValid = _lastCachedDate != nil &&
+                          calendar.isDate(selectedDate, inSameDayAs: _lastCachedDate!)
         
-        do {
-            let taskDescriptor = FetchDescriptor<Task>(
-                predicate: taskPredicate,
-                sortBy: [SortDescriptor(\Task.startTime, order: .forward)]
-            )
-            _selectedDateTasks = try modelContext.fetch(taskDescriptor)
-            
-            // Filter out tasks from paused goals and inactive routines
-            _selectedDateTasks = _selectedDateTasks.filter { task in
-                !(task.goal != nil && task.goal?.status == .paused) &&
-                !isFromInactiveRoutine(task)
+        // Only fetch from database if cache is invalid
+        if !cacheIsValid {
+            // Query tasks that overlap with selected date (database-level filtering)
+            let taskPredicate = #Predicate<Task> { task in
+                task.startTime < endOfDay && task.endTime >= startOfDay
             }
-        } catch {
-            print("TimelineViewModel: Failed to fetch tasks: \(error)")
-            _selectedDateTasks = []
+            
+            do {
+                let taskDescriptor = FetchDescriptor<Task>(
+                    predicate: taskPredicate,
+                    sortBy: [SortDescriptor(\Task.startTime, order: .forward)]
+                )
+                _selectedDateTasks = try modelContext.fetch(taskDescriptor)
+                
+                // Filter out tasks from paused goals and inactive routines
+                _selectedDateTasks = _selectedDateTasks.filter { task in
+                    !(task.goal != nil && task.goal?.status == .paused) &&
+                    !isFromInactiveRoutine(task)
+                }
+            } catch {
+                print("TimelineViewModel: Failed to fetch tasks: \(error)")
+                _selectedDateTasks = []
+            }
+            
+            // Query task blocks for selected date
+            let blockPredicate = #Predicate<TaskBlock> { block in
+                block.createdDate >= startOfDay && block.createdDate < endOfDay
+            }
+            
+            do {
+                let blockDescriptor = FetchDescriptor<TaskBlock>(predicate: blockPredicate)
+                _selectedDateTaskBlocks = try modelContext.fetch(blockDescriptor)
+            } catch {
+                print("TimelineViewModel: Failed to fetch task blocks: \(error)")
+                _selectedDateTaskBlocks = []
+            }
         }
         
-        // Query task blocks for selected date
-        let blockPredicate = #Predicate<TaskBlock> { block in
-            block.createdDate >= startOfDay && block.createdDate < endOfDay
-        }
+        // Check if tasks actually changed (for cache invalidation)
+        let newTaskIDs = Set(_selectedDateTasks.map { $0.id })
+        let tasksChanged = newTaskIDs != currentTaskIDs || !cacheIsValid
         
-        do {
-            let blockDescriptor = FetchDescriptor<TaskBlock>(predicate: blockPredicate)
-            _selectedDateTaskBlocks = try modelContext.fetch(blockDescriptor)
-        } catch {
-            print("TimelineViewModel: Failed to fetch task blocks: \(error)")
-            _selectedDateTaskBlocks = []
+        // Only recompute grouped data if tasks changed or cache is invalid
+        if tasksChanged {
+            recomputeGroupedData()
         }
-        
-        // Recompute grouped data (only when tasks/date change)
-        recomputeGroupedData()
     }
     
     // MARK: - Recompute Grouped Data (Only called when tasks/date change, NOT on scroll)
@@ -164,12 +178,16 @@ final class TimelineViewModel {
         let calendar = Calendar.current
         let currentTaskIDs = Set(_selectedDateTasks.map { $0.id })
         
-        // Check if we need to recompute (date changed or tasks changed)
+        // CRITICAL: Check if we need to recompute (date changed or tasks changed)
+        // This prevents expensive recomputation if nothing actually changed
         let needsRecompute = _lastCachedDate == nil ||
                             !calendar.isDate(selectedDate, inSameDayAs: _lastCachedDate!) ||
                             currentTaskIDs != _lastCachedTaskIDs
         
-        guard needsRecompute else { return }
+        guard needsRecompute else { 
+            // Cache is still valid - skip expensive recomputation
+            return 
+        }
         
         // 1. Group tasks by hour (O(N) - done once per date change)
         _tasksByHour = Dictionary(grouping: _selectedDateTasks) { task in
@@ -190,9 +208,12 @@ final class TimelineViewModel {
              task.category == .leisure || task.category == .skinCare)
         }
         
-        // 3. Pre-filter task blocks by side
+        // 3. Pre-filter task blocks by side (OPTIMIZED: Create blockTasks map once)
+        // Create a map of block ID to tasks for O(1) lookup instead of filtering multiple times
+        let blockTasksMap = Dictionary(grouping: _selectedDateTasks) { $0.taskBlock?.id ?? "" }
+        
         _workTaskBlocks = _selectedDateTaskBlocks.filter { block in
-            let blockTasks = _selectedDateTasks.filter { $0.taskBlock?.id == block.id }
+            let blockTasks = blockTasksMap[block.id] ?? []
             return blockTasks.contains { task in
                 task.category == .work || task.category == .fixed ||
                 task.category == .growth || task.category == .reading
@@ -200,7 +221,7 @@ final class TimelineViewModel {
         }
         
         _personalTaskBlocks = _selectedDateTaskBlocks.filter { block in
-            let blockTasks = _selectedDateTasks.filter { $0.taskBlock?.id == block.id }
+            let blockTasks = blockTasksMap[block.id] ?? []
             return blockTasks.contains { task in
                 task.category == .personal || task.category == .flexible ||
                 task.category == .hobbies || task.category == .selfCare ||

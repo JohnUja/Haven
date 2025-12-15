@@ -12,32 +12,28 @@ import AudioToolbox
 
 struct TimelineView: View {
     @Environment(\.modelContext) private var modelContext
-    @Environment(ThemeManager.self) private var themeManager
+    // DISABLED: ThemeManager temporarily disabled for debugging
+    // @Environment(ThemeManager.self) private var themeManager
+    private let defaultTheme: any AppTheme = PurpleTheme() // Hardcoded default theme
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     @EnvironmentObject private var calendarManager: CalendarManager
     
-    // Use ViewModel instead of @Query (only fetch relevant tasks)
-    @State private var vm = TimelineViewModel()
-    
-    // Only query small datasets (routines, users)
-    @Query private var routines: [DailyRoutine]
+    // REVERTED TO ORIGINAL: Simple @Query approach that was working
+    @Query private var tasks: [Task]
+    @Query private var taskBlocks: [TaskBlock]
+    @Query private var goals: [Goal]
     @Query private var users: [User]
-    
-    // State
+    @State private var selectedDate = Date()
     @State private var scrollOffset: CGFloat = 0
     @State private var timer: Timer?
     @State private var showingCalendar = false
-    @State private var pendingDateChange: Date? = nil // Debounce date changes
-    @State private var dateChangeTask: _Concurrency.Task<Void, Never>? = nil // Cancel previous task
     @State private var showingAddTask = false
     @State private var showingAddTaskBlock = false
     
     // Check if selected date is today
     private var isSelectedDateToday: Bool {
-        Calendar.current.isDateInToday(vm.selectedDate)
+        Calendar.current.isDateInToday(selectedDate)
     }
-    
-    // REMOVED: Collapsible mode (not working)
     
     // Drag and drop state
     @State private var draggedTask: Task? = nil
@@ -46,9 +42,16 @@ struct TimelineView: View {
     @State private var showingCollisionAlert = false
     @State private var collisionData: (draggedTask: Task?, newStart: Date, newEnd: Date, overlappingTasks: [Task])? = nil
     
-    // Use ViewModel's pre-computed tasks (O(1) lookup, no filtering on every render)
+    // REVERTED TO ORIGINAL: Simple computed property - no caching complexity
     private var selectedDateTasks: [Task] {
-        vm.selectedDateTasks
+        let calendar = Calendar.current
+        let filteredTasks = tasks.filter { task in
+            calendar.isDate(task.startTime, inSameDayAs: selectedDate) &&
+            // Filter out tasks from paused goals
+            !(task.goal != nil && task.goal?.status == .paused)
+        }.sorted { $0.startTime < $1.startTime }
+        
+        return filteredTasks
     }
     
     // Helper to get adjusted display times for a task on the selected date
@@ -97,20 +100,24 @@ struct TimelineView: View {
     // Removed isFromInactiveRoutine - now handled in ViewModel
     
     // MARK: - Drag and Drop Functions
+    // REVERTED TO ORIGINAL: Simple save without async wrapping
     private func updateTaskTime(_ task: Task, _ newStartTime: Date, _ newEndTime: Date) {
         task.startTime = newStartTime
         task.endTime = newEndTime
         
         do {
             try modelContext.save()
-            // Refresh ViewModel data after save
-            vm.refreshSelectedDateData()
         } catch {
             print("Failed to update task time: \(error)")
         }
     }
     
     private func updateTaskSide(_ task: Task, _ newSide: TaskTimelineBlock.TimelineSide) {
+        // CRITICAL FIX: Ensure task has a valid id before saving (prevents SwiftData crash)
+        if task.id.isEmpty {
+            task.id = UUID().uuidString
+        }
+        
         // Map category to the appropriate side while preserving visual color
         // Store original color if not already set
         if task.color == nil {
@@ -138,18 +145,17 @@ struct TimelineView: View {
             // Otherwise keep original personal-side category
         }
         
+        // REVERTED TO ORIGINAL: Simple save
         do {
             try modelContext.save()
-            // Refresh ViewModel data after save
-            vm.refreshSelectedDateData()
         } catch {
             print("Failed to update task side: \(error)")
         }
     }
     
     private func updateTaskBlockTime(_ taskBlock: TaskBlock, _ newStartTime: Date, _ newEndTime: Date) {
-        // Update all tasks in the block
-        let tasksInBlock = vm.getAllTasksForBlock(taskBlock)
+        // REVERTED TO ORIGINAL: Simple approach using relationship
+        let tasksInBlock = tasks.filter { $0.taskBlock?.id == taskBlock.id }
         let duration = newEndTime.timeIntervalSince(newStartTime)
         let taskDuration = duration / Double(tasksInBlock.count)
         
@@ -161,42 +167,28 @@ struct TimelineView: View {
             task.endTime = taskEndTime
         }
         
+        // REVERTED TO ORIGINAL: Simple save
         do {
             try modelContext.save()
-            // Refresh ViewModel data after save
-            vm.refreshSelectedDateData()
         } catch {
             print("Failed to update task block time: \(error)")
         }
     }
     
     private func updateTaskBlockSide(_ taskBlock: TaskBlock, _ newSide: TaskTimelineBlock.TimelineSide) {
-        // Update all tasks in the block category based on side
-        // Use selectedDateTasks to ensure we're working with the correct filtered tasks
-        let tasksInBlock = selectedDateTasks.filter { $0.taskBlock?.id == taskBlock.id }
-        guard !tasksInBlock.isEmpty else {
-            print("Warning: No tasks found for task block \(taskBlock.id)")
-            return
-        }
-        
+        // REVERTED TO ORIGINAL: Simple approach using relationship
+        let tasksInBlock = tasks.filter { $0.taskBlock?.id == taskBlock.id }
         let newCategory = newSide == .left ? TaskCategory.work : TaskCategory.personal
         
-        // Safely update each task's category
         for task in tasksInBlock {
-            // Store original color if not already set
-            if task.color == nil {
-                task.color = task.category.rawValue
-            }
             task.category = newCategory
         }
         
+        // REVERTED TO ORIGINAL: Simple save
         do {
             try modelContext.save()
-            // Refresh ViewModel data after save
-            vm.refreshSelectedDateData()
         } catch {
             print("Failed to update task block side: \(error)")
-            // Don't crash - just log the error
         }
     }
     
@@ -225,6 +217,11 @@ struct TimelineView: View {
     private func createTaskBlockFromCollision() {
             guard let data = collisionData, let draggedTask = data.draggedTask else { return }
             
+            // CRITICAL FIX: Ensure dragged task has a valid id before saving (prevents SwiftData crash)
+            if draggedTask.id.isEmpty {
+                draggedTask.id = UUID().uuidString
+            }
+            
             // Create a new task block with a better title
             let taskTitles = data.overlappingTasks.prefix(2).map { $0.title }
             let blockTitle = taskTitles.isEmpty ? "Task Block" : (taskTitles.count == 1 ? "\(taskTitles[0]) Block" : "\(taskTitles[0]) & \(taskTitles.count > 1 ? "\(taskTitles.count - 1) more" : "")")
@@ -242,17 +239,20 @@ struct TimelineView: View {
             
             // Add all overlapping tasks to the block
             for task in data.overlappingTasks {
-                task.taskBlock = newBlock
+                // CRITICAL FIX: Ensure each task has a valid id before saving (prevents SwiftData crash)
+                if task.id.isEmpty {
+                    task.id = UUID().uuidString
+                }
+                task.taskBlock = newBlock
             }
             
             // Update the dragged task's time and add to block
             draggedTask.startTime = data.newStart
             draggedTask.endTime = data.newEnd
-            draggedTask.taskBlock = newBlock
+            draggedTask.taskBlock = newBlock
             
+            // REVERTED TO ORIGINAL: Simple save
             try? modelContext.save()
-            // Refresh ViewModel data after save
-            vm.refreshSelectedDateData()
             showingCollisionAlert = false
             collisionData = nil
         }
@@ -267,16 +267,16 @@ struct TimelineView: View {
     private var scrollBasedTime: String {
         // Calculate time based on scroll position
         let hourOffset = Int(abs(scrollOffset) / 120)
-        let baseHour = Calendar.current.component(.hour, from: vm.selectedDate)
+        let baseHour = Calendar.current.component(.hour, from: selectedDate)
         let targetHour = (baseHour + hourOffset) % 24
         
-        let targetDate = Calendar.current.date(bySettingHour: targetHour, minute: 0, second: 0, of: vm.selectedDate) ?? vm.selectedDate
+        let targetDate = Calendar.current.date(bySettingHour: targetHour, minute: 0, second: 0, of: selectedDate) ?? selectedDate
         return timeSettings.formatTime(targetDate)
     }
     
     private var headerTimeDisplay: String {
         // Show current time if viewing today, otherwise show 00:00 for other days
-        if Calendar.current.isDate(vm.selectedDate, inSameDayAs: currentTime) {
+        if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
             return timeSettings.formatTime(currentTime)
         } else {
             return timeSettings.use24HourFormat ? "00:00" : "12:00 AM"
@@ -285,10 +285,10 @@ struct TimelineView: View {
     
     private var isCurrentTimeInView: Bool {
         // Check if current time hour is in screen view
-        if Calendar.current.isDate(vm.selectedDate, inSameDayAs: currentTime) {
+        if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
             let currentHour = Calendar.current.component(.hour, from: currentTime)
             let hourOffset = Int(abs(scrollOffset) / 120)
-            let baseHour = Calendar.current.component(.hour, from: vm.selectedDate)
+            let baseHour = Calendar.current.component(.hour, from: selectedDate)
             let targetHour = (baseHour + hourOffset) % 24
             
             return targetHour == currentHour
@@ -313,7 +313,7 @@ struct TimelineView: View {
     
     private func isKnotActive(for hour: Int) -> Bool {
         // Check if a knot should be "lit up" based on current time
-        if Calendar.current.isDate(vm.selectedDate, inSameDayAs: currentTime) {
+        if Calendar.current.isDate(selectedDate, inSameDayAs: currentTime) {
             return hour <= currentHour
         } else {
             return false // For other days, no knots are active
@@ -321,7 +321,7 @@ struct TimelineView: View {
     }
     
     var body: some View {
-        let theme = themeManager.currentTheme // Cache theme to prevent multiple accesses
+        let theme = defaultTheme // DISABLED: Using hardcoded theme instead of themeManager
         
         return GeometryReader { geometry in
             ZStack(alignment: .topTrailing) {
@@ -331,17 +331,21 @@ struct TimelineView: View {
                 
                 // Main Content
                 VStack(spacing: 0) {
-                    // Header (Today button is now in headerView)
+                    // Header (Today button is now in headerView)
                     headerView(theme: theme)
                     
                     // Timeline Content
                     ScrollView {
                         ContinuousTimelineView(
-                            tasks: vm.selectedDateTasks,
-                            taskBlocks: vm.taskBlocksForSelectedDate,
-                            calendarEvents: calendarManager.getEventsForDate(vm.selectedDate),
-                            selectedDate: vm.selectedDate,
+                            tasks: selectedDateTasks,
+                            taskBlocks: taskBlocks.filter { block in
+                                Calendar.current.isDate(block.createdDate, inSameDayAs: selectedDate)
+                            },
+                            calendarEvents: calendarManager.getEventsForDate(selectedDate),
+                            selectedDate: selectedDate,
                             currentTime: currentTime,
+                            workItemGroups: nil, // REVERTED: Compute in ContinuousTimelineView (simpler)
+                            personalItemGroups: nil, // REVERTED: Compute in ContinuousTimelineView (simpler)
                             getTasksForBlock: getTasksForBlock,
                             getAllTasksForBlock: getAllTasksForBlock,
                             getOverlappingTasks: getOverlappingTasks,
@@ -362,10 +366,13 @@ struct TimelineView: View {
                             }
                         )
                         .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+                            // CRITICAL FIX: Infinite Loop Prevention - only update if change is significant
                             // Scroll offset tracking (does NOT trigger task recalculation)
                             // This is for timeline scroll, not day scroller
                             // Today button visibility is handled by isSelectedDateToday
+                            if abs(scrollOffset - value) > 2.0 {
                             scrollOffset = value
+                            }
                         }
                     }
                     .coordinateSpace(name: "timelineScroll")
@@ -389,48 +396,32 @@ struct TimelineView: View {
             }
             // Calendar system removed - will be reimplemented with theme
             .sheet(isPresented: $showingAddTask) {
-                AddTaskView(selectedDate: vm.selectedDate)
+                AddTaskView(selectedDate: selectedDate)
+                    // DISABLED: .environment(themeManager)
+                    .environment(\.modelContext, modelContext)
             }
             .sheet(isPresented: $showingAddTaskBlock) {
-                AddBlockView(selectedDate: vm.selectedDate)
+                AddBlockView(selectedDate: selectedDate)
                     .presentationDetents([.medium])
+                    // DISABLED: .environment(themeManager)
+                    .environment(\.modelContext, modelContext)
             }
             .onAppear {
-                // Setup ViewModel with modelContext and data
-                vm.setupDataService(modelContext: modelContext)
-                vm.updateData(routines: routines, users: users)
-                
-                // Restore saved date state for sync with home screen
-                if let savedDate = DatePersistenceService.shared.restoreSelectedDate() {
-                    vm.selectedDate = savedDate
-                    calendarManager.loadCalendarEvents(for: savedDate)
-                }
-                
                 startTimer()
             }
-                .onDisappear {
-                    stopTimer()
-                // Cancel any pending date change tasks to prevent hangs
-                dateChangeTask?.cancel()
-                dateChangeTask = nil
-                pendingDateChange = nil
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .NSManagedObjectContextDidSave)) { _ in
-                // Only refresh if view is still visible
-                if vm.modelContext != nil {
-                    vm.refreshSelectedDateData()
-                }
+            .onDisappear {
+                stopTimer()
             }
         }
     }
     
     // MARK: - Calendar Modal View - REMOVED (will be reimplemented with theme)
-    
-    // MARK: - Helper Functions
-    private func monthYearString(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM yyyy"
-        return formatter.string(from: date)
+    
+    // MARK: - Helper Functions
+    private func monthYearString(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM yyyy"
+        return formatter.string(from: date)
     }
     
     private func headerView(theme: any AppTheme) -> some View {
@@ -441,7 +432,7 @@ struct TimelineView: View {
                 Button(action: {
                     // Calendar system removed - will be reimplemented with theme
                 }) {
-                    Text(monthYearString(from: vm.selectedDate).uppercased())
+                    Text(monthYearString(from: selectedDate).uppercased())
                         .font(theme.headerFont)
                         .foregroundColor(theme.textPrimary)
                         .padding(.horizontal, 12)
@@ -462,9 +453,9 @@ struct TimelineView: View {
                 if !isSelectedDateToday {
                     Button(action: {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            vm.selectedDate = Date()
-                            DatePersistenceService.shared.saveSelectedDate(vm.selectedDate)
-                            calendarManager.loadCalendarEvents(for: vm.selectedDate)
+                            selectedDate = Date()
+                            DatePersistenceService.shared.saveSelectedDate(selectedDate)
+                            calendarManager.loadCalendarEvents(for: selectedDate)
                         }
                     }) {
                         Text("Today")
@@ -494,37 +485,15 @@ struct TimelineView: View {
             .padding(.horizontal, 20)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelectedDateToday)
             .padding(.bottom, 4)
-            
+            
             // Infinite Day Selector with Fixed Center Controller (ORIGINAL STRUCTURE)
+            // REVERTED TO ORIGINAL: Simple binding and callback
             InfiniteDaySelector(
-                selectedDate: Binding(
-                    get: { vm.selectedDate },
-                    set: { newDate in
-                        // Update immediately for UI responsiveness
-                        vm.selectedDate = newDate
-                        
-                        // Debounce date changes to prevent hangs during rapid scrolling
-                        pendingDateChange = newDate
-                        
-                        // Cancel previous task
-                        dateChangeTask?.cancel()
-                        
-                        // Create new task with delay
-                        dateChangeTask = _Concurrency.Task { @MainActor in
-                            try? await _Concurrency.Task.sleep(nanoseconds: 300_000_000) // 0.3 second delay
-                            
-                            // Check if this is still the pending date (not cancelled)
-                            if let pending = pendingDateChange, Calendar.current.isDate(pending, inSameDayAs: newDate) {
-                    // Persist selected date
-                                DatePersistenceService.shared.saveSelectedDate(pending)
-                                calendarManager.loadCalendarEvents(for: pending)
-                                pendingDateChange = nil
-                            }
-                        }
-                    }
-                ),
+                selectedDate: $selectedDate,
                 onDateChanged: { newDate in
-                    // ViewModel handles date change internally via didSet
+                    // Persist selected date
+                    DatePersistenceService.shared.saveSelectedDate(newDate)
+                    calendarManager.loadCalendarEvents(for: newDate)
                 },
                 hasEvents: { date in
                     // Optimize: Use cached check instead of heavy computation
@@ -533,79 +502,79 @@ struct TimelineView: View {
                 showMonthHeader: true
             )
             
-            // Weather Info - Shows weather for selected date (ORIGINAL STRUCTURE)
+            // Weather Info - Shows weather for selected date (ORIGINAL STRUCTURE)
             ZStack {
                 // Background HStack for edge buttons
                 HStack {
-                    // Work label on left edge - Purple gradient background
+                    // Work label on left edge - Purple gradient background
                     Text("Work")
-                        .font(theme.bodyFont) // Use theme bodyFont (10pt, regular)
-                        .fontWeight(.bold)
-                        .foregroundColor(theme.textPrimary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
+                        .font(theme.bodyFont) // Use theme bodyFont (10pt, regular)
+                        .fontWeight(.bold)
+                        .foregroundColor(theme.textPrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
                         .background(
-                            RoundedRectangle(cornerRadius: theme.smallCornerRadius)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [theme.accentColor.opacity(0.3), theme.accentColor.opacity(0.2)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
+                            RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [theme.accentColor.opacity(0.3), theme.accentColor.opacity(0.2)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
-                                        .stroke(theme.accentColor, lineWidth: theme.cardBorderWidth)
+                                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                        .stroke(theme.accentColor, lineWidth: theme.cardBorderWidth)
                                 )
                         )
                     
                     Spacer()
                     
-                    // Personal label on right edge - Purple gradient background
+                    // Personal label on right edge - Purple gradient background
                     Text("Personal")
-                        .font(theme.bodyFont) // Use theme bodyFont (10pt, regular)
-                        .fontWeight(.bold)
-                        .foregroundColor(theme.textPrimary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
+                        .font(theme.bodyFont) // Use theme bodyFont (10pt, regular)
+                        .fontWeight(.bold)
+                        .foregroundColor(theme.textPrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
                         .background(
-                            RoundedRectangle(cornerRadius: theme.smallCornerRadius)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [theme.accentColor.opacity(0.3), theme.accentColor.opacity(0.2)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
+                            RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [theme.accentColor.opacity(0.3), theme.accentColor.opacity(0.2)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
-                                        .stroke(theme.accentColor, lineWidth: theme.cardBorderWidth)
+                                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                        .stroke(theme.accentColor, lineWidth: theme.cardBorderWidth)
                                 )
                         )
                 }
                 
-                // Time box - truly centered in middle (ORIGINAL STRUCTURE)
+                // Time box - truly centered in middle (ORIGINAL STRUCTURE)
                 Text(headerTimeDisplay)
-                    .font(theme.bodyFont) // Use theme bodyFont (10pt, regular)
-                    .fontWeight(.bold)
-                    .foregroundColor(theme.textPrimary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: theme.smallCornerRadius)
-                            .fill(Color.clear)
+                    .font(theme.bodyFont) // Use theme bodyFont (10pt, regular)
+                    .fontWeight(.bold)
+                    .foregroundColor(theme.textPrimary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                            .fill(Color.clear)
                     .overlay(
-                                RoundedRectangle(cornerRadius: theme.smallCornerRadius)
-                                    .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
-                            )
+                                RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                                    .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                            )
                     )
             }
-            .padding(.horizontal)
+            .padding(.horizontal)
         }
-        .padding()
+        .padding()
         .background(
             LinearGradient(
-                colors: [.black.opacity(0.3), .clear],
+                colors: [.black.opacity(0.3), .clear],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -614,7 +583,7 @@ struct TimelineView: View {
     
     private var weekDays: [Date] {
         let calendar = Calendar.current
-        let startOfWeek = calendar.dateInterval(of: .weekOfYear, for: vm.selectedDate)?.start ?? vm.selectedDate
+        let startOfWeek = calendar.dateInterval(of: .weekOfYear, for: selectedDate)?.start ?? selectedDate
         return (0..<7).compactMap { dayOffset in
             calendar.date(byAdding: .day, value: dayOffset, to: startOfWeek)
         }
@@ -631,48 +600,84 @@ struct TimelineView: View {
     }
     
     private func tasksForHour(_ hour: Int) -> [Task] {
-        // O(1) lookup from ViewModel's pre-computed dictionary
-        vm.tasksForHour(hour)
+        // Filter tasks for selected date and hour
+        selectedDateTasks.filter { task in
+            Calendar.current.component(.hour, from: task.startTime) == hour
+        }
     }
     
     private func calendarEventsForHour(_ hour: Int) -> [EKEvent] {
-        calendarManager.getEventsForDate(vm.selectedDate).filter { event in
+        calendarManager.getEventsForDate(selectedDate).filter { event in
             Calendar.current.component(.hour, from: event.startDate) == hour
         }
     }
     
+    // REVERTED TO ORIGINAL: Check if any task in this block falls within the selected date
     private var taskBlocksForSelectedDate: [TaskBlock] {
-        vm.taskBlocksForSelectedDate
+        taskBlocks.filter { taskBlock in
+            let blockTasks = selectedDateTasks.filter { $0.taskBlock?.id == taskBlock.id }
+            return !blockTasks.isEmpty
+        }
     }
     
     private func taskBlocksForHour(_ hour: Int) -> [TaskBlock] {
-        vm.taskBlocksForSelectedDate.filter { block in
-            let blockTasks = vm.getAllTasksForBlock(block)
+        taskBlocksForSelectedDate.filter { block in
+            let blockTasks = getAllTasksForBlock(block)
             return blockTasks.contains { task in
                 Calendar.current.component(.hour, from: task.startTime) == hour
             }
         }
     }
     
+    // REVERTED TO ORIGINAL: Simple approach using relationship
     private func getTasksForBlock(_ taskBlock: TaskBlock, hour: Int) -> [Task] {
-        vm.getTasksForBlock(taskBlock, hour: hour)
+        selectedDateTasks.filter { task in
+            task.taskBlock?.id == taskBlock.id &&
+            Calendar.current.component(.hour, from: task.startTime) == hour
+        }
     }
     
     // New function to get all tasks for a block regardless of hour
     private func getAllTasksForBlock(_ taskBlock: TaskBlock) -> [Task] {
-        vm.getAllTasksForBlock(taskBlock)
+        selectedDateTasks.filter { $0.taskBlock?.id == taskBlock.id }
     }
     
     private func getOverlappingTasks(_ tasks: [Task]) -> [[Task]] {
-        vm.getOverlappingTasks(tasks)
+        // Simple grouping: tasks that overlap in time
+        var groups: [[Task]] = []
+        var processed: Set<String> = []
+        
+        for task in tasks {
+            if processed.contains(task.id) { continue }
+            
+            var group = [task]
+            processed.insert(task.id)
+            
+            for otherTask in tasks {
+                if processed.contains(otherTask.id) { continue }
+                
+                // Check if tasks overlap
+                if task.startTime < otherTask.endTime && task.endTime > otherTask.startTime {
+                    group.append(otherTask)
+                    processed.insert(otherTask.id)
+                }
+            }
+            
+            if !group.isEmpty {
+                groups.append(group)
+            }
+        }
+        
+        return groups
     }
     
     private func startTimer() {
+        // FIX: Timer runs on main thread - structs don't need weak references
+        // Note: scheduledTimer already adds timer to current run loop, no need to add again
         timer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { _ in
             // Update every minute to refresh current time
-            DispatchQueue.main.async {
-                // Force view update
-            }
+            // Minimal update - just trigger a refresh if needed
+            // Don't force full view update to prevent hangs
         }
     }
     
@@ -682,8 +687,8 @@ struct TimelineView: View {
     }
     
     // Calculate collapsed height based on hours with tasks
-    // REMOVED: calculateCollapsedHeight - collapsible mode removed
-    private func _calculateCollapsedHeight() -> CGFloat {
+    // REMOVED: calculateCollapsedHeight - collapsible mode removed
+    private func _calculateCollapsedHeight() -> CGFloat {
         let calendar = Calendar.current
         var hoursWithTasks: Set<Int> = []
         
@@ -700,7 +705,7 @@ struct TimelineView: View {
         
         // Get all hours that have task blocks
         for block in taskBlocksForSelectedDate {
-            let blockTasks = selectedDateTasks.filter { $0.taskBlock?.id == block.id }
+            let blockTasks = selectedDateTasks.filter { $0.taskBlock?.id == block.id }
             for task in blockTasks {
                 let taskHour = calendar.component(.hour, from: task.startTime)
                 hoursWithTasks.insert(taskHour)
@@ -767,7 +772,7 @@ struct TimelineHourView: View {
     
     private var workTasksList: some View {
         let workTasks = tasks.filter {
-            $0.taskBlock == nil &&
+            $0.taskBlock == nil &&
             ($0.category == .work || $0.category == .fixed || $0.category == .growth || $0.category == .reading)
         }
         let overlappingWorkGroups = getOverlappingTasks(workTasks)
@@ -794,11 +799,11 @@ struct TimelineHourView: View {
                         }
                     )
                     .frame(maxWidth: group.count > 1 ? 60 : .infinity)
-                    .transition(.scale(scale: 0.8).combined(with: .opacity))
+                    .transition(.scale(scale: 0.8).combined(with: .opacity))
                 }
             }
         }
-        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: selectedDate)
+        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: selectedDate)
     }
     
     private var workTaskBlocksList: some View {
@@ -829,9 +834,9 @@ struct TimelineHourView: View {
                     handleTaskCollision(newStart, newEnd)
                 }
             )
-            .transition(.scale(scale: 0.8).combined(with: .opacity))
+            .transition(.scale(scale: 0.8).combined(with: .opacity))
         }
-        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: selectedDate)
+        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: selectedDate)
     }
     
     private var workTaskBlocks: [TaskBlock] {
@@ -942,7 +947,7 @@ struct TimelineHourView: View {
     
     private var personalTasksList: some View {
         let personalTasks = tasks.filter {
-            $0.taskBlock == nil &&
+            $0.taskBlock == nil &&
             ($0.category == .personal || $0.category == .flexible ||
              $0.category == .hobbies || $0.category == .selfCare ||
              $0.category == .leisure || $0.category == .skinCare)
@@ -971,11 +976,11 @@ struct TimelineHourView: View {
                         }
                     )
                     .frame(maxWidth: group.count > 1 ? 60 : .infinity)
-                    .transition(.scale(scale: 0.8).combined(with: .opacity))
+                    .transition(.scale(scale: 0.8).combined(with: .opacity))
                 }
             }
         }
-        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: selectedDate)
+        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: selectedDate)
     }
     
     private var personalTaskBlocksList: some View {
@@ -1006,9 +1011,9 @@ struct TimelineHourView: View {
                     handleTaskCollision(newStart, newEnd)
                 }
             )
-            .transition(.scale(scale: 0.8).combined(with: .opacity))
+            .transition(.scale(scale: 0.8).combined(with: .opacity))
         }
-        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: selectedDate)
+        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: selectedDate)
     }
     
     private var personalTaskBlocks: [TaskBlock] {

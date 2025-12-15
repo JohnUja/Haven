@@ -16,7 +16,7 @@ struct UserDetailsView: View {
     @State private var showingEditName = false
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 Section("Account Information") {
                     if let user = authService.currentUser {
@@ -114,7 +114,7 @@ struct EditDisplayNameView: View {
     @State private var errorMessage: String?
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section {
                     // Make sure 'transparentTextField' is defined in your project

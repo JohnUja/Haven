@@ -50,8 +50,8 @@ struct OnboardingView: View {
             if isComplete {
                 hasCompleted = true
                 // Force view update to trigger dismissal
-                DispatchQueue.main.async {
-                hasCompleted = true
+                _Concurrency.Task { @MainActor in
+                    hasCompleted = true
                 }
             }
         }
@@ -223,7 +223,8 @@ struct OnboardingView: View {
             onboardingService.markOnboardingComplete()
             hasCompleted = true
             // Force state update
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            _Concurrency.Task { @MainActor in
+                try? await _Concurrency.Task.sleep(nanoseconds: 100_000_000) // 0.1 second
                 hasCompleted = true
             }
             return
@@ -238,8 +239,9 @@ struct OnboardingView: View {
             onboardingService.markOnboardingComplete()
             hasCompleted = true
             // Force state update
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            hasCompleted = true
+            _Concurrency.Task { @MainActor in
+                try? await _Concurrency.Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+                hasCompleted = true
             }
         }
     }
@@ -484,6 +486,9 @@ struct QuickWinStepView: View {
         }
         .sheet(isPresented: $showingAddTask) {
             AddTaskView(selectedDate: Date(), prefillTaskName: "Have a fantastic day")
+                .environment(themeManager)
+                .environment(authService)
+                .environment(\.modelContext, modelContext)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OnboardingTaskCreated"))) { _ in
             // Task was created - mark as created and allow user to continue
@@ -560,6 +565,7 @@ struct RoutineSetupStepView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(ThemeManager.self) private var themeManager
+    @Environment(FirebaseAuthService.self) private var authService
     @Query private var routines: [DailyRoutine]
     @State private var showingRoutineSetup = false
     @State private var routineCreated = false
@@ -631,6 +637,9 @@ struct RoutineSetupStepView: View {
         }
         .sheet(isPresented: $showingRoutineSetup) {
             RoutineSetupView()
+                .environment(themeManager)
+                .environment(authService)
+                .environment(\.modelContext, modelContext)
         }
         .onChange(of: routines.count) { oldCount, newCount in
             // Check if a routine was actually created

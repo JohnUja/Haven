@@ -207,14 +207,14 @@ struct LevelUpView: View {
             }
             
             // Confetti
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            _Concurrency.Task { @MainActor in
+                try? await _Concurrency.Task.sleep(nanoseconds: 300_000_000) // 0.3 second
                 withAnimation(.easeOut(duration: 1.0)) {
                     confettiScale = 1.0
                 }
-            }
-            
-            // Show unlocks
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                
+                // Show unlocks
+                try? await _Concurrency.Task.sleep(nanoseconds: 500_000_000) // Additional 0.5 second (total 0.8 from start)
                 withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
                     showUnlocks = true
                 }

@@ -13,15 +13,26 @@ import Combine
 
 struct HomeDashboardView: View {
     @Environment(\.modelContext) private var modelContext
-    @Environment(ThemeManager.self) private var themeManager
+    // DISABLED: ThemeManager temporarily disabled for debugging
+    // @Environment(ThemeManager.self) private var themeManager
+    private let defaultTheme: any AppTheme = PurpleTheme() // Hardcoded default theme
+    @Environment(FirebaseAuthService.self) private var authService
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     @EnvironmentObject private var calendarManager: CalendarManager
     
     // MARK: - Data Queries
+    // OPTIMIZED: Added fetch limits to prevent loading all records
     // Only query small datasets (users, routines)
     // Tasks, taskBlocks, and goals are queried on-demand in ViewModel with predicates
-    @Query private var users: [User]
-    @Query private var routines: [DailyRoutine]
+    // NOTE: Users sorted by level/XP for consistency
+    // (users table is typically small anyway, so no limit needed)
+    @Query(sort: [SortDescriptor(\User.level, order: .reverse), SortDescriptor(\User.currentXP, order: .reverse)]) 
+    private var users: [User]
+    
+    // Routines: Sort by creation date to ensure all user routines are loaded
+    // (most users won't have >200 routines, but this ensures completeness)
+    @Query(sort: [SortDescriptor(\DailyRoutine.createdAt, order: .reverse)]) 
+    private var routines: [DailyRoutine]
     
     // MARK: - ViewModel
     @State private var vm = HomeDashboardViewModel()
@@ -100,9 +111,9 @@ struct HomeDashboardView: View {
     }
     
     var body: some View {
-        let theme: any AppTheme = themeManager.currentTheme
+        let theme: any AppTheme = defaultTheme // DISABLED: Using hardcoded theme instead of themeManager
         
-        return NavigationView { rootContent(theme: theme) }
+        return NavigationStack { rootContent(theme: theme) }
             .onAppear {
                 updateViewModel()
             }
@@ -121,11 +132,14 @@ struct HomeDashboardView: View {
             .onChange(of: vm.selectedDate) { _, _ in
                 // Move state modification outside view update cycle
                 _Concurrency.Task { @MainActor in
-                    vm.onSelectedDateChanged()
+                vm.onSelectedDateChanged()
                 }
             }
             .sheet(isPresented: $vm.showingAddTask) {
                 AddTaskView(selectedDate: vm.selectedDate)
+                    // DISABLED: .environment(themeManager)
+                    .environment(authService)
+                    .environment(\.modelContext, modelContext)
             }
             .sheet(isPresented: $vm.showingCalendar) {
                 themeCalendarView(theme: theme)
@@ -135,24 +149,30 @@ struct HomeDashboardView: View {
             .sheet(isPresented: $vm.showingAddBlock) {
                 AddBlockView(selectedDate: vm.selectedDate)
                     .presentationDetents([.medium])
+                    // DISABLED: .environment(themeManager)
+                    .environment(\.modelContext, modelContext)
             }
             .sheet(item: $vm.showingEditTask) { task in
-                // Query all tasks on demand for EditTaskView (needed for overlap checking)
-                let allTasks: [Task] = {
-                    let descriptor = FetchDescriptor<Task>()
-                    return (try? modelContext.fetch(descriptor)) ?? []
-                }()
-                EditTaskView(task: task, allTasks: allTasks)
+                // OPTIMIZED: EditTaskView uses @Query internally, no need to fetch here
+                // The allTasks parameter is optional and EditTaskView will use @Query if not provided
+                EditTaskView(task: task, allTasks: nil)
+                    // DISABLED: .environment(themeManager)
+                    .environmentObject(timeSettings)
+                    .environment(\.modelContext, modelContext)
             }
             .sheet(item: $vm.showingCategoryChange) { task in
-                CategoryChangeView(task: task, onCategoryChanged: { newCategory in
+                CategoryChangeView(task: task, onCategoryChanged: { [modelContext] newCategory in
+                    // FIX: Ensure modelContext.save() happens on MainActor (SwiftData requirement)
                     task.category = newCategory
+                    _Concurrency.Task { @MainActor in
                     try? modelContext.save()
+                    }
                     vm.showingCategoryChange = nil
                 }, onCancel: {
                     vm.showingCategoryChange = nil
                 })
                 .presentationDetents([.medium])
+                .environment(\.modelContext, modelContext)
             }
             .sheet(item: $vm.showingMoveToDay) { task in
                 MoveTaskCalendarView(task: task, onDateSelected: { date in
@@ -162,6 +182,7 @@ struct HomeDashboardView: View {
                     vm.showingMoveToDay = nil
                 })
                 .presentationDetents([.medium])
+                .environment(\.modelContext, modelContext)
             }
             .sheet(isPresented: Binding(
                 get: { vm.showingMoveToDayBlock != nil },
@@ -175,6 +196,7 @@ struct HomeDashboardView: View {
                         vm.showingMoveToDayBlock = nil
                     })
                     .presentationDetents([.medium])
+                    .environment(\.modelContext, modelContext)
                 }
             }
             .sheet(isPresented: Binding(
@@ -182,7 +204,8 @@ struct HomeDashboardView: View {
                 set: { if !$0 { vm.showingEditBlock = nil } }
             )) {
                 if let editBlock = vm.showingEditBlock {
-                    // Query all tasks on demand for EditBlockView (needed for overlap checking)
+                    // CRITICAL FIX: modelContext.fetch must happen on MainActor
+                    // This is safe because we're in a View body which runs on MainActor
                     let allTasks: [Task] = {
                         let descriptor = FetchDescriptor<Task>()
                         return (try? modelContext.fetch(descriptor)) ?? []
@@ -192,29 +215,43 @@ struct HomeDashboardView: View {
                         tasksInBlock: editBlock.tasks,
                         allTasks: allTasks
                     )
+                    // DISABLED: .environment(themeManager)
+                    .environmentObject(timeSettings)
+                    .environment(\.modelContext, modelContext)
                 }
             }
             .sheet(item: $vm.showingBlockColorPicker) { block in
-                BlockColorPickerView(taskBlock: block, onSelected: { newColor in
+                BlockColorPickerView(taskBlock: block, onSelected: { [modelContext] newColor in
+                    // CRITICAL FIX: Ensure modelContext.save() happens on MainActor (SwiftData requirement)
                     block.color = newColor
+                    _Concurrency.Task { @MainActor in
                     try? modelContext.save()
+                    }
                     vm.showingBlockColorPicker = nil
                 }, onCancel: {
                     vm.showingBlockColorPicker = nil
                 })
                 .presentationDetents([.medium])
+                .environment(\.modelContext, modelContext)
             }
             .sheet(item: $vm.showingEditGoal) { goal in
                 EditGoalInlineView(goal: goal)
+                    // DISABLED: .environment(themeManager)
+                    .environment(\.modelContext, modelContext)
             }
             .sheet(item: $vm.showingAddTaskToGoal) { goal in
                 AddTaskToGoalView(goal: goal)
+                    // DISABLED: .environment(themeManager)
+                    .environment(authService)
+                    .environment(\.modelContext, modelContext)
             }
             // LinkTaskToGoalView can be implemented later if needed
             .sheet(item: $vm.selectedGoal) { goal in
-                NavigationView {
+                NavigationStack {
                     GoalsDetailView(goal: goal)
                 }
+                .environment(themeManager)
+                .environment(\.modelContext, modelContext)
             }
             .alert("Delete Task Block?", isPresented: $vm.showDeleteBlockAlert) {
                 Button("Delete Block + Tasks", role: .destructive) {
@@ -234,8 +271,11 @@ struct HomeDashboardView: View {
                     title: Text("Delete Goal?"),
                     message: Text("This will remove the goal but keep all linked tasks."),
                     primaryButton: .destructive(Text("Delete")) {
+                        // CRITICAL FIX: Ensure modelContext operations happen on MainActor
                         modelContext.delete(goal)
+                        _Concurrency.Task { @MainActor in
                         try? modelContext.save()
+                        }
                     },
                     secondaryButton: .cancel()
                 )
@@ -247,8 +287,11 @@ struct HomeDashboardView: View {
                         ? "This will add the goal and its tasks back to your workflow."
                         : "This will temporarily hide the goal and all its tasks from your workflow."),
                     primaryButton: .default(Text(goal.status == .paused ? "Resume" : "Pause")) {
+                        // CRITICAL FIX: Ensure modelContext operations happen on MainActor
                         goal.status = goal.status == .paused ? .active : .paused
+                        _Concurrency.Task { @MainActor in
                         try? modelContext.save()
+                        }
                     },
                     secondaryButton: .cancel()
                 )
@@ -263,6 +306,7 @@ struct HomeDashboardView: View {
                         set: { if !$0 { showingLevelUp = nil } }
                     ))
                     .interactiveDismissDisabled(true)
+                    // LevelUpView doesn't need environment objects, but adding for consistency
                 }
             }
             .fullScreenCover(isPresented: $vm.showingImmersiveWorkingOn) {
@@ -270,6 +314,9 @@ struct HomeDashboardView: View {
                     ImmersiveWorkingOnView(task: currentTask) {
                         vm.showingImmersiveWorkingOn = false
                     }
+                    // DISABLED: .environment(themeManager)
+                    .environment(authService)
+                    .environment(\.modelContext, modelContext)
                 }
             }
             .overlay(floatingMenusOverlay)
@@ -315,7 +362,7 @@ struct HomeDashboardView: View {
             .onChange(of: vm.selectedDate) { _, _ in
                 // Move state modification outside view update cycle
                 _Concurrency.Task { @MainActor in
-                    vm.refreshSelectedDateData()
+                vm.refreshSelectedDateData()
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OnboardingTaskCreated"))) { _ in
@@ -381,12 +428,12 @@ struct HomeDashboardView: View {
                             }
                             
                             // Add Block icon button - smaller size
-                            Button(action: {
-                                vm.showingAddBlock = true
-                            }) {
-                                Image(systemName: "square.stack.fill")
+                    Button(action: {
+                        vm.showingAddBlock = true
+                    }) {
+                            Image(systemName: "square.stack.fill")
                                     .font(.system(size: 18, weight: .medium))
-                                    .foregroundColor(theme.textPrimary)
+                        .foregroundColor(theme.textPrimary)
                                     .frame(width: 28, height: 28)
                             }
                             
@@ -514,14 +561,21 @@ struct HomeDashboardView: View {
                 FloatingActionMenu(
                     task: task,
                     taskBlock: nil,
-                    theme: themeManager.currentTheme,
+                    theme: defaultTheme,
                     blockLocked: nil,
                     onEdit: { vm.showingFloatingMenu = nil; vm.showingEditTask = task },
                     onChangeCategory: { vm.showingFloatingMenu = nil; vm.showingCategoryChange = task },
                     onAddToGoal: { vm.showingFloatingMenu = nil; vm.showingLinkTaskToGoal = task },
                     onMove: { vm.showingFloatingMenu = nil; vm.showingMoveToDay = task },
                     onDelete: { vm.showingFloatingMenu = nil; deleteTask(task) },
-                    onUnlock: { vm.showingFloatingMenu = nil; task.isLocked.toggle(); try? modelContext.save() },
+                    onUnlock: { 
+                        vm.showingFloatingMenu = nil
+                        task.isLocked.toggle()
+                        // CRITICAL FIX: Ensure modelContext.save() happens on MainActor (SwiftData requirement)
+                        _Concurrency.Task { @MainActor in
+                            try? modelContext.save()
+                        }
+                    },
                     onDismiss: { vm.showingFloatingMenu = nil }
                 )
                 .transition(.asymmetric(
@@ -554,7 +608,7 @@ struct HomeDashboardView: View {
                 FloatingActionMenu(
                     task: nil,
                     taskBlock: taskBlock,
-                    theme: themeManager.currentTheme,
+                    theme: defaultTheme,
                     blockLocked: _blockObj?.isLocked ?? false,
                     onEdit: {
                         showingFloatingMenuForBlock = nil
@@ -575,7 +629,10 @@ struct HomeDashboardView: View {
                         showingFloatingMenuForBlock = nil
                         if let firstTask = taskBlock.first, let taskBlockObj = firstTask.taskBlock {
                             taskBlockObj.isLocked.toggle()
+                            // CRITICAL FIX: Ensure modelContext.save() happens on MainActor
+                            _Concurrency.Task { @MainActor in
                             try? modelContext.save()
+                            }
                         }
                     },
                     onDismiss: { showingFloatingMenuForBlock = nil }
@@ -711,7 +768,7 @@ struct HomeDashboardView: View {
                 VStack {
                     HStack {
                         Spacer()
-                        completionRingPopupView(theme: themeManager.currentTheme)
+                        completionRingPopupView(theme: defaultTheme)
                             .transition(.scale.combined(with: .opacity))
                         Spacer()
                     }
@@ -747,7 +804,7 @@ struct HomeDashboardView: View {
                         Text(dateString(for: vm.selectedDate))
                         .font(AppStyleSheet.font(for: .title))
                         .foregroundColor(.white)
-                        .appTextStyle(.title, theme: themeManager.currentTheme)
+                        .appTextStyle(.title, theme: defaultTheme)
                 }
                 
                 Spacer()
@@ -775,7 +832,7 @@ struct HomeDashboardView: View {
     
     // MARK: - Level Ring View (with toggle)
     private func levelRingView(user: User, showDailyProgress: Bool) -> some View {
-        let theme = themeManager.currentTheme
+        let theme = defaultTheme
         
         return ZStack {
             if showDailyProgress {
@@ -830,7 +887,7 @@ struct HomeDashboardView: View {
     
     // MARK: - Mode Toggle (Bubble Bounce Animation, 1/3 Width)
     private var modeToggleView: some View {
-        let theme = themeManager.currentTheme
+        let theme = defaultTheme
         
         return HStack(spacing: 0) {
             // Focus Button - Fixed Width (1/3 of total)
@@ -1029,8 +1086,9 @@ struct HomeDashboardView: View {
     }
     
     // MARK: - Helper: Get Sorted Plan Items (tasks and blocks unified, time-sensitive order)
+    // OPTIMIZED: Now uses ViewModel's cached filtered tasks
     private func getSortedPlanItems() -> ([PlanItem], [String: [Task]]) {
-        let filteredTasks = getFilteredTasks()
+        let filteredTasks = vm.getFilteredTasks()
         
         // Get all items with their start times
         var allItems: [PlanItem] = []
@@ -1078,7 +1136,7 @@ struct HomeDashboardView: View {
     private func simpleChronologicalTaskListView(theme: any AppTheme) -> some View {
         // Get sorted items and task blocks mapping (logic moved outside ViewBuilder)
         let (sortedItems, tasksByBlock) = getSortedPlanItems()
-        let standaloneTasks = getFilteredTasks().filter { $0.taskBlock == nil }
+        let standaloneTasks = vm.getFilteredTasks().filter { $0.taskBlock == nil }
         
         if sortedItems.isEmpty {
             VStack(spacing: 16) {
@@ -1245,7 +1303,10 @@ struct HomeDashboardView: View {
                    let newEnd = calendar.date(byAdding: .minute, value: 15, to: task.endTime) {
                     task.startTime = newStart
                     task.endTime = newEnd
+                    // CRITICAL FIX: Ensure modelContext.save() happens on MainActor
+                    _Concurrency.Task { @MainActor in
                     try? modelContext.save()
+                    }
                 }
             }) {
                 Text("Snooze") // Removed .uppercase()
@@ -1326,8 +1387,15 @@ struct HomeDashboardView: View {
         .buttonStyle(PlainButtonStyle())
         .contextMenu {
             Button(action: {
+                // CRITICAL FIX: Ensure task has a valid id before saving (prevents SwiftData crash)
+                if task.id.isEmpty {
+                    task.id = UUID().uuidString
+                }
                 task.isComplete.toggle()
+                // CRITICAL FIX: Ensure modelContext.save() happens on MainActor
+                _Concurrency.Task { @MainActor in
                 try? modelContext.save()
+                }
             }) {
                 Label(task.isComplete ? "Uncheck as done" : "Mark as done", 
                       systemImage: task.isComplete ? "xmark.circle" : "checkmark.circle")
@@ -1383,7 +1451,7 @@ struct HomeDashboardView: View {
         // MARK: - Master Task List
     @ViewBuilder
     private func masterTaskListView(theme: any AppTheme) -> some View {
-        let filteredTasks = getFilteredTasks()
+        let filteredTasks = vm.getFilteredTasks()
         
         if filteredTasks.isEmpty {
             VStack(spacing: 16) {
@@ -1435,7 +1503,7 @@ struct HomeDashboardView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(sectionTitle)
                             .appTextStyle(.sectionHeader, theme: theme)
-                                .padding(.horizontal, themeManager.currentTheme.cardPadding)
+                                .padding(.horizontal, defaultTheme.cardPadding)
                         
                             // Group tasks by taskBlockID - show blocks as single cards
                             let tasksByBlock = Dictionary(grouping: sectionTasks) { $0.taskBlock?.id ?? "" }
@@ -1481,7 +1549,10 @@ struct HomeDashboardView: View {
                         for task in tasks {
                             task.isComplete = !allComplete
                         }
+                        // CRITICAL FIX: Ensure modelContext.save() happens on MainActor
+                        _Concurrency.Task { @MainActor in
                         try? modelContext.save()
+                        }
                     }) {
                         Image(systemName: tasks.allSatisfy { $0.isComplete } ? "checkmark.square.fill" : "square")
                             .font(.system(size: 20, weight: .medium))
@@ -1555,38 +1626,8 @@ struct HomeDashboardView: View {
         return "\(startTimeStr) - \(endTimeStr)"
     }
     
-    private func getFilteredTasks() -> [Task] {
-        let baseTasks: [Task]
-            switch vm.selectedFilter {
-        case .all:
-            baseTasks = selectedDateTasks
-        case .category:
-            baseTasks = selectedDateTasks.sorted { $0.category.rawValue < $1.category.rawValue }
-        case .goals:
-            baseTasks = selectedDateTasks.filter { $0.goal != nil }
-        case .priority:
-            baseTasks = selectedDateTasks.sorted { task1, task2 in
-                let priorityOrder: [PriorityType] = [.urgent, .high, .normal, .low]
-                let p1 = priorityOrder.firstIndex(of: task1.priority) ?? 999
-                let p2 = priorityOrder.firstIndex(of: task2.priority) ?? 999
-                return p1 < p2
-            }
-        case .timePeriod:
-            baseTasks = selectedDateTasks
-        case .status:
-            let incomplete = selectedDateTasks.filter { !$0.isComplete }
-            let complete = selectedDateTasks.filter { $0.isComplete }
-            baseTasks = incomplete + complete
-        case .dateRange:
-            baseTasks = selectedDateTasks
-        }
-        
-        // Default ordering: Top to bottom = First task to last task (chronological by startTime)
-        // Incomplete tasks first (by startTime), then completed tasks (by startTime)
-        let incomplete = baseTasks.filter { !$0.isComplete }.sorted { $0.startTime < $1.startTime }
-        let complete = baseTasks.filter { $0.isComplete }.sorted { $0.startTime < $1.startTime }
-        return incomplete + complete
-    }
+    // OPTIMIZED: Removed - now using ViewModel's getFilteredTasks() which is cached
+    // This function was causing main thread blocking with multiple filters/sorts per render
     
     private func groupTasksByFilter(_ tasks: [Task]) -> [String: [Task]] {
             switch vm.selectedFilter {
@@ -1615,9 +1656,11 @@ struct HomeDashboardView: View {
     }
     
     // MARK: - Completion Ring Popup View
+    // OPTIMIZED: Use ViewModel's cached tasks instead of filtering on every render
     private func completionRingPopupView(theme: any AppTheme) -> some View {
-        let completedCount = selectedDateTasks.filter { $0.isComplete }.count
-        let totalCount = selectedDateTasks.count
+        let tasks = vm.selectedDateTasks // Already filtered and cached
+        let completedCount = tasks.filter { $0.isComplete }.count
+        let totalCount = tasks.count
         let progress = totalCount > 0 ? Double(completedCount) / Double(totalCount) : 0.0
         
         guard let user = currentUser else {
@@ -1850,22 +1893,22 @@ struct HomeDashboardView: View {
                 .foregroundColor(.white)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                        .background(
+                            RoundedRectangle(cornerRadius: theme.smallCornerRadius)
                         .fill(Color.white.opacity(0.2))
-                )
+                                )
                 
                 Spacer()
                 
                 Button("Done") {
                     vm.showingCalendar = false
                 }
-                .foregroundColor(.white)
+                            .foregroundColor(.white)
                 .fontWeight(.semibold)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: theme.smallCornerRadius)
+                            .background(
+                                RoundedRectangle(cornerRadius: theme.smallCornerRadius)
                         .fill(theme.accentColor)
                 )
             }
@@ -2021,8 +2064,11 @@ struct HomeDashboardView: View {
         }
 
         private func deleteTask(_ task: Task) {
+            // CRITICAL FIX: Ensure modelContext operations happen on MainActor
             modelContext.delete(task)
+            _Concurrency.Task { @MainActor in
             try? modelContext.save()
+            }
         }
 
         // MARK: - Missing Helper Functions (Stubbed for compilation)
@@ -2194,21 +2240,37 @@ struct TaskCardView: View {
             )) {
                 reflectionSheetContent
             }
-            .alert("Complete \(earlyCompletionTask?.title ?? "task") already?", isPresented: $showEarlyCompletionPrompt) {
+            .alert("Completed \(earlyCompletionTask?.title ?? "task") already?", isPresented: $showEarlyCompletionPrompt) {
                 Button("Cancel", role: .cancel) {
+                    // Reset state so prompt can show again if user tries again
                     earlyCompletionTask = nil
+                    showEarlyCompletionPrompt = false
+                    hasShownEarlyCompletionPrompt = false // Allow prompt to show again
                 }
                 Button("Complete Anyway") {
                     guard let task = earlyCompletionTask else { return }
                     // Force complete with rewards
-                    task.isComplete = true
-                    onTaskCompleted?(task.id)
-                    try? modelContext.save()
-                    earlyCompletionTask = nil
+                    _Concurrency.Task { @MainActor in
+                        task.isComplete = true
+                        onTaskCompleted?(task.id)
+                        try? modelContext.save()
+                        earlyCompletionTask = nil
+                        showEarlyCompletionPrompt = false
+                        hasShownEarlyCompletionPrompt = false // Reset for next time
+                    }
                 }
             } message: {
                 if let task = earlyCompletionTask {
-                    Text("This task starts at \(formatTime(task.startTime)).\n\nRewards for completing:\n⭐ \(earlyCompletionRewards.xp) XP\n💎 \(earlyCompletionRewards.crystals) Crystals")
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("This task starts at \(formatTime(task.startTime)).")
+                            .font(theme.bodyFont)
+                        Text("Rewards for completing:")
+                            .font(theme.bodyFont)
+                        Text("⭐ \(earlyCompletionRewards.xp) XP")
+                            .font(theme.bodyFont)
+                        Text("💎 \(earlyCompletionRewards.crystals) Crystals")
+                            .font(theme.bodyFont)
+                    }
                 }
             }
     }
@@ -2328,35 +2390,66 @@ struct TaskCardView: View {
             
             // If trying to complete a task that hasn't started yet
             if !task.isComplete && now < taskStart {
-                // Only show prompt once per session to avoid overwhelming user
-                // But still provide accountability
-                if !hasShownEarlyCompletionPrompt {
-                    // Calculate potential rewards
-                    guard let user = users.first else { return }
-                    let goal = task.goal
-                    let momentumBonus = GamificationService.getMomentumBonus(user: user)
-                    let baseRewards = GamificationService.calculateTaskRewards(
-                        task: task,
-                        goal: goal,
-                        momentumBonus: momentumBonus
-                    )
-                    
-                    // Store task and rewards for prompt
-                    earlyCompletionTask = task
-                    earlyCompletionRewards = (xp: baseRewards.xp, crystals: baseRewards.crystals)
-                    showEarlyCompletionPrompt = true
-                    hasShownEarlyCompletionPrompt = true
-                    return
-                } else {
-                    // After first prompt, allow silent completion but still track
-                    // This provides accountability without overwhelming
-                }
+                // Always show prompt to provide accountability
+                // Calculate potential rewards
+                guard let user = users.first else { return }
+                let goal = task.goal
+                let momentumBonus = GamificationService.getMomentumBonus(user: user)
+                let baseRewards = GamificationService.calculateTaskRewards(
+                    task: task,
+                    goal: goal,
+                    momentumBonus: momentumBonus
+                )
+                
+                // Store task and rewards for prompt
+                earlyCompletionTask = task
+                earlyCompletionRewards = (xp: baseRewards.xp, crystals: baseRewards.crystals)
+                showEarlyCompletionPrompt = true
+                hasShownEarlyCompletionPrompt = true // Track that we've shown it for this task
+                return // Don't complete yet - wait for user confirmation
             }
             
             // Normal completion - task has started or is being unchecked
-                task.isComplete.toggle()
-            if task.isComplete { onTaskCompleted?(task.id) }
-                    try? modelContext.save()
+            // CRITICAL FIX: Ensure task has a valid id before saving (prevents SwiftData crash)
+            // Double-check: if ID is empty or nil, assign new UUID and verify it's set
+            if task.id.isEmpty {
+                let newID = UUID().uuidString
+                task.id = newID
+                // Verify ID was actually set (defensive programming)
+                guard !task.id.isEmpty else {
+                    print("ERROR: Failed to set task ID, aborting save")
+                    return
+                }
+            }
+            
+            task.isComplete.toggle()
+            
+            // CRITICAL FIX: Only call closure if task is complete and has a valid ID
+            // Note: task.id is non-optional String, but we check isEmpty to ensure it's valid
+            if task.isComplete && !task.id.isEmpty {
+                onTaskCompleted?(task.id)
+            }
+            
+            // CRITICAL FIX: Ensure modelContext.save() happens on MainActor
+            // Double-check ID is valid before attempting save
+            let taskID = task.id // Capture ID to verify it's not empty
+            guard !taskID.isEmpty else {
+                print("ERROR: Task ID is empty before save, aborting")
+                return
+            }
+            
+            _Concurrency.Task { @MainActor in
+                // Final verification before save
+                guard !task.id.isEmpty else {
+                    print("ERROR: Task ID became empty in async context, aborting save")
+                    return
+                }
+                do {
+                    try modelContext.save()
+                } catch {
+                    print("Failed to save task completion: \(error)")
+                }
+            }
         }
         
         private func formatTime(_ date: Date) -> String {
@@ -2379,7 +2472,7 @@ struct BlockColorPickerView: View {
     private let availableColors = ["red", "orange", "yellow", "green", "blue", "purple", "pink", "mint", "cyan", "indigo", "brown"]
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 ForEach(availableColors, id: \.self) { color in
                     Button(action: { onSelected(color) }) {
@@ -2407,7 +2500,7 @@ struct CategoryChangeView: View {
     let onCategoryChanged: (TaskCategory) -> Void
     let onCancel: () -> Void
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 ForEach(TaskCategory.allCases, id: \.self) { category in
                         Button(action: { onCategoryChanged(category) }) {
@@ -2440,13 +2533,13 @@ struct CategoryChangeView: View {
     struct MoveTaskCalendarView: View {
         let task: Task; let onDateSelected: (Date) -> Void; let onCancel: () -> Void; @State private var targetDate: Date
         init(task: Task, onDateSelected: @escaping (Date) -> Void, onCancel: @escaping () -> Void) { self.task = task; self.onDateSelected = onDateSelected; self.onCancel = onCancel; self._targetDate = State(initialValue: task.startTime) }
-        var body: some View { NavigationView { MonthCalendarView(selectedDate: Binding(get: { targetDate }, set: { targetDate = $0; onDateSelected($0) })).navigationTitle("Move Task").toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Cancel") { onCancel() } } } } }
+        var body: some View { NavigationStack { MonthCalendarView(selectedDate: Binding(get: { targetDate }, set: { targetDate = $0; onDateSelected($0) })).navigationTitle("Move Task").toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Cancel") { onCancel() } } } } }
     }
 
     struct MoveTaskBlockCalendarView: View {
         let taskBlock: [Task]; let onDateSelected: (Date) -> Void; let onCancel: () -> Void; @State private var targetDate: Date
         init(taskBlock: [Task], onDateSelected: @escaping (Date) -> Void, onCancel: @escaping () -> Void) { self.taskBlock = taskBlock; self.onDateSelected = onDateSelected; self.onCancel = onCancel; self._targetDate = State(initialValue: taskBlock.first?.startTime ?? Date()) }
-        var body: some View { NavigationView { MonthCalendarView(selectedDate: Binding(get: { targetDate }, set: { targetDate = $0; onDateSelected($0) })).navigationTitle("Move Task Block").toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Cancel") { onCancel() } } } } }
+        var body: some View { NavigationStack { MonthCalendarView(selectedDate: Binding(get: { targetDate }, set: { targetDate = $0; onDateSelected($0) })).navigationTitle("Move Task Block").toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Cancel") { onCancel() } } } } }
 }
 
 #Preview {

@@ -129,12 +129,12 @@ struct InfiniteDaySelector: View {
         lastHapticDay = days[todayIndex]
         onDateChanged(days[todayIndex]) // Load the timeline for today
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        _Concurrency.Task { @MainActor in
+            try? await _Concurrency.Task.sleep(nanoseconds: 200_000_000) // 0.2 second
             proxy.scrollTo(todayIndex, anchor: .center)
             // Give a moment for scroll to settle before allowing haptics
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                isInitializing = false
-            }
+            try? await _Concurrency.Task.sleep(nanoseconds: 300_000_000) // 0.3 second
+            isInitializing = false
         }
     }
     
@@ -146,11 +146,11 @@ struct InfiniteDaySelector: View {
         selectedDate = days[todayIndex]
         lastHapticDay = days[todayIndex]
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        _Concurrency.Task { @MainActor in
+            try? await _Concurrency.Task.sleep(nanoseconds: 100_000_000) // 0.1 second
             proxy.scrollTo(todayIndex, anchor: .center)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                isInitializing = false
-            }
+            try? await _Concurrency.Task.sleep(nanoseconds: 200_000_000) // 0.2 second
+            isInitializing = false
         }
     }
     

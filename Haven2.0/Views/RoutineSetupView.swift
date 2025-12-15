@@ -108,7 +108,7 @@ struct RoutineSetupView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section("Routine Name") {
                     transparentTextField(
@@ -326,7 +326,7 @@ struct RoutineTaskEditorView: View {
     @State private var category: TaskCategory = .personal
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section("Task Details") {
                     transparentTextField(

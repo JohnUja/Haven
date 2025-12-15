@@ -190,7 +190,7 @@ struct ReflectionEntryView: View {
     
     private func loadPhoto(from item: PhotosPickerItem) {
         item.loadTransferable(type: Data.self) { result in
-            DispatchQueue.main.async {
+            _Concurrency.Task { @MainActor in
                 if case .success(let data) = result, let data = data {
                     // Compress image to reasonable size
                     if let uiImage = UIImage(data: data) {

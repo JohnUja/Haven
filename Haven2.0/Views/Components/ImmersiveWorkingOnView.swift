@@ -389,7 +389,12 @@ struct ImmersiveWorkingOnView: View {
         elapsedTime = 0
         startTime = Date()
         
+        // Note: ImmersiveWorkingOnView is a struct (value type), so no need for [weak self]
+        // Structs don't have retain cycles. The timer will be invalidated in stopTimer() or onDisappear.
+        // Access @State properties directly - SwiftUI handles the updates correctly for structs
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            // Direct access to @State properties works in structs
+            // SwiftUI will handle the state updates correctly
             if !isPaused {
                 elapsedTime += 1.0
                 
@@ -613,7 +618,7 @@ struct ImmersiveCompletionSummaryView: View {
     var body: some View {
         let theme = themeManager.currentTheme
         
-        return NavigationView {
+        return NavigationStack {
             ZStack {
                 theme.primaryGradient
                     .ignoresSafeArea()
