@@ -68,6 +68,12 @@ final class HomeDashboardViewModel {
     // Fetch filtered tasks for selected date using SwiftData predicate
     func refreshSelectedDateData() {
         guard let modelContext = modelContext else { return }
+        guard let currentUserID = currentUser?.id else {
+            _selectedDateTasks = []
+            _selectedDateTaskBlocks = []
+            _allGoals = []
+            return
+        }
         
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: selectedDate)
@@ -75,7 +81,7 @@ final class HomeDashboardViewModel {
         
         // Query tasks that overlap with selected date
         let taskPredicate = #Predicate<Task> { task in
-            task.startTime < endOfDay && task.endTime >= startOfDay
+            task.userID == currentUserID && task.startTime < endOfDay && task.endTime >= startOfDay
         }
         
         do {
@@ -97,7 +103,7 @@ final class HomeDashboardViewModel {
         
         // Query task blocks for selected date
         let blockPredicate = #Predicate<TaskBlock> { block in
-            block.createdDate >= startOfDay && block.createdDate < endOfDay
+            block.userID == currentUserID && block.createdDate >= startOfDay && block.createdDate < endOfDay
         }
         
         do {
@@ -110,7 +116,11 @@ final class HomeDashboardViewModel {
         
         // Fetch all goals (needed for filtering and sorting)
         do {
-            let goalDescriptor = FetchDescriptor<Goal>()
+            let goalDescriptor = FetchDescriptor<Goal>(
+                predicate: #Predicate<Goal> { goal in
+                    goal.userID == currentUserID
+                }
+            )
             _allGoals = try modelContext.fetch(goalDescriptor)
         } catch {
             print("Failed to fetch goals: \(error)")
@@ -179,7 +189,7 @@ final class HomeDashboardViewModel {
     
     // MARK: - Computed Properties
     var currentUser: User? {
-        users.first
+        LocalUserProvisioningService.resolveCurrentUser(from: users)
     }
     
     var userRoutines: [DailyRoutine] {

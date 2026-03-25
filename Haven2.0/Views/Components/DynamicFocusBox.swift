@@ -72,6 +72,8 @@ struct DynamicFocusBox: View {
     @Binding var previewTask: Task? // For Preview Mode from Agenda
     @Binding var isViewAllTasksMode: Bool // Expose mode to parent
     var onAddTask: (() -> Void)? = nil // Callback for Add Task button
+    var onEditTask: ((Task) -> Void)? = nil
+    var onDeleteTask: ((Task) -> Void)? = nil
     
     @Environment(ThemeManager.self) private var themeManager
     @Environment(FirebaseAuthService.self) private var authService
@@ -86,6 +88,10 @@ struct DynamicFocusBox: View {
     @State private var showingTaskDetails = false
     @State private var showingSplitView = false
     @State private var splitContextGroups: [String: [Task]] = [:]
+    @State private var editingTaskID: String? = nil
+    @State private var editingTitle: String = ""
+    @State private var editingPriority: PriorityType = .normal
+    @State private var editingCategory: TaskCategory = .personal
     // OPTIMIZED: Cache context groups to avoid recomputing on every update
     @State private var cachedContextGroups: [String: [Task]] = [:]
     @State private var lastContextGroupsDate: Date? = nil
@@ -606,6 +612,10 @@ struct DynamicFocusBox: View {
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        onEditTask?(task)
+                    }
                     
                     if isPreviewMode {
                         startNowButton(theme: theme)
@@ -675,6 +685,7 @@ struct DynamicFocusBox: View {
     private func viewAllTaskRow(task: Task, theme: any AppTheme) -> some View {
         let xpGained = calculateXPForTask(task)
         let isCurrentDay = Calendar.current.isDate(selectedDate, inSameDayAs: Date())
+        let isEditing = editingTaskID == task.id
         
         return HStack(alignment: .top, spacing: 12) {
             // Left: Checkbox at center left (not top left)
@@ -692,15 +703,53 @@ struct DynamicFocusBox: View {
             
             // Middle: Task title (same font as plan view)
             VStack(alignment: .leading, spacing: 4) {
-                Text(task.title)
-                    .font(theme.headerFont) // Same font as plan view (11pt, semibold)
-                    .foregroundColor(theme.textPrimary)
-                    .strikethrough(task.isComplete)
-                    .opacity(task.isComplete ? 0.6 : 1.0)
-                
-                Text(timeRangeString(for: task))
-                    .appTextStyle(.caption, theme: theme)
-                    .opacity(0.7)
+                if isEditing {
+                    TextField("Task title", text: $editingTitle)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(theme.textPrimary)
+                        .textFieldStyle(.plain)
+                        .onSubmit {
+                            saveInlineEdits(for: task)
+                        }
+                    
+                    HStack(spacing: 8) {
+                        Menu {
+                            ForEach(PriorityType.allCases, id: \.self) { priority in
+                                Button(priority.rawValue.capitalized) {
+                                    editingPriority = priority
+                                }
+                            }
+                        } label: {
+                            inlinePill(label: editingPriority.rawValue.capitalized, theme: theme)
+                        }
+                        
+                        Menu {
+                            ForEach(TaskCategory.allCases, id: \.self) { category in
+                                Button(category.displayName) {
+                                    editingCategory = category
+                                }
+                            }
+                        } label: {
+                            inlinePill(label: editingCategory.displayName, theme: theme)
+                        }
+                        
+                        Button("Done") {
+                            saveInlineEdits(for: task)
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(theme.accentColor)
+                    }
+                } else {
+                    Text(task.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(theme.textPrimary)
+                        .strikethrough(task.isComplete)
+                        .opacity(task.isComplete ? 0.6 : 1.0)
+                    
+                    Text(timeRangeString(for: task))
+                        .appTextStyle(.caption, theme: theme)
+                        .opacity(0.7)
+                }
             }
             
             Spacer()
@@ -708,7 +757,7 @@ struct DynamicFocusBox: View {
             // Right side: Category icon above XP (with spacing)
             VStack(alignment: .trailing, spacing: 8) {
                 // Category icon on right, above XP
-                Image(systemName: task.category.icon)
+                Image(systemName: isEditing ? editingCategory.icon : task.category.icon)
                     .font(.system(size: 12))
                     .foregroundColor(theme.textPrimary.opacity(0.6))
                 
@@ -734,6 +783,19 @@ struct DynamicFocusBox: View {
                         .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth * 1.5)
                 )
         )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if !isEditing {
+                beginInlineEdit(task)
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                onDeleteTask?(task)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
 
     // MARK: - Helpers & Subviews
@@ -777,6 +839,17 @@ struct DynamicFocusBox: View {
             }
         }
         .padding(.horizontal, 20)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onEditTask?(task)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                onDeleteTask?(task)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
     
     private func timeInfoView(for task: Task, theme: any AppTheme) -> some View {
@@ -893,7 +966,43 @@ struct DynamicFocusBox: View {
     }
     
     private func toggleTaskCompletion(_ task: Task) {
-        // Implement completion logic here
+        AudioServicesPlaySystemSound(1520)
+        task.isComplete.toggle()
+        try? modelContext.save()
+    }
+    
+    private func beginInlineEdit(_ task: Task) {
+        editingTaskID = task.id
+        editingTitle = task.title
+        editingPriority = task.priority
+        editingCategory = task.category
+    }
+    
+    private func saveInlineEdits(for task: Task) {
+        let trimmedTitle = editingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedTitle.isEmpty {
+            task.title = trimmedTitle
+        }
+        task.priority = editingPriority
+        task.category = editingCategory
+        try? modelContext.save()
+        editingTaskID = nil
+    }
+    
+    private func inlinePill(label: String, theme: any AppTheme) -> some View {
+        Text(label)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundColor(theme.textPrimary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(theme.glassBackground.opacity(0.55))
+                    .overlay(
+                        Capsule()
+                            .stroke(theme.glassBorder, lineWidth: 1)
+                    )
+            )
     }
     
     private func exitPreviewMode() {

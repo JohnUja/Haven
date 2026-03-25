@@ -9,6 +9,10 @@ import SwiftUI
 import SwiftData
 import UIKit
 
+// Freeze-investigation logging was intentionally disabled after the audit cleanup.
+@inline(__always)
+fileprivate func debugLog(location: String, message: String, data: [String: Any] = [:], hypothesisId: String = "") {}
+
 struct MainTabView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(ThemeManager.self) private var themeManager
@@ -18,7 +22,7 @@ struct MainTabView: View {
     @State private var hasCheckedMoodOnLaunch = false
     
     private var currentUser: User? {
-        users.first
+        LocalUserProvisioningService.resolveCurrentUser(from: users)
     }
     
     // Check if user needs to check in
@@ -47,6 +51,17 @@ struct MainTabView: View {
         return true
     }
     
+    // Helper to get tab name for logging
+    private func tabName(for tab: Int) -> String {
+        switch tab {
+        case 0: return "Home"
+        case 1: return "Timeline"
+        case 2: return "Goals"
+        case 3: return "Profile"
+        default: return "Unknown"
+        }
+    }
+    
     var body: some View {
         TabView(selection: $selectedTab) {
             HomeDashboardView()
@@ -70,37 +85,34 @@ struct MainTabView: View {
                 }
                 .tag(2)
             
-            FeedView()
-                .tabItem {
-                    ZStack {
-                        Image(systemName: "square.grid.2x2")
-                            .symbolVariant(.none)
-                        
-                        // Notification badge - RED
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 12, height: 12)
-                            .offset(x: 8, y: -8)
-                    }
-                    Text("Feed")
-                }
-                .tag(3)
-            
             ProfileView()
                 .tabItem {
                     Image(systemName: "person.circle.fill")
                     Text("Profile")
                 }
-                .tag(4)
+                .tag(3)
         }
         .accentColor(.purple)
         .onAppear {
-            setupDefaultUser()
+            _Concurrency.Task { @MainActor in
+                try? await LocalUserProvisioningService.ensureLocalUserExists(in: modelContext)
+            }
             checkForMoodCheckIn()
         }
-        .onChange(of: selectedTab) { _, _ in
+        .onChange(of: selectedTab) { oldValue, newValue in
+            // #region agent log
+            debugLog(location: "MainTabView.swift:101", message: "Tab change started", data: ["oldTab": oldValue, "newTab": newValue, "tabName": tabName(for: newValue)] as [String: Any], hypothesisId: "A")
+            // #endregion
             // Re-check when switching tabs (in case time window changed)
+            // #region agent log
+            let checkStartTime = Date()
+            debugLog(location: "MainTabView.swift:103", message: "checkForMoodCheckIn called", data: ["tab": newValue] as [String: Any], hypothesisId: "A")
+            // #endregion
             checkForMoodCheckIn()
+            // #region agent log
+            let checkDuration = Date().timeIntervalSince(checkStartTime)
+            debugLog(location: "MainTabView.swift:103", message: "checkForMoodCheckIn completed", data: ["tab": newValue, "duration": checkDuration] as [String: Any], hypothesisId: "A")
+            // #endregion
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             // Reset check flag when app comes to foreground
@@ -124,172 +136,30 @@ struct MainTabView: View {
     // MARK: - Mood Check-In Logic
     
     private func checkForMoodCheckIn() {
+        // #region agent log
+        let funcStartTime = Date()
+        debugLog(location: "MainTabView.swift:126", message: "checkForMoodCheckIn entry", data: ["shouldShow": shouldShowMoodCheckIn, "showing": showingMoodCheckIn] as [String: Any], hypothesisId: "A")
+        // #endregion
         // Small delay to ensure UI is ready
         _Concurrency.Task { @MainActor in
+            // #region agent log
+            debugLog(location: "MainTabView.swift:129", message: "Task.sleep started", data: ["duration": 0.5] as [String: Any], hypothesisId: "A")
+            // #endregion
             try? await _Concurrency.Task.sleep(nanoseconds: 500_000_000) // 0.5 second
+            // #region agent log
+            debugLog(location: "MainTabView.swift:129", message: "Task.sleep completed", data: [:], hypothesisId: "A")
+            // #endregion
             if shouldShowMoodCheckIn && !showingMoodCheckIn {
+                // #region agent log
+                debugLog(location: "MainTabView.swift:131", message: "Setting showingMoodCheckIn to true", data: [:], hypothesisId: "A")
+                // #endregion
                 showingMoodCheckIn = true
             }
+            // #region agent log
+            let funcDuration = Date().timeIntervalSince(funcStartTime)
+            debugLog(location: "MainTabView.swift:126", message: "checkForMoodCheckIn exit", data: ["duration": funcDuration] as [String: Any], hypothesisId: "A")
+            // #endregion
         }
     }
     
-    private func setupDefaultUser() {
-        if users.isEmpty {
-            let defaultUser = User(
-                email: "user@timeflow.app",
-                name: "TimeFlow User",
-                gamificationCurrency: 100
-            )
-            modelContext.insert(defaultUser)
-            
-            // Seed default routines (sleep/eat) if none exist yet
-            let defaultUserID = defaultUser.id
-            let routinesFetch = FetchDescriptor<DailyRoutine>(
-                predicate: #Predicate<DailyRoutine> { routine in
-                    routine.userID == defaultUserID
-                }
-            )
-            let hasExistingRoutines = ((try? modelContext.fetch(routinesFetch))?.isEmpty == false)
-            if !hasExistingRoutines {
-                _ = RoutineService.shared.createDefaultRoutines(userID: defaultUserID, in: modelContext)
-            }
-            
-            // Add default themes (Light, Dark, Purple) - FREE and in shop
-            let purpleTheme = Theme(
-                id: "purple",
-                name: "Purple",
-                themeDescription: "Default purple gradient theme",
-                unlockMethod: .defaultTheme,
-                unlockRequirement: "Free",
-                currencyPrice: 0,
-                isDefault: true
-            )
-            modelContext.insert(purpleTheme)
-            
-            // Light and Dark themes - FREE (changed from currency)
-            let lightTheme = Theme(
-                id: "light",
-                name: "Light",
-                themeDescription: "Clean white theme with black accents",
-                unlockMethod: .defaultTheme, // Changed from .currency
-                unlockRequirement: "Free",
-                currencyPrice: 0, // Changed from 300
-                isDefault: true
-            )
-            modelContext.insert(lightTheme)
-            
-            let darkTheme = Theme(
-                id: "dark",
-                name: "Dark",
-                themeDescription: "Dark theme with white accents",
-                unlockMethod: .defaultTheme, // Changed from .currency
-                unlockRequirement: "Free",
-                currencyPrice: 0, // Changed from 300
-                isDefault: true
-            )
-            modelContext.insert(darkTheme)
-            
-            // Add level-based themes (must match AppTheme IDs)
-            let energeticTheme = Theme(
-                id: "energetic",
-                name: "Energetic",
-                themeDescription: "Vibrant and motivating",
-                unlockMethod: .level,
-                unlockRequirement: "Reach Level 5",
-                currencyPrice: 0,
-                isDefault: false,
-                unlockLevel: 5
-            )
-            modelContext.insert(energeticTheme)
-            
-            let calmTheme = Theme(
-                id: "calm",
-                name: "Calm",
-                themeDescription: "Peaceful and soothing",
-                unlockMethod: .level,
-                unlockRequirement: "Reach Level 10",
-                currencyPrice: 0,
-                isDefault: false,
-                unlockLevel: 10
-            )
-            modelContext.insert(calmTheme)
-            
-            // Add crystal-purchasable shop themes (must match AppTheme IDs)
-            let sunsetTheme = Theme(
-                id: "sunset",
-                name: "Sunset",
-                themeDescription: "Warm orange and red gradient",
-                unlockMethod: .currency,
-                unlockRequirement: "Purchase with crystals",
-                currencyPrice: 500,
-                isDefault: false
-            )
-            modelContext.insert(sunsetTheme)
-            
-            let vintageTheme = Theme(
-                id: "vintage",
-                name: "Vintage",
-                themeDescription: "Classic and timeless brown tones",
-                unlockMethod: .currency,
-                unlockRequirement: "Purchase with crystals",
-                currencyPrice: 500,
-                isDefault: false
-            )
-            modelContext.insert(vintageTheme)
-            
-            let neonTheme = Theme(
-                id: "neon",
-                name: "Neon",
-                themeDescription: "Bright cyan and pink neon colors",
-                unlockMethod: .currency,
-                unlockRequirement: "Purchase with crystals",
-                currencyPrice: 750,
-                isDefault: false
-            )
-            modelContext.insert(neonTheme)
-            
-            // Add mood-based themes (with IDs matching AppTheme)
-            let balancedTheme = Theme(
-                id: "balanced", // Added ID
-                name: "Balanced",
-                themeDescription: "Achieve balanced moods",
-                unlockMethod: .currency, // Changed to currency for now (all unlocked)
-                unlockRequirement: "Purchase with crystals",
-                currencyPrice: 400, // Price for now
-                isDefault: false,
-                moodRequirement: MoodRequirement(
-                    requiredMoods: [.happy, .calm],
-                    requiredCount: 7,
-                    pattern: "balanced"
-                )
-            )
-            modelContext.insert(balancedTheme)
-            
-            let consistencyTheme = Theme(
-                id: "consistency", // Added ID
-                name: "Consistency",
-                themeDescription: "Perfect week achievement",
-                unlockMethod: .currency, // Changed to currency for now (all unlocked)
-                unlockRequirement: "Purchase with crystals",
-                currencyPrice: 600, // Price for now
-                isDefault: false,
-                moodRequirement: MoodRequirement(
-                    requiredMoods: [],
-                    requiredCount: 0,
-                    pattern: "perfect_week"
-                )
-            )
-            modelContext.insert(consistencyTheme)
-            
-            // BETA TESTING: Unlock all themes for testing
-            defaultUser.ownedThemeIDs = [
-                "purple", "light", "dark", // Default themes
-                "energetic", "calm", // Level unlock themes
-                "sunset", "vintage", "neon", // Crystal-purchasable themes
-                "balanced", "consistency" // Mood-based themes
-            ]
-            
-            try? modelContext.save()
-        }
-    }
 }

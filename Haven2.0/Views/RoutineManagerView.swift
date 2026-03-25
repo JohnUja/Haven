@@ -12,23 +12,24 @@ struct RoutineManagerView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(ThemeManager.self) private var themeManager
+    @Environment(FirebaseAuthService.self) private var authService
     @Query private var users: [User]
     
     @State private var showingAddRoutine = false
     @State private var editingRoutine: DailyRoutine?
     @State private var isPresentingEdit = false
     @State private var showingUpgradePrompt = false
+    @State private var showingPaywall = false
     
     @Query private var routines: [DailyRoutine]
     private let userID: String
     
     private var currentUser: User? {
-        users.first
+        LocalUserProvisioningService.resolveCurrentUser(from: users)
     }
     
     private var subscriptionTier: SubscriptionTier {
-        // TODO: Get from User model when subscription status is added
-        SubscriptionService.shared.getSubscriptionTier(for: userID)
+        SubscriptionService.shared.getSubscriptionTier(for: currentUser)
     }
     
     private var canCreateMoreRoutines: Bool {
@@ -149,10 +150,16 @@ struct RoutineManagerView: View {
                     RoutineSetupView(routineToEdit: routine)
                 }
             }
+            .sheet(isPresented: $showingPaywall) {
+                PaywallView(triggerReason: .routineLimit)
+                    .environment(themeManager)
+                    .environment(authService)
+                    .environment(\.modelContext, modelContext)
+            }
             .alert("Upgrade Required", isPresented: $showingUpgradePrompt) {
                 Button("Maybe Later", role: .cancel) { }
                 Button("View Plans") {
-                    // TODO: Navigate to paywall/subscription view
+                    showingPaywall = true
                 }
             } message: {
                 let maxAllowed = SubscriptionService.shared.maxActiveRoutines(tier: subscriptionTier)

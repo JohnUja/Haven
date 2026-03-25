@@ -10,13 +10,19 @@ import SwiftData
 import UIKit
 import AudioToolbox
 
+// Freeze-investigation logging was intentionally disabled after the audit cleanup.
+@inline(__always)
+fileprivate func debugLog(location: String, message: String, data: [String: Any] = [:], hypothesisId: String = "") {}
+
 struct GoalsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(ThemeManager.self) private var themeManager
     @Environment(FirebaseAuthService.self) private var authService
     
     @Query private var goals: [Goal]
-    @Query private var allTasks: [Task]
+    // PERFORMANCE FIX: Removed @Query for allTasks to avoid Swift macro generation issues
+    // We'll fetch tasks on-demand in deleteGoalAndLinkedTasks instead
+    // This avoids the "replacement path doesn't exist" errors that cause freezes
     
     @State private var showingAddGoal = false
     @State private var showingFloatingMenu: Goal? = nil
@@ -44,23 +50,28 @@ struct GoalsView: View {
     private func deleteGoalAndLinkedTasks(_ goal: Goal) {
         let goalID = goal.id
         
-        // Find all tasks linked to this goal using ID check on the relationship
-        // (Since the relationship is optional, we unwrap safely)
-        let linkedTasks = allTasks.filter { $0.goal?.id == goalID }
-        
-        // Delete all linked tasks
-        for task in linkedTasks {
-            modelContext.delete(task)
+        // PERFORMANCE FIX: Fetch ONLY linked tasks using predicate (not all tasks)
+        // This avoids loading all tasks into memory and prevents freezes
+        let pred = #Predicate<Task> { task in
+            task.goal?.id == goalID
         }
         
-        // Delete the goal (Milestones will cascade delete automatically based on model rule)
+        do {
+            let linkedTasks = try modelContext.fetch(FetchDescriptor<Task>(predicate: pred))
+            linkedTasks.forEach { modelContext.delete($0) }
         modelContext.delete(goal)
-        
-        // Save changes
-        try? modelContext.save()
+            try modelContext.save()
+        } catch {
+            print("Delete failed: \(error)")
+        }
     }
     
     private var sortedGoals: [Goal] {
+        // #region agent log
+        let sortStartTime = Date()
+        let callStack = Thread.callStackSymbols.prefix(3).joined(separator: " -> ")
+        debugLog(location: "GoalsView.swift:63", message: "sortedGoals computed property started", data: ["goalsCount": goals.count, "sortOrder": goalSortOrder.rawValue, "callStack": callStack] as [String: Any], hypothesisId: "C")
+        // #endregion
         // Separate active and paused goals
         let activeGoals = goals.filter { $0.status != .paused }
         let pausedGoals = goals.filter { $0.status == .paused }
@@ -103,12 +114,16 @@ struct GoalsView: View {
         // Sort paused goals by creation date (most recent first)
         let sortedPaused = pausedGoals.sorted { $0.createdAt > $1.createdAt }
         
+        // #region agent log
+        let sortDuration = Date().timeIntervalSince(sortStartTime)
+        debugLog(location: "GoalsView.swift:63", message: "sortedGoals computed property completed", data: ["activeCount": sortedActive.count, "pausedCount": sortedPaused.count, "duration": sortDuration] as [String: Any], hypothesisId: "C")
+        // #endregion
         // Return active goals first, then paused goals at the bottom
         return sortedActive + sortedPaused
     }
     
-    var body: some View {
-        NavigationStack {
+    @ViewBuilder
+    private var goalsContent: some View {
             ZStack {
                 // Background - purple gradient (matching home screen)
                 themeManager.currentTheme.primaryGradient
@@ -126,7 +141,31 @@ struct GoalsView: View {
                         
                         if sortedGoals.isEmpty {
                             emptyStateView
+                                .onAppear {
+                                    // #region agent log
+                                    debugLog(location: "GoalsView.swift:emptyStateView", message: "Empty state view appeared", data: [:], hypothesisId: "C")
+                                    // #endregion
+                                }
                         } else {
+                            goalsGridView
+                        }
+                    }
+                }
+                .onAppear {
+                    // #region agent log
+                    debugLog(location: "GoalsView.swift:ScrollView", message: "ScrollView appeared", data: [:], hypothesisId: "C")
+                    // #endregion
+                }
+            }
+            .onAppear {
+                // #region agent log
+                debugLog(location: "GoalsView.swift:ZStack", message: "ZStack appeared", data: [:], hypothesisId: "C")
+                // #endregion
+            }
+    }
+    
+    @ViewBuilder
+    private var goalsGridView: some View {
                     LazyVGrid(columns: columns, spacing: 20) {
                         ForEach(sortedGoals) { goal in
                             GoalCardView(goal: goal)
@@ -141,13 +180,30 @@ struct GoalsView: View {
                                         showingFloatingMenu = goal
                                     }
                                 }
-                        }
+                    .onAppear {
+                        // #region agent log
+                        debugLog(location: "GoalsView.swift:GoalCardView", message: "GoalCardView appeared", data: ["goalId": goal.id, "goalTitle": goal.title] as [String: Any], hypothesisId: "C")
+                        // #endregion
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 20)
-                }
             }
-                }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 20)
+        .onAppear {
+            // #region agent log
+            debugLog(location: "GoalsView.swift:LazyVGrid", message: "LazyVGrid appeared", data: ["goalCount": sortedGoals.count] as [String: Any], hypothesisId: "C")
+            // #endregion
+        }
+    }
+    
+    var body: some View {
+        // #region agent log
+        let bodyStartTime = Date()
+        debugLog(location: "GoalsView.swift:body", message: "GoalsView body computation START", data: ["timestamp": Int(bodyStartTime.timeIntervalSince1970 * 1000)] as [String: Any], hypothesisId: "A")
+        // #endregion
+        return NavigationStack {
+            Group {
+                goalsContent
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
@@ -164,6 +220,7 @@ struct GoalsView: View {
                             .font(.title3)
                     }
                 }
+                    
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { showingAddGoal = true }) {
                         Image(systemName: "plus")
@@ -173,33 +230,64 @@ struct GoalsView: View {
             }
         }
         .sheet(isPresented: $showingAddGoal) {
-            AddGoalView()
-                .environment(themeManager)
-                .environment(\.modelContext, modelContext)
+            LazyView {
+                AddGoalView()
+                    .environment(themeManager)
+                    .environment(\.modelContext, modelContext)
+                    .onAppear {
+                        // #region agent log
+                        debugLog(location: "GoalsView.swift:sheet(AddGoalView)", message: "AddGoalView sheet appeared", data: [:], hypothesisId: "D")
+                        // #endregion
+                    }
+            }
         }
         .sheet(item: $showingEditGoal) { goal in
-            EditGoalInlineView(goal: goal)
-                .environment(themeManager)
-                .environment(\.modelContext, modelContext)
+            LazyView {
+                EditGoalInlineView(goal: goal)
+                    .environment(themeManager)
+                    .environment(\.modelContext, modelContext)
+                    .onAppear {
+                        // #region agent log
+                        debugLog(location: "GoalsView.swift:sheet(EditGoalInlineView)", message: "EditGoalInlineView sheet appeared", data: ["goalId": goal.id] as [String: Any], hypothesisId: "D")
+                        // #endregion
+                    }
+            }
         }
         .sheet(item: $showingAddTask) { goal in
-            AddTaskToGoalView(goal: goal)
-                .environment(themeManager)
-                .environment(authService)
-                .environment(\.modelContext, modelContext)
+            LazyView {
+                AddTaskToGoalView(goal: goal)
+                    .environment(themeManager)
+                    .environment(authService)
+                    .environment(\.modelContext, modelContext)
+                    .onAppear {
+                        // #region agent log
+                        debugLog(location: "GoalsView.swift:sheet(AddTaskToGoalView)", message: "AddTaskToGoalView sheet appeared", data: ["goalId": goal.id] as [String: Any], hypothesisId: "D")
+                        // #endregion
+                    }
+            }
         }
         .sheet(item: $selectedGoal) { goal in
-            NavigationStack {
-                GoalsDetailView(goal: goal)
+            LazyView {
+                NavigationStack {
+                    GoalsDetailView(goal: goal)
+                }
+                .environment(themeManager)
+                .environment(\.modelContext, modelContext)
+                .onAppear {
+                    // #region agent log
+                    debugLog(location: "GoalsView.swift:sheet(GoalsDetailView)", message: "GoalsDetailView sheet appeared", data: ["goalId": goal.id] as [String: Any], hypothesisId: "D")
+                    // #endregion
+                }
             }
-            .environment(themeManager)
-            .environment(\.modelContext, modelContext)
         }
         .alert(item: $showingDeleteConfirmation) { goal in
             Alert(
                 title: Text("Delete Goal?"),
                 message: Text("This will permanently delete the goal and all linked tasks. This action cannot be undone."),
                 primaryButton: .destructive(Text("Delete")) {
+                    // #region agent log
+                    debugLog(location: "GoalsView.swift:alert(delete)", message: "Delete confirmation alert action triggered", data: ["goalId": goal.id] as [String: Any], hypothesisId: "D")
+                    // #endregion
                     deleteGoalAndLinkedTasks(goal)
                 },
                 secondaryButton: .cancel()
@@ -212,12 +300,27 @@ struct GoalsView: View {
                     ? "This will add the goal and its tasks back to your workflow."
                     : "This will temporarily hide the goal and all its tasks from your workflow."),
                 primaryButton: .default(Text(goal.status == .paused ? "Resume" : "Pause")) {
+                    // #region agent log
+                    debugLog(location: "GoalsView.swift:alert(pause)", message: "Pause confirmation alert action triggered", data: ["goalId": goal.id] as [String: Any], hypothesisId: "D")
+                    // #endregion
                     goal.status = goal.status == .paused ? .active : .paused
                     try? modelContext.save()
                 },
                 secondaryButton: .cancel()
             )
         }
+        .onAppear {
+            // #region agent log
+            debugLog(location: "GoalsView.swift:onAppear", message: "GoalsView appeared - before modifiers", data: ["goalsCount": goals.count] as [String: Any], hypothesisId: "C")
+            // #endregion
+        }
+        .task {
+            // #region agent log
+            debugLog(location: "GoalsView.swift:task", message: "GoalsView task started - after view construction", data: [:], hypothesisId: "C")
+            // #endregion
+        }
+        // REMOVED: onChange handlers and @Query for allTasks - they cause Swift macro generation errors
+        // that lead to freezes. Tasks are now fetched on-demand when needed.
         .overlay(
             Group {
                 if let goal = showingFloatingMenu {

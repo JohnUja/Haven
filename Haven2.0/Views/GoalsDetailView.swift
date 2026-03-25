@@ -17,6 +17,8 @@ struct GoalsDetailView: View {
     
     let goal: Goal
     
+    // PERFORMANCE FIX: @Query properties initialized in init with predicates
+    // This prevents Swift macro generation issues that cause freezes when SwiftUI pre-evaluates sheet closures
     @Query private var tasks: [Task]
     @Query private var journalEntries: [JournalEntry]
     @Query private var users: [User]
@@ -36,16 +38,18 @@ struct GoalsDetailView: View {
         let goalID = goal.id
         
         // 🛠️ FIX: Predicate safely checks the optional relationship
+        // PERFORMANCE FIX: Added sort descriptor to prevent Swift macro generation issues
         _tasks = Query(filter: #Predicate<Task> { task in
             if let taskGoal = task.goal {
                 return taskGoal.id == goalID
             } else {
                 return false
             }
-        })
+        }, sort: [SortDescriptor(\Task.startTime, order: .forward)])
         
         // Assuming JournalEntry still uses String ID for loose coupling, keeping as is.
         // If JournalEntry also changed to Relationship, update this similar to above.
+        // PERFORMANCE FIX: Sort already present, keeping it
         _journalEntries = Query(filter: #Predicate<JournalEntry> { entry in
             entry.goalID == goalID
         }, sort: \JournalEntry.timestamp, order: .reverse)

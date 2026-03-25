@@ -8,6 +8,10 @@
 import Foundation
 import SwiftData
 
+// Freeze-investigation logging was intentionally disabled after the audit cleanup.
+@inline(__always)
+fileprivate func debugLog(location: String, message: String, data: [String: Any] = [:], hypothesisId: String = "") {}
+
 enum GamificationService {
     
     // MARK: - Task Reward Calculation
@@ -17,6 +21,10 @@ enum GamificationService {
         goal: Goal?,
         momentumBonus: Double
     ) -> (crystals: Int, xp: Int, score: Int) {
+        // #region agent log
+        let calcStartTime = Date()
+        debugLog(location: "GamificationService:calculateTaskRewards", message: "calculateTaskRewards started", data: ["taskId": task.id, "priority": task.priority.rawValue, "category": task.category.rawValue, "hasGoal": goal != nil, "momentumBonus": momentumBonus] as [String: Any], hypothesisId: "H")
+        // #endregion
         
         // Base crystals by priority
         let baseCrystals: Int
@@ -62,6 +70,10 @@ enum GamificationService {
         // Apply momentum bonus
         crystalAmount *= momentumBonus
         
+        // #region agent log
+        debugLog(location: "GamificationService:calculateTaskRewards", message: "Crystal calculation complete", data: ["taskId": task.id, "baseCrystals": baseCrystals, "categoryMultiplier": categoryMultiplier, "crystalAmount": crystalAmount, "momentumBonus": momentumBonus] as [String: Any], hypothesisId: "H")
+        // #endregion
+        
         // Base XP
         var xpAmount: Double = 10.0
         
@@ -104,11 +116,18 @@ enum GamificationService {
             productivityScore += 10.0 // +10 points for early
         }
         
-        return (
+        let result = (
             crystals: Int(crystalAmount.rounded()),
             xp: Int(xpAmount.rounded()),
             score: Int(productivityScore.rounded())
         )
+        
+        // #region agent log
+        let calcDuration = Date().timeIntervalSince(calcStartTime)
+        debugLog(location: "GamificationService:calculateTaskRewards", message: "calculateTaskRewards completed", data: ["taskId": task.id, "crystals": result.crystals, "xp": result.xp, "score": result.score, "duration": calcDuration] as [String: Any], hypothesisId: "H")
+        // #endregion
+        
+        return result
     }
     
     // MARK: - Momentum System

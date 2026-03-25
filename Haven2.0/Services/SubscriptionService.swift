@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftData
 
 enum SubscriptionTier: String, Codable {
     case guest = "guest"
@@ -20,12 +21,18 @@ class SubscriptionService {
     
     private init() {}
     
-    // For now, assume all users are on free tier unless we add subscription tracking
-    // TODO: Integrate with User model subscription status when available
-    func getSubscriptionTier(for userID: String) -> SubscriptionTier {
-        // Check UserDefaults or User model for subscription status
-        // For now, default to free
-        return .free
+    func getSubscriptionTier(for user: User?) -> SubscriptionTier {
+        guard let user else { return .guest }
+        return SubscriptionTier(rawValue: user.subscriptionTierRaw) ?? .free
+    }
+
+    func setSubscriptionTier(_ tier: SubscriptionTier, for user: User, in modelContext: ModelContext) async throws {
+        user.subscriptionTierRaw = tier.rawValue
+        try modelContext.save()
+
+        if let uid = LocalUserProvisioningService.currentAuthenticatedUserID() {
+            try? await FirestoreService.shared.updateSubscriptionStatus(uid: uid, status: tier.rawValue)
+        }
     }
     
     func canCreateMultipleRoutines(tier: SubscriptionTier) -> Bool {

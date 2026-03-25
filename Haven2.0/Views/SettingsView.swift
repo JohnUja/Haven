@@ -19,10 +19,9 @@ struct SettingsView: View {
     @State private var showingThemeShop = false
     @State private var showingEditProfile = false
     @State private var showingSignOutConfirmation = false
-    @State private var shareWithCommunity = false // Feed setting
     
     private var currentUser: User? {
-        users.first
+        LocalUserProvisioningService.resolveCurrentUser(from: users)
     }
     
     // Cached owned themes to avoid recomputation on every render
@@ -208,11 +207,7 @@ struct SettingsView: View {
     private var appearanceSection: some View {
         let theme = themeManager.currentTheme
         return VStack(alignment: .leading, spacing: theme.itemSpacing) {
-            Text("APPEARANCE")
-                .font(theme.headerFont) // Use theme headerFont (size 11, semibold)
-                .foregroundColor(theme.textPrimary)
-                // Removed .textCase(.uppercase)
-                .padding(.horizontal, 20)
+            sectionTitle("Appearance")
             
             VStack(alignment: .leading, spacing: 16) {
                 // Default Themes Section
@@ -294,11 +289,7 @@ struct SettingsView: View {
     // MARK: - Mood Jars Section
     private var moodJarsSection: some View {
         VStack(alignment: .leading, spacing: themeManager.currentTheme.itemSpacing) {
-            Text("MOOD JARS")
-                .font(themeManager.currentTheme.headerFont) // Use theme headerFont (11pt, semibold)
-                .foregroundColor(themeManager.currentTheme.textPrimary)
-                // Removed .textCase(.uppercase)
-                .padding(.horizontal, 20)
+            sectionTitle("Mood Tracker")
             
             if currentUser != nil {
             settingsCard(
@@ -322,11 +313,7 @@ struct SettingsView: View {
     // MARK: - Routines Section
     private var routinesSection: some View {
         VStack(alignment: .leading, spacing: themeManager.currentTheme.itemSpacing) {
-            Text("ROUTINES")
-                .font(themeManager.currentTheme.headerFont) // Use theme headerFont (11pt, semibold)
-                .foregroundColor(themeManager.currentTheme.textPrimary)
-                // Removed .textCase(.uppercase)
-                .padding(.horizontal, 20)
+            sectionTitle("Routines")
             
             if let user = currentUser {
                 settingsCard(
@@ -350,11 +337,7 @@ struct SettingsView: View {
     // MARK: - Time & Date Section
     private var timeDateSection: some View {
         VStack(alignment: .leading, spacing: themeManager.currentTheme.itemSpacing) {
-            Text("TIME & DATE")
-                .font(themeManager.currentTheme.headerFont) // Use theme headerFont (11pt, semibold)
-                .foregroundColor(themeManager.currentTheme.textPrimary)
-                // Removed .textCase(.uppercase)
-                .padding(.horizontal, 20)
+            sectionTitle("Time & Date")
             
             settingsCard(
                 title: "Time Settings",
@@ -369,11 +352,7 @@ struct SettingsView: View {
     // MARK: - Notifications Section
     private var notificationsSection: some View {
         VStack(alignment: .leading, spacing: themeManager.currentTheme.itemSpacing) {
-            Text("NOTIFICATIONS")
-                .font(themeManager.currentTheme.headerFont) // Use theme headerFont (11pt, semibold)
-                .foregroundColor(themeManager.currentTheme.textPrimary)
-                // Removed .textCase(.uppercase)
-                .padding(.horizontal, 20)
+            sectionTitle("Notifications")
             
             settingsCard(
                 title: "Notification Settings",
@@ -395,57 +374,10 @@ struct SettingsView: View {
         }
     }
     
-    // MARK: - Feed Section (Removed - moved to ProfileView)
-    
-    // MARK: - Feed Section (Old - Keep for reference)
-    private var feedSection_OLD: some View {
-        VStack(alignment: .leading, spacing: themeManager.currentTheme.itemSpacing) {
-            Text("Feed")
-                .font(themeManager.currentTheme.titleFont) // Use theme titleFont (10pt, regular)
-                .foregroundColor(.white)
-                .padding(.horizontal, 20)
-            
-                    VStack(spacing: themeManager.currentTheme.itemSpacing) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Share with Community")
-                            .font(themeManager.currentTheme.titleFont) // Use theme titleFont (10pt, regular)
-                            .foregroundColor(.white)
-                        
-                        Text("Anonymously share your major achievements with the global community")
-                            .font(themeManager.currentTheme.titleFont) // Use theme titleFont (10pt, regular)
-                            .foregroundColor(.white.opacity(0.8))
-                            .lineLimit(2)
-                    }
-                    
-                    Spacer()
-                    
-                    Toggle("", isOn: $shareWithCommunity)
-                        .tint(.purple)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: themeManager.currentTheme.cardCornerRadius)
-                        .fill(themeManager.currentTheme.glassBackground)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: themeManager.currentTheme.cardCornerRadius)
-                                .stroke(themeManager.currentTheme.glassBorder, lineWidth: themeManager.currentTheme.cardBorderWidth)
-                        )
-                )
-            }
-            .padding(.horizontal, 20)
-        }
-    }
-    
     // MARK: - Account Section (Detailed Settings)
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: themeManager.currentTheme.itemSpacing) {
-            Text("ACCOUNT")
-                .font(themeManager.currentTheme.headerFont) // Use theme headerFont (11pt, semibold)
-                .foregroundColor(themeManager.currentTheme.textPrimary)
-                // Removed .textCase(.uppercase)
-                .padding(.horizontal, 20)
+            sectionTitle("Account")
             
             // Edit Profile
             settingsCard(
@@ -488,12 +420,12 @@ struct SettingsView: View {
         return HStack(spacing: 16) {
             ZStack {
                 Circle()
-                    .fill(theme.accentColor.opacity(theme.iconBackgroundOpacity))
+                    .fill(color.opacity(0.16))
                     .frame(width: theme.iconCircleSize, height: theme.iconCircleSize)
                 
                 Image(systemName: icon)
                     .font(themeManager.currentTheme.headerFont) // Use theme headerFont (11pt, semibold)
-                    .foregroundColor(theme.accentColor)
+                    .foregroundColor(color)
             }
             
             Text(title)
@@ -520,11 +452,7 @@ struct SettingsView: View {
     // MARK: - Developer Mode Section
     private var developerModeSection: some View {
         VStack(alignment: .leading, spacing: themeManager.currentTheme.itemSpacing) {
-            Text("DEVELOPER MODE")
-                .font(themeManager.currentTheme.headerFont) // Use theme headerFont (11pt, semibold)
-                .foregroundColor(themeManager.currentTheme.textPrimary)
-                // Removed .textCase(.uppercase)
-                .padding(.horizontal, 20)
+            sectionTitle("Developer Mode")
             
             settingsCard(
                 title: "Developer Tools",
@@ -539,11 +467,7 @@ struct SettingsView: View {
     // MARK: - Data & Privacy Section
     private var dataPrivacySection: some View {
         VStack(alignment: .leading, spacing: themeManager.currentTheme.itemSpacing) {
-            Text("DATA & PRIVACY")
-                .font(themeManager.currentTheme.headerFont) // Use theme headerFont (11pt, semibold)
-                .foregroundColor(themeManager.currentTheme.textPrimary)
-                // Removed .textCase(.uppercase)
-                .padding(.horizontal, 20)
+            sectionTitle("Data & Privacy")
             
             settingsCard(
                 title: "Privacy Settings",
@@ -558,11 +482,7 @@ struct SettingsView: View {
     // MARK: - About Section
     private var aboutSection: some View {
         VStack(alignment: .leading, spacing: themeManager.currentTheme.itemSpacing) {
-            Text("ABOUT")
-                .font(themeManager.currentTheme.headerFont) // Use theme headerFont (11pt, semibold)
-                .foregroundColor(themeManager.currentTheme.textPrimary)
-                // Removed .textCase(.uppercase)
-                .padding(.horizontal, 20)
+            sectionTitle("About")
             
                     VStack(spacing: themeManager.currentTheme.itemSpacing) {
                 settingsCard(
@@ -603,18 +523,25 @@ struct SettingsView: View {
     }
     
     // MARK: - Helper Views
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 14, weight: .semibold, design: .default))
+            .foregroundColor(themeManager.currentTheme.textPrimary)
+            .padding(.horizontal, 20)
+    }
+
     private func settingsCard(title: String, icon: String, color: Color, destination: AnyView) -> some View {
         let theme = themeManager.currentTheme
         return NavigationLink(destination: destination) {
             HStack(spacing: 16) {
                 ZStack {
                     Circle()
-                        .fill(theme.accentColor.opacity(theme.iconBackgroundOpacity))
+                        .fill(color.opacity(0.16))
                         .frame(width: theme.iconCircleSize, height: theme.iconCircleSize)
                     
                     Image(systemName: icon)
                         .font(themeManager.currentTheme.headerFont) // Use theme headerFont (11pt, semibold)
-                        .foregroundColor(theme.accentColor)
+                        .foregroundColor(color)
                 }
                 
                 Text(title)
@@ -684,8 +611,8 @@ struct SettingsView: View {
             HStack {
                 Spacer()
                 Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                    .appTextStyle(.body, theme: themeManager.currentTheme)
                     .foregroundColor(.red)
-                        .appTextStyle(.body, theme: themeManager.currentTheme)
                 Spacer()
             }
             .padding()
@@ -694,7 +621,7 @@ struct SettingsView: View {
                     .fill(themeManager.currentTheme.glassBackground)
                     .overlay(
                         RoundedRectangle(cornerRadius: themeManager.currentTheme.cardCornerRadius)
-                            .stroke(themeManager.currentTheme.accentColor.opacity(0.5), lineWidth: themeManager.currentTheme.cardBorderWidth)
+                            .stroke(Color.red.opacity(0.35), lineWidth: themeManager.currentTheme.cardBorderWidth)
                     )
             )
         }

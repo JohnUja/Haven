@@ -48,7 +48,7 @@ struct AddTaskView: View {
     @State private var applyLockToSeries: Bool? = nil
     
     private var currentUser: User? {
-        users.first
+        LocalUserProvisioningService.resolveCurrentUser(from: users)
     }
     
     var body: some View {
@@ -61,10 +61,10 @@ struct AddTaskView: View {
                     .ignoresSafeArea()
                 
                 ScrollView {
-                    VStack(spacing: 24) {
+                    VStack(spacing: 18) {
                         // Task Details Section
-                        sectionView(title: "TASK DETAILS", theme: theme) {
-                            VStack(spacing: 16) {
+                        sectionView(title: "Task Details", theme: theme) {
+                            VStack(spacing: 12) {
                                 // Task Title - Reduced size to match theme
                                 TextField("Task title", text: $title)
                                     .font(theme.bodyFont) // Use theme bodyFont for consistency
@@ -98,7 +98,7 @@ struct AddTaskView: View {
                                         .foregroundColor(theme.textPrimary)
                                         .accentColor(theme.accentColor)
                                         .scrollContentBackground(.hidden)
-                                        .frame(minHeight: 100)
+                                        .frame(minHeight: 84)
                                         .padding(.horizontal, theme.cardPadding - 4)
                                         .padding(.vertical, theme.cardVerticalPadding - 4)
                                 }
@@ -111,7 +111,7 @@ struct AddTaskView: View {
                         }
                         
                         // Task Type Section
-                        sectionView(title: "TASK TYPE", theme: theme) {
+                        sectionView(title: "Task Type", theme: theme) {
                             HStack {
                                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                                     .font(.system(size: 16))
@@ -132,7 +132,7 @@ struct AddTaskView: View {
                         }
                         
                         // Time Section
-                        sectionView(title: "TIME", theme: theme) {
+                        sectionView(title: "Time", theme: theme) {
                             if !isFlexibleTask {
                                 VStack(spacing: 16) {
                                     // Vertical layout - one above the other
@@ -169,8 +169,8 @@ struct AddTaskView: View {
                         }
                         
                         // Category Section
-                        sectionView(title: "CATEGORY", theme: theme) {
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 12) {
+                        sectionView(title: "Category", theme: theme) {
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
                                 ForEach(TaskCategory.allCases, id: \.self) { cat in
                                     Button(action: { category = cat }) {
                                         HStack(spacing: 8) {
@@ -180,7 +180,7 @@ struct AddTaskView: View {
                                                 .frame(width: 24, height: 24)
                                             
                                             Text(cat.displayName)
-                                                .font(.system(size: 16, weight: category == cat ? .bold : .regular, design: .default))
+                                                .font(.system(size: 14, weight: category == cat ? .semibold : .regular, design: .default))
                                                 .foregroundColor(theme.textPrimary)
                                             
                                             Spacer()
@@ -191,7 +191,7 @@ struct AddTaskView: View {
                                                     .foregroundColor(theme.accentColor)
                                             }
                                         }
-                                        .padding(.horizontal, 12)
+                                        .padding(.horizontal, 10)
                                         .padding(.vertical, 8)
                                         .background(
                                             RoundedRectangle(cornerRadius: theme.smallCornerRadius)
@@ -212,7 +212,7 @@ struct AddTaskView: View {
                         }
                         
                         // Recurrence Section
-                        sectionView(title: "RECURRENCE", theme: theme) {
+                        sectionView(title: "Recurrence", theme: theme) {
                             VStack(spacing: 16) {
                                 Toggle("Make this a recurring task", isOn: $isRecurring)
                                     .foregroundColor(theme.textPrimary)
@@ -239,7 +239,7 @@ struct AddTaskView: View {
                         }
                         
                         // Settings Section
-                        sectionView(title: "SETTINGS", theme: theme) {
+                        sectionView(title: "Settings", theme: theme) {
                             HStack {
                                 Image(systemName: "lock.fill")
                                     .font(.system(size: 16))

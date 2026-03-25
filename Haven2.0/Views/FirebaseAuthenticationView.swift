@@ -23,6 +23,7 @@ struct FirebaseAuthenticationView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(ThemeManager.self) private var themeManager
     @State private var showError = false
+    @State private var showRestorePurchasesInfo = false
     @State private var showEmailSignUp = false
     @State private var email = ""
     @State private var password = ""
@@ -31,13 +32,6 @@ struct FirebaseAuthenticationView: View {
     
     // --- This variable will hold the nonce for the *current* Apple Sign-In attempt ---
     @State private var currentAppleNonce: String?
-    
-    // --- 3. ADDED PLACEHOLDER FOR 'User' and 'Theme' ---
-    // This allows the file to compile until your SwiftData models
-    // (like User.swift) are correctly imported or defined.
-    typealias User = String // Placeholder - REMOVE IF 'User' MODEL IS ACCESSIBLE
-    typealias Theme = String // Placeholder - REMOVE IF 'Theme' MODEL IS ACCESSIBLE
-    // --------------------------------------------------
     
     var body: some View {
         ZStack {
@@ -205,6 +199,16 @@ struct FirebaseAuthenticationView: View {
                             .frame(height: 50)
                             .frame(maxWidth: .infinity)
                             .cornerRadius(12)
+                            .padding(.horizontal, 40)
+
+                            Button(action: {
+                                showRestorePurchasesInfo = true
+                            }) {
+                                Text("Restore Purchases")
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.9))
+                                    .underline()
+                            }
                             .padding(.horizontal, 40)
                             
                             // Google Sign-In - Dark grey button with white text
@@ -384,6 +388,11 @@ struct FirebaseAuthenticationView: View {
         } message: {
             Text(authService.errorMessage ?? "An unknown error occurred")
         }
+        .alert("Restore Purchases", isPresented: $showRestorePurchasesInfo) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Restore Purchases is available from the sign-in screen so returning users can find it quickly. Full App Store restore support still needs to be connected to billing.")
+        }
     }
     
     // MARK: - Sign In Handlers
@@ -495,80 +504,23 @@ struct FirebaseAuthenticationView: View {
     // MARK: - Local User Management
     @MainActor
     private func createOrUpdateLocalUser() async {
-        // This function needs to be implemented once your
-        // SwiftData 'User' and 'Theme' models are available.
-        
-        guard let firebaseUser = authService.currentUser else {
-            print("createOrUpdateLocalUser: No firebase user found.")
-            return
-        }
-        print("createOrUpdateLocalUser: Logic to create/update local user for \(firebaseUser.uid) goes here.")
-        
-        // --- Placeholder Logic ---
-        // You will need to uncomment and adapt the code below
-        // once your SwiftData models are finalized.
-        
-        /*
-        let firebaseUID = firebaseUser.uid
-        let fetchDescriptor = FetchDescriptor<User>(
-            predicate: #Predicate<User> { $0.id == firebaseUID }
-        )
-        
-        let existingUsers = (try? modelContext.fetch(fetchDescriptor)) ?? []
-        
-        if let existingUser = existingUsers.first {
-            print("Updating existing local user: \(existingUser.id)")
-            existingUser.email = firebaseUser.email ?? existingUser.email
-            existingUser.name = firebaseUser.displayName ?? existingUser.name
-        } else {
-            print("Creating new local user: \(firebaseUser.uid)")
-            let newUser = User(
-                id: firebaseUser.uid,
-                email: firebaseUser.email ?? "",
-                name: firebaseUser.displayName ?? "User",
-                gamificationCurrency: 100 // Welcome bonus
-            )
-            modelContext.insert(newUser)
-            
-            await setupDefaultThemes(for: newUser)
-        }
-        
         do {
-            try modelContext.save()
-            print("Local user saved successfully.")
-            
-            // ... (Sync to Firestore logic) ...
-            
+            _ = try await LocalUserProvisioningService.ensureLocalUserExists(in: modelContext)
         } catch {
-            authService.errorMessage = "Failed to save user: \(error.localizedDescription)"
+            authService.errorMessage = "Failed to prepare your local account: \(error.localizedDescription)"
             showError = true
         }
-         */
     }
     
     @MainActor
     private func setupDefaultThemes(for user: User) async {
-        // This function needs to be implemented once your
-        // SwiftData 'Theme' model is available.
-        
-        print("Setup default themes logic goes here.")
-        
-        /*
-        let themeFetchDescriptor = FetchDescriptor<Theme>()
-        let existingThemes = (try? modelContext.fetch(themeFetchDescriptor)) ?? []
-        
-        if existingThemes.isEmpty {
-             let defaultTheme = Theme(
-                 name: "Default",
-                 themeDescription: "Clean and minimal design",
-                 unlockMethod: .defaultTheme,
-                 unlockRequirement: "Default theme",
-                 isDefault: true
-             )
-             modelContext.insert(defaultTheme)
-             print("Default theme inserted.")
+        _ = user
+        do {
+            _ = try await LocalUserProvisioningService.ensureLocalUserExists(in: modelContext)
+        } catch {
+            authService.errorMessage = "Failed to sync your themes: \(error.localizedDescription)"
+            showError = true
         }
-        */
     }
 }
 

@@ -11,6 +11,7 @@ import SwiftData
 struct DailySummaryPopUpView: View {
     let summary: DailySummary
     let onDismiss: () -> Void
+    @Environment(ThemeManager.self) private var themeManager
     
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
@@ -44,21 +45,21 @@ struct DailySummaryPopUpView: View {
                         .font(.system(size: 70, weight: .bold))
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [.green, .mint],
+                                colors: [themeManager.currentTheme.accentColor, themeManager.currentTheme.accentColor.opacity(0.65)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .shadow(color: .green.opacity(0.6), radius: 15)
+                        .shadow(color: themeManager.currentTheme.accentColor.opacity(0.4), radius: 15)
                 }
                 
                 Text("Day Complete!")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
+                    .foregroundColor(themeManager.currentTheme.textPrimary)
                 
                 Text(dateFormatter.string(from: summary.date))
                     .font(.system(size: 16, weight: .medium, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(themeManager.currentTheme.textSecondary)
             }
             .padding(.top, 30)
             .padding(.bottom, 20)
@@ -102,7 +103,7 @@ struct DailySummaryPopUpView: View {
                     .padding(.vertical, 14)
                     .background(
                         LinearGradient(
-                            colors: [.purple, .pink],
+                            colors: [themeManager.currentTheme.accentColor, themeManager.currentTheme.accentColor.opacity(0.75)],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
@@ -115,16 +116,12 @@ struct DailySummaryPopUpView: View {
         .frame(maxWidth: 340)
         .background(
             RoundedRectangle(cornerRadius: 24)
-                .fill(.ultraThinMaterial)
+                .fill(themeManager.currentTheme.glassBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: 24)
                         .stroke(
-                            LinearGradient(
-                                colors: [.purple.opacity(0.3), .pink.opacity(0.2)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            ),
-                            lineWidth: 1.5
+                            themeManager.currentTheme.glassBorder,
+                            lineWidth: themeManager.currentTheme.cardBorderWidth
                         )
                 )
         )

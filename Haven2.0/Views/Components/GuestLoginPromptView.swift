@@ -47,7 +47,7 @@ struct GuestLoginPromptView: View {
                     FeatureRow(icon: "checkmark.circle.fill", text: "Save your progress forever")
                     FeatureRow(icon: "checkmark.circle.fill", text: "Create unlimited tasks")
                     FeatureRow(icon: "checkmark.circle.fill", text: "Unlock timeline & routines")
-                    FeatureRow(icon: "checkmark.circle.fill", text: "Join leaderboards")
+                    FeatureRow(icon: "checkmark.circle.fill", text: "Unlock more personalized progress insights")
                     FeatureRow(icon: "checkmark.circle.fill", text: "Sync across devices")
                 }
                 .padding(.horizontal, 20)

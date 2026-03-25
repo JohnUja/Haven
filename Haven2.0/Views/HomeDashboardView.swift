@@ -11,6 +11,10 @@ import AudioToolbox
 import FirebaseAuth
 import Combine
 
+// Freeze-investigation logging was intentionally disabled after the audit cleanup.
+@inline(__always)
+fileprivate func debugLog(location: String, message: String, data: [String: Any] = [:], hypothesisId: String = "") {}
+
 struct HomeDashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(ThemeManager.self) private var themeManager
@@ -22,15 +26,8 @@ struct HomeDashboardView: View {
     // OPTIMIZED: Added fetch limits to prevent loading all records
     // Only query small datasets (users, routines)
     // Tasks, taskBlocks, and goals are queried on-demand in ViewModel with predicates
-    // NOTE: Users sorted by level/XP for consistency
-    // (users table is typically small anyway, so no limit needed)
-    @Query(sort: [SortDescriptor(\User.level, order: .reverse), SortDescriptor(\User.currentXP, order: .reverse)]) 
-    private var users: [User]
-    
-    // Routines: Sort by creation date to ensure all user routines are loaded
-    // (most users won't have >200 routines, but this ensures completeness)
-    @Query(sort: [SortDescriptor(\DailyRoutine.createdAt, order: .reverse)]) 
-    private var routines: [DailyRoutine]
+    @Query private var users: [User]
+    @Query private var routines: [DailyRoutine]
     
     // MARK: - ViewModel
     @State private var vm = HomeDashboardViewModel()
@@ -49,6 +46,10 @@ struct HomeDashboardView: View {
     @State private var showingProgressDetails = false
     @State private var showingRecents = false
     @State private var viewMode: HomeViewMode = .tasks
+    @State private var quickTaskTitle = ""
+    @State private var quickTaskPriority: PriorityType = .normal
+    @State private var quickTaskCategory: TaskCategory = .personal
+    @State private var isQuickTaskComposerExpanded = false
     
     // Debounce date changes to prevent hangs during rapid scrolling (same as TimelineView)
     @State private var pendingDateChange: Date? = nil
@@ -78,7 +79,11 @@ struct HomeDashboardView: View {
             theme: theme,
             onTaskCompleted: vm.handleTaskCompleted,
             onEditTask: { task in
-                vm.showingFloatingMenu = task
+                if isInPlanView {
+                    vm.showingEditTask = task
+                } else {
+                    vm.showingFloatingMenu = task
+                }
             },
             onLevelUp: { levelUp in
                 vm.handleLevelUp(levelUp: levelUp)
@@ -93,6 +98,50 @@ struct HomeDashboardView: View {
             },
             isInPlanView: isInPlanView
         )
+    }
+
+    private func createQuickTask() {
+        guard let user = currentUser else { return }
+
+        let trimmedTitle = quickTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else { return }
+
+        let startTime = defaultQuickTaskStartTime(for: vm.selectedDate)
+        let endTime = startTime.addingTimeInterval(3600)
+
+        let task = Task(
+            userID: user.id,
+            title: trimmedTitle,
+            startTime: startTime,
+            endTime: endTime,
+            priority: quickTaskPriority,
+            category: quickTaskCategory
+        )
+
+        modelContext.insert(task)
+        try? modelContext.save()
+        quickTaskTitle = ""
+        updateViewModel()
+    }
+
+    private func defaultQuickTaskStartTime(for selectedDate: Date) -> Date {
+        let calendar = Calendar.current
+        let baseDate = calendar.isDateInToday(selectedDate) ? Date() : selectedDate
+
+        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: baseDate)
+        let minute = components.minute ?? 0
+        let roundedMinute = minute <= 30 ? 30 : 0
+        components.minute = roundedMinute
+        if roundedMinute == 0 {
+            components.hour = (components.hour ?? 8) + 1
+        }
+
+        if !calendar.isDateInToday(selectedDate) {
+            components.hour = 9
+            components.minute = 0
+        }
+
+        return calendar.date(from: components) ?? baseDate
     }
     
     enum HomeViewMode: String, CaseIterable {
@@ -143,6 +192,7 @@ struct HomeDashboardView: View {
                 themeCalendarView(theme: theme)
                     .presentationDetents([.medium])
                     .presentationDragIndicator(.visible)
+                    .presentationBackground(.clear)
             }
             .sheet(isPresented: $vm.showingAddBlock) {
                 AddBlockView(selectedDate: vm.selectedDate)
@@ -180,6 +230,7 @@ struct HomeDashboardView: View {
                     vm.showingMoveToDay = nil
                 })
                 .presentationDetents([.medium])
+                .presentationBackground(.clear)
                 .environment(\.modelContext, modelContext)
             }
             .sheet(isPresented: Binding(
@@ -194,6 +245,7 @@ struct HomeDashboardView: View {
                         vm.showingMoveToDayBlock = nil
                     })
                     .presentationDetents([.medium])
+                    .presentationBackground(.clear)
                     .environment(\.modelContext, modelContext)
                 }
             }
@@ -966,6 +1018,13 @@ struct HomeDashboardView: View {
                     isViewAllTasksMode: $vm.isViewAllTasksMode,
                     onAddTask: {
                         vm.showingAddTask = true
+                    },
+                    onEditTask: { task in
+                        vm.showingEditTask = task
+                    },
+                    onDeleteTask: { task in
+                        deleteTask(task)
+                        vm.refreshSelectedDateData()
                     }
                 )
                 .padding(.horizontal, 20)
@@ -1068,6 +1127,9 @@ struct HomeDashboardView: View {
                     }
                 }
                 .padding(.horizontal, theme.sectionPadding)
+
+            quickTaskComposer(theme: theme)
+                .padding(.horizontal, 20)
                 
             // Simple Chronological Task List (not grouped masterTaskListView)
             simpleChronologicalTaskListView(theme: theme)
@@ -1086,7 +1148,16 @@ struct HomeDashboardView: View {
     // MARK: - Helper: Get Sorted Plan Items (tasks and blocks unified, time-sensitive order)
     // OPTIMIZED: Now uses ViewModel's cached filtered tasks
     private func getSortedPlanItems() -> ([PlanItem], [String: [Task]]) {
+        // #region agent log
+        let funcStartTime = Date()
+        debugLog(location: "HomeDashboardView:getSortedPlanItems", message: "getSortedPlanItems started", data: [:], hypothesisId: "D")
+        // #endregion
+        
         let filteredTasks = vm.getFilteredTasks()
+        
+        // #region agent log
+        debugLog(location: "HomeDashboardView:getSortedPlanItems", message: "Filtered tasks retrieved", data: ["filteredTasksCount": filteredTasks.count] as [String: Any], hypothesisId: "D")
+        // #endregion
         
         // Get all items with their start times
         var allItems: [PlanItem] = []
@@ -1117,6 +1188,11 @@ struct HomeDashboardView: View {
         }
         
         // Sort by time-sensitive: incomplete first, then by start time (most approaching at top)
+        // #region agent log
+        let sortStartTime = Date()
+        debugLog(location: "HomeDashboardView:getSortedPlanItems", message: "Starting sort operation", data: ["allItemsCount": allItems.count] as [String: Any], hypothesisId: "D")
+        // #endregion
+        
         let sortedItems = allItems.sorted { item1, item2 in
             // Incomplete items first
             if item1.isComplete != item2.isComplete {
@@ -1125,6 +1201,16 @@ struct HomeDashboardView: View {
             // Then by start time (earliest/most approaching at top)
             return item1.startTime < item2.startTime
         }
+        
+        // #region agent log
+        let sortDuration = Date().timeIntervalSince(sortStartTime)
+        debugLog(location: "HomeDashboardView:getSortedPlanItems", message: "Sort completed", data: ["sortedItemsCount": sortedItems.count, "duration": sortDuration] as [String: Any], hypothesisId: "D")
+        // #endregion
+        
+        // #region agent log
+        let totalDuration = Date().timeIntervalSince(funcStartTime)
+        debugLog(location: "HomeDashboardView:getSortedPlanItems", message: "getSortedPlanItems completed", data: ["totalDuration": totalDuration] as [String: Any], hypothesisId: "D")
+        // #endregion
         
         return (sortedItems, tasksByBlock)
     }
@@ -1192,14 +1278,147 @@ struct HomeDashboardView: View {
                         if let task = standaloneTasks.first(where: { $0.id == item.id }) {
                             taskCardView(task: task, theme: theme, isInPlanView: true)
                                 .padding(.horizontal, 20)
-                                .onTapGesture {
-                                    vm.showingEditTask = task
-                                }
                                 .id(task.id)
                         }
                     }
                 }
             }
+        }
+    }
+
+    private func quickTaskComposer(theme: any AppTheme) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button(action: {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                    isQuickTaskComposerExpanded.toggle()
+                }
+            }) {
+                HStack(spacing: 10) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(theme.accentColor)
+                    
+                    Text(isQuickTaskComposerExpanded ? "Hide Quick Add" : "Quick Add")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(theme.textPrimary)
+                    
+                    Spacer()
+                    
+                    Text("1 hr default")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(theme.textSecondary)
+                    
+                    Image(systemName: isQuickTaskComposerExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(theme.textSecondary)
+                }
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            if isQuickTaskComposerExpanded {
+                VStack(spacing: 12) {
+                    HStack(spacing: 12) {
+                        TextField("Add a task without opening the full editor", text: $quickTaskTitle)
+                            .font(theme.bodyFont)
+                            .foregroundColor(theme.textPrimary)
+                            .tint(theme.accentColor)
+
+                        Button(action: createQuickTask) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(theme.accentColor)
+                        }
+                        .disabled(quickTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .opacity(quickTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1.0)
+                    }
+
+                    HStack(spacing: 10) {
+                        Menu {
+                            ForEach(PriorityType.allCases, id: \.self) { priority in
+                                Button(priority.rawValue.capitalized) {
+                                    quickTaskPriority = priority
+                                }
+                            }
+                        } label: {
+                            quickTaskPill(
+                                label: quickTaskPriority.rawValue.capitalized,
+                                color: colorForPriority(quickTaskPriority)
+                            )
+                        }
+
+                        Menu {
+                            ForEach(TaskCategory.allCases, id: \.self) { category in
+                                Button(category.displayName) {
+                                    quickTaskCategory = category
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: quickTaskCategory.icon)
+                                Text(quickTaskCategory.displayName)
+                            }
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundColor(theme.textPrimary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(
+                                Capsule()
+                                    .fill(theme.glassBackground)
+                                    .overlay(
+                                        Capsule()
+                                            .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                                    )
+                            )
+                        }
+
+                        Spacer()
+                    }
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                .fill(theme.glassBackground)
+                .overlay(
+                    RoundedRectangle(cornerRadius: theme.cardCornerRadius)
+                        .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                )
+        )
+    }
+
+    private func quickTaskPill(label: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+            Text(label)
+        }
+        .font(.system(size: 12, weight: .semibold, design: .rounded))
+        .foregroundColor(themeManager.currentTheme.textPrimary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            Capsule()
+                .fill(themeManager.currentTheme.glassBackground)
+                .overlay(
+                    Capsule()
+                        .stroke(themeManager.currentTheme.glassBorder, lineWidth: themeManager.currentTheme.cardBorderWidth)
+                )
+        )
+    }
+
+    private func colorForPriority(_ priority: PriorityType) -> Color {
+        switch priority {
+        case .urgent:
+            return .red
+        case .high:
+            return .orange
+        case .normal:
+            return .green
+        case .low:
+            return .blue
         }
     }
     
@@ -1385,14 +1604,49 @@ struct HomeDashboardView: View {
         .buttonStyle(PlainButtonStyle())
         .contextMenu {
             Button(action: {
+                // #region agent log
+                let toggleStartTime = Date()
+                debugLog(location: "HomeDashboardView.swift:taskToggle", message: "Task toggle started", data: ["taskId": task.id, "taskTitle": task.title, "currentState": task.isComplete] as [String: Any], hypothesisId: "F")
+                // #endregion
+                
                 // CRITICAL FIX: Ensure task has a valid id before saving (prevents SwiftData crash)
                 if task.id.isEmpty {
+                    // #region agent log
+                    debugLog(location: "HomeDashboardView.swift:taskToggle", message: "Task ID was empty, generating new UUID", data: ["taskTitle": task.title] as [String: Any], hypothesisId: "F")
+                    // #endregion
                     task.id = UUID().uuidString
                 }
+                
+                let oldState = task.isComplete
                 task.isComplete.toggle()
+                let newState = task.isComplete
+                
+                // #region agent log
+                debugLog(location: "HomeDashboardView.swift:taskToggle", message: "Task state toggled", data: ["taskId": task.id, "oldState": oldState, "newState": newState] as [String: Any], hypothesisId: "F")
+                // #endregion
+                
                 // CRITICAL FIX: Ensure modelContext.save() happens on MainActor
                 _Concurrency.Task { @MainActor in
-                try? modelContext.save()
+                    // #region agent log
+                    let saveStartTime = Date()
+                    debugLog(location: "HomeDashboardView.swift:taskToggle", message: "Starting modelContext.save()", data: ["taskId": task.id] as [String: Any], hypothesisId: "F")
+                    // #endregion
+                    do {
+                        try modelContext.save()
+                        // #region agent log
+                        let saveDuration = Date().timeIntervalSince(saveStartTime)
+                        debugLog(location: "HomeDashboardView.swift:taskToggle", message: "modelContext.save() succeeded", data: ["taskId": task.id, "duration": saveDuration] as [String: Any], hypothesisId: "F")
+                        // #endregion
+                    } catch {
+                        // #region agent log
+                        let saveDuration = Date().timeIntervalSince(saveStartTime)
+                        debugLog(location: "HomeDashboardView.swift:taskToggle", message: "modelContext.save() FAILED", data: ["taskId": task.id, "error": error.localizedDescription, "duration": saveDuration] as [String: Any], hypothesisId: "F")
+                        // #endregion
+                    }
+                    // #region agent log
+                    let toggleDuration = Date().timeIntervalSince(toggleStartTime)
+                    debugLog(location: "HomeDashboardView.swift:taskToggle", message: "Task toggle completed", data: ["taskId": task.id, "totalDuration": toggleDuration] as [String: Any], hypothesisId: "F")
+                    // #endregion
                 }
             }) {
                 Label(task.isComplete ? "Uncheck as done" : "Mark as done", 
@@ -1543,13 +1797,46 @@ struct HomeDashboardView: View {
                 HStack {
                     // Square checkbox for block
                     Button(action: {
+                        // #region agent log
+                        let blockToggleStartTime = Date()
+                        debugLog(location: "HomeDashboardView:taskBlockToggle", message: "Task block toggle started", data: ["blockId": taskBlock.id, "blockTitle": taskBlock.title, "tasksCount": tasks.count] as [String: Any], hypothesisId: "F")
+                        // #endregion
+                        
                         let allComplete = tasks.allSatisfy { $0.isComplete }
+                        // #region agent log
+                        debugLog(location: "HomeDashboardView:taskBlockToggle", message: "Block completion state", data: ["blockId": taskBlock.id, "allComplete": allComplete, "newState": !allComplete] as [String: Any], hypothesisId: "F")
+                        // #endregion
+                        
                         for task in tasks {
+                            let oldState = task.isComplete
                             task.isComplete = !allComplete
+                            // #region agent log
+                            debugLog(location: "HomeDashboardView:taskBlockToggle", message: "Task in block toggled", data: ["blockId": taskBlock.id, "taskId": task.id, "oldState": oldState, "newState": task.isComplete] as [String: Any], hypothesisId: "F")
+                            // #endregion
                         }
+                        
                         // CRITICAL FIX: Ensure modelContext.save() happens on MainActor
                         _Concurrency.Task { @MainActor in
-                        try? modelContext.save()
+                            // #region agent log
+                            let saveStartTime = Date()
+                            debugLog(location: "HomeDashboardView:taskBlockToggle", message: "Starting block save", data: ["blockId": taskBlock.id, "tasksCount": tasks.count] as [String: Any], hypothesisId: "A")
+                            // #endregion
+                            do {
+                                try modelContext.save()
+                                // #region agent log
+                                let saveDuration = Date().timeIntervalSince(saveStartTime)
+                                debugLog(location: "HomeDashboardView:taskBlockToggle", message: "Block save SUCCEEDED", data: ["blockId": taskBlock.id, "duration": saveDuration] as [String: Any], hypothesisId: "A")
+                                // #endregion
+                            } catch {
+                                // #region agent log
+                                let saveDuration = Date().timeIntervalSince(saveStartTime)
+                                debugLog(location: "HomeDashboardView:taskBlockToggle", message: "Block save FAILED", data: ["blockId": taskBlock.id, "error": error.localizedDescription, "duration": saveDuration] as [String: Any], hypothesisId: "A")
+                                // #endregion
+                            }
+                            // #region agent log
+                            let totalDuration = Date().timeIntervalSince(blockToggleStartTime)
+                            debugLog(location: "HomeDashboardView:taskBlockToggle", message: "Task block toggle completed", data: ["blockId": taskBlock.id, "totalDuration": totalDuration] as [String: Any], hypothesisId: "F")
+                            // #endregion
                         }
                     }) {
                         Image(systemName: tasks.allSatisfy { $0.isComplete } ? "checkmark.square.fill" : "square")
@@ -2196,6 +2483,42 @@ struct TaskCardView: View {
     @State private var earlyCompletionTask: Task? = nil
     @State private var earlyCompletionRewards: (xp: Int, crystals: Int) = (0, 0)
     @State private var hasShownEarlyCompletionPrompt = false // Track if prompt shown this session
+    @State private var showingDeleteAlert = false
+    @State private var isInlineEditing = false
+    @State private var editableTitle: String
+    @State private var editablePriority: PriorityType
+    @State private var editableCategory: TaskCategory
+    @State private var editableStartTime: Date
+    @State private var editableEndTime: Date
+    
+    init(
+        task: Task,
+        theme: any AppTheme,
+        onTaskCompleted: ((String) -> Void)?,
+        onEditTask: ((Task) -> Void)?,
+        onLevelUp: ((LevelUpResult) -> Void)?,
+        dailyXPTotal: Binding<Int>,
+        dailyCrystalsTotal: Binding<Int>,
+        dailyBonuses: Binding<[String]>,
+        onDailyTrackingUpdate: ((Int, Int, String?) -> Void)? = nil,
+        isInPlanView: Bool = false
+    ) {
+        self.task = task
+        self.theme = theme
+        self.onTaskCompleted = onTaskCompleted
+        self.onEditTask = onEditTask
+        self.onLevelUp = onLevelUp
+        self._dailyXPTotal = dailyXPTotal
+        self._dailyCrystalsTotal = dailyCrystalsTotal
+        self._dailyBonuses = dailyBonuses
+        self.onDailyTrackingUpdate = onDailyTrackingUpdate
+        self.isInPlanView = isInPlanView
+        self._editableTitle = State(initialValue: task.title)
+        self._editablePriority = State(initialValue: task.priority)
+        self._editableCategory = State(initialValue: task.category)
+        self._editableStartTime = State(initialValue: task.startTime)
+        self._editableEndTime = State(initialValue: task.endTime)
+    }
     
     var body: some View {
         mainContent
@@ -2220,6 +2543,7 @@ struct TaskCardView: View {
                 }
             }
             .onLongPressGesture(minimumDuration: 0.3) { // Lighter, more sensitive (reduced from default)
+                guard !isInPlanView else { return }
                 // Lighter haptic feedback - similar to goal element
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.prepare()
@@ -2232,11 +2556,32 @@ struct TaskCardView: View {
                 
                 onEditTask?(task)
             }
+            .onTapGesture {
+                guard isInPlanView else { return }
+                if !isInlineEditing {
+                    beginInlineEditing()
+                }
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                Button(role: .destructive) {
+                    showingDeleteAlert = true
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
             .sheet(isPresented: Binding(
                 get: { showingReflectionPrompt != nil },
                 set: { if !$0 { showingReflectionPrompt = nil } }
             )) {
                 reflectionSheetContent
+            }
+            .alert("Delete Task?", isPresented: $showingDeleteAlert) {
+                Button("Delete", role: .destructive) {
+                    deleteTask()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This will remove \"\(task.title)\" from your schedule.")
             }
             .alert("Completed \(earlyCompletionTask?.title ?? "task") already?", isPresented: $showEarlyCompletionPrompt) {
                 Button("Cancel", role: .cancel) {
@@ -2288,19 +2633,42 @@ struct TaskCardView: View {
             
             // Right side: Category icon and time
             VStack(alignment: .trailing, spacing: 4) {
-                // Category icon on right (no fill background)
-                Image(systemName: task.category.icon)
-                    .font(.title3)
-                    .foregroundColor(task.category.color())
-                    .frame(width: 24, height: 24)
-                
-                // Time below category icon
-                Text(timeSpanText)
-                    .font(theme.bodyFont)
-                    .fontWeight(.bold)
-                    .textCase(.uppercase)
-                    .foregroundColor(theme.textPrimary.opacity(0.8))
-                    .opacity(task.isComplete ? 0.6 : 1.0)
+                if isInlineEditing && isInPlanView {
+                    Menu {
+                        ForEach(TaskCategory.allCases, id: \.self) { category in
+                            Button(category.displayName) {
+                                editableCategory = category
+                            }
+                        }
+                    } label: {
+                        Image(systemName: editableCategory.icon)
+                            .font(.title3)
+                            .foregroundColor(editableCategory.color())
+                            .frame(width: 24, height: 24)
+                    }
+                    
+                    VStack(alignment: .trailing, spacing: 6) {
+                        DatePicker("", selection: $editableStartTime, displayedComponents: [.hourAndMinute])
+                            .labelsHidden()
+                            .tint(theme.accentColor)
+                        DatePicker("", selection: $editableEndTime, displayedComponents: [.hourAndMinute])
+                            .labelsHidden()
+                            .tint(theme.accentColor)
+                    }
+                    .scaleEffect(0.92, anchor: .trailing)
+                } else {
+                    Image(systemName: task.category.icon)
+                        .font(.title3)
+                        .foregroundColor(task.category.color())
+                        .frame(width: 24, height: 24)
+                    
+                    Text(timeSpanText)
+                        .font(theme.bodyFont)
+                        .fontWeight(.bold)
+                        .textCase(.uppercase)
+                        .foregroundColor(theme.textPrimary.opacity(0.8))
+                        .opacity(task.isComplete ? 0.6 : 1.0)
+                }
             }
         }
         .frame(maxWidth: .infinity) // Take up more width
@@ -2316,24 +2684,69 @@ struct TaskCardView: View {
     }
     
     private var taskContent: some View {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                    // Task title - use headerFont (11pt, semibold) to match task block title size
+        VStack(alignment: .leading, spacing: 6) {
+            if isInlineEditing && isInPlanView {
+                TextField("Task title", text: $editableTitle)
+                    .font(.system(size: 14, weight: .semibold, design: .default))
+                    .foregroundColor(theme.textPrimary)
+                    .textFieldStyle(.plain)
+                    .submitLabel(.done)
+                    .onSubmit {
+                        saveInlineChanges()
+                    }
+                
+                HStack(spacing: 8) {
+                    Menu {
+                        ForEach(PriorityType.allCases, id: \.self) { priority in
+                            Button(priority.rawValue.capitalized) {
+                                editablePriority = priority
+                            }
+                        }
+                    } label: {
+                        inlineEditPill(
+                            label: editablePriority.rawValue.capitalized,
+                            color: inlinePriorityColor(editablePriority)
+                        )
+                    }
+                    
+                    Text(timeSpanTextFor(editableStartTime, editableEndTime))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(theme.textSecondary)
+                    
+                    Spacer()
+                    
+                    Button("Done") {
+                        saveInlineChanges()
+                    }
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(theme.accentColor)
+                }
+            } else {
+                HStack(spacing: 6) {
                     Text(task.title)
-                        .font(theme.headerFont) // Use same font as task block title (11pt, semibold)
+                        .font(.system(size: 14, weight: .semibold, design: .default))
                         .foregroundColor(theme.textPrimary)
                         .strikethrough(task.isComplete)
                         .opacity(task.isComplete ? theme.textTertiaryOpacity : 1.0)
                     if task.isRoutineTask { Image(systemName: "star.fill").font(.system(size: 10)).foregroundColor(.yellow) }
                 }
+                
                 if task.goal != nil { goalMilestoneBadges }
-            
-                // Time removed from here - now under category icon
-            
-                Text("Priority: \(task.priority.rawValue.capitalized)").font(.system(size: 11)).foregroundColor(priorityColor).opacity(task.isComplete ? 0.6 : 1.0)
-                if let description = task.taskDescription { Text(description).font(.caption).foregroundColor(.white.opacity(0.7)).lineLimit(2).opacity(task.isComplete ? 0.6 : 1.0) }
+                
+                Text("Priority: \(task.priority.rawValue.capitalized)")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(priorityColor)
+                    .opacity(task.isComplete ? 0.6 : 1.0)
+                if let description = task.taskDescription {
+                    Text(description)
+                        .font(.system(size: 12, weight: .regular, design: .default))
+                        .foregroundColor(theme.textSecondary)
+                        .lineLimit(2)
+                        .opacity(task.isComplete ? 0.6 : 1.0)
+                }
             }
         }
+    }
         
         @ViewBuilder
     private var goalMilestoneBadges: some View {
@@ -2381,50 +2794,199 @@ struct TaskCardView: View {
         private var completionColor: Color { task.isComplete ? .green : theme.textSecondary }
         private static func formatTime(_ date: Date) -> String { let f = DateFormatter(); f.timeStyle = .short; return f.string(from: date) }
     
+    private func deleteTask() {
+        modelContext.delete(task)
+        _Concurrency.Task { @MainActor in
+            try? modelContext.save()
+        }
+    }
+    
+    private func beginInlineEditing() {
+        editableTitle = task.title
+        editablePriority = task.priority
+        editableCategory = task.category
+        editableStartTime = task.startTime
+        editableEndTime = task.endTime
+        isInlineEditing = true
+    }
+    
+    private func saveInlineChanges() {
+        let trimmedTitle = editableTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else { return }
+        guard editableEndTime >= editableStartTime else {
+            editableEndTime = editableStartTime.addingTimeInterval(3600)
+            return
+        }
+        task.title = trimmedTitle
+        task.priority = editablePriority
+        task.category = editableCategory
+        task.startTime = editableStartTime
+        task.endTime = editableEndTime
+        try? modelContext.save()
+        isInlineEditing = false
+    }
+    
+    private func inlineEditPill(label: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+            Text(label)
+        }
+        .font(.system(size: 11, weight: .semibold, design: .rounded))
+        .foregroundColor(theme.textPrimary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(theme.glassBackground)
+                .overlay(
+                    Capsule()
+                        .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                )
+        )
+    }
+    
+    private func inlinePriorityColor(_ priority: PriorityType) -> Color {
+        switch priority {
+        case .urgent:
+            return .red
+        case .high:
+            return .orange
+        case .normal:
+            return .green
+        case .low:
+            return .blue
+        }
+    }
+    
+    private func timeSpanTextFor(_ start: Date, _ end: Date) -> String {
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "h:mm a"
+        let startTimeStr = timeFormatter.string(from: start).uppercased()
+        let endTimeStr = timeFormatter.string(from: end).uppercased()
+        return "\(startTimeStr) - \(endTimeStr)"
+    }
+    
         private func handleTaskCompletion() {
+            // #region agent log
+            let completionStartTime = Date()
+            debugLog(location: "TaskCardView:handleTaskCompletion", message: "handleTaskCompletion started", data: ["taskId": task.id, "taskTitle": task.title, "currentState": task.isComplete, "hasGoal": task.goal != nil] as [String: Any], hypothesisId: "F")
+            // #endregion
+            
             let calendar = Calendar.current
             let now = Date()
             let taskStart = task.startTime
             
             // If trying to complete a task that hasn't started yet
             if !task.isComplete && now < taskStart {
+                // #region agent log
+                debugLog(location: "TaskCardView:handleTaskCompletion", message: "Early completion detected, calculating rewards", data: ["taskId": task.id, "now": now.timeIntervalSince1970, "taskStart": taskStart.timeIntervalSince1970] as [String: Any], hypothesisId: "G")
+                // #endregion
+                
                 // Always show prompt to provide accountability
                 // Calculate potential rewards
-                guard let user = users.first else { return }
+                guard let user = users.first else {
+                    // #region agent log
+                    debugLog(location: "TaskCardView:handleTaskCompletion", message: "No user found, aborting", data: [:], hypothesisId: "F")
+                    // #endregion
+                    return
+                }
+                
                 let goal = task.goal
+                
+                // #region agent log
+                let momentumStartTime = Date()
+                debugLog(location: "TaskCardView:handleTaskCompletion", message: "Calculating momentum bonus", data: ["userId": user.id, "momentumDays": user.momentumDays] as [String: Any], hypothesisId: "G")
+                // #endregion
                 let momentumBonus = GamificationService.getMomentumBonus(user: user)
+                // #region agent log
+                let momentumDuration = Date().timeIntervalSince(momentumStartTime)
+                debugLog(location: "TaskCardView:handleTaskCompletion", message: "Momentum bonus calculated", data: ["momentumBonus": momentumBonus, "duration": momentumDuration] as [String: Any], hypothesisId: "G")
+                // #endregion
+                
+                // #region agent log
+                let rewardsStartTime = Date()
+                debugLog(location: "TaskCardView:handleTaskCompletion", message: "Calculating task rewards", data: ["taskId": task.id, "hasGoal": goal != nil] as [String: Any], hypothesisId: "G")
+                // #endregion
                 let baseRewards = GamificationService.calculateTaskRewards(
                     task: task,
                     goal: goal,
                     momentumBonus: momentumBonus
                 )
+                // #region agent log
+                let rewardsDuration = Date().timeIntervalSince(rewardsStartTime)
+                debugLog(location: "TaskCardView:handleTaskCompletion", message: "Task rewards calculated", data: ["xp": baseRewards.xp, "crystals": baseRewards.crystals, "duration": rewardsDuration] as [String: Any], hypothesisId: "G")
+                // #endregion
                 
                 // Store task and rewards for prompt
                 earlyCompletionTask = task
                 earlyCompletionRewards = (xp: baseRewards.xp, crystals: baseRewards.crystals)
                 showEarlyCompletionPrompt = true
                 hasShownEarlyCompletionPrompt = true // Track that we've shown it for this task
+                
+                // #region agent log
+                debugLog(location: "TaskCardView:handleTaskCompletion", message: "Early completion prompt shown, returning", data: [:], hypothesisId: "F")
+                // #endregion
                 return // Don't complete yet - wait for user confirmation
             }
             
             // Normal completion - task has started or is being unchecked
+            // #region agent log
+            debugLog(location: "TaskCardView:handleTaskCompletion", message: "Normal completion path", data: ["taskId": task.id, "isUnchecking": task.isComplete] as [String: Any], hypothesisId: "F")
+            // #endregion
+            
             // CRITICAL FIX: Ensure task has a valid id before saving (prevents SwiftData crash)
             // Double-check: if ID is empty or nil, assign new UUID and verify it's set
             if task.id.isEmpty {
+                // #region agent log
+                debugLog(location: "TaskCardView:handleTaskCompletion", message: "Task ID was empty, generating new UUID", data: ["taskTitle": task.title] as [String: Any], hypothesisId: "F")
+                // #endregion
                 let newID = UUID().uuidString
                 task.id = newID
                 // Verify ID was actually set (defensive programming)
                 guard !task.id.isEmpty else {
+                    // #region agent log
+                    debugLog(location: "TaskCardView:handleTaskCompletion", message: "ERROR: Failed to set task ID, aborting", data: [:], hypothesisId: "F")
+                    // #endregion
                     print("ERROR: Failed to set task ID, aborting save")
                     return
                 }
             }
             
-            task.isComplete.toggle()
+            let oldState = task.isComplete
+            // #region agent log
+            debugLog(location: "TaskCardView:handleTaskCompletion", message: "About to toggle task state", data: ["taskId": task.id, "oldState": oldState, "hasGoal": task.goal != nil] as [String: Any], hypothesisId: "F")
+            // #endregion
+            
+                task.isComplete.toggle()
+            let newState = task.isComplete
+            
+            // #region agent log
+            debugLog(location: "TaskCardView:handleTaskCompletion", message: "Task state toggled", data: ["taskId": task.id, "oldState": oldState, "newState": newState] as [String: Any], hypothesisId: "F")
+            // #endregion
+            
+            // Update goal progress if task has a goal
+            if let goal = task.goal {
+                // #region agent log
+                let goalUpdateStartTime = Date()
+                debugLog(location: "TaskCardView:handleTaskCompletion", message: "Updating goal progress", data: ["taskId": task.id, "goalId": goal.id, "goalTitle": goal.title, "currentValue": goal.currentValue, "targetValue": goal.targetValue] as [String: Any], hypothesisId: "G")
+                // #endregion
+                
+                GoalProgressUpdater.handleTaskToggle(task, context: modelContext, goals: [goal])
+                
+                // #region agent log
+                let goalUpdateDuration = Date().timeIntervalSince(goalUpdateStartTime)
+                debugLog(location: "TaskCardView:handleTaskCompletion", message: "Goal progress updated", data: ["taskId": task.id, "goalId": goal.id, "newCurrentValue": goal.currentValue, "newStatus": goal.status.rawValue, "duration": goalUpdateDuration] as [String: Any], hypothesisId: "G")
+                // #endregion
+            }
             
             // CRITICAL FIX: Only call closure if task is complete and has a valid ID
             // Note: task.id is non-optional String, but we check isEmpty to ensure it's valid
             if task.isComplete && !task.id.isEmpty {
+                // #region agent log
+                debugLog(location: "TaskCardView:handleTaskCompletion", message: "Calling onTaskCompleted closure", data: ["taskId": task.id] as [String: Any], hypothesisId: "F")
+                // #endregion
                 onTaskCompleted?(task.id)
             }
             
@@ -2432,21 +2994,54 @@ struct TaskCardView: View {
             // Double-check ID is valid before attempting save
             let taskID = task.id // Capture ID to verify it's not empty
             guard !taskID.isEmpty else {
+                // #region agent log
+                debugLog(location: "TaskCardView:handleTaskCompletion", message: "ERROR: Task ID is empty before save, aborting", data: [:], hypothesisId: "F")
+                // #endregion
                 print("ERROR: Task ID is empty before save, aborting")
                 return
             }
             
+            // #region agent log
+            debugLog(location: "TaskCardView:handleTaskCompletion", message: "Starting async save task", data: ["taskId": task.id, "thread": Thread.isMainThread] as [String: Any], hypothesisId: "A")
+            // #endregion
+            
             _Concurrency.Task { @MainActor in
+                // #region agent log
+                let saveStartTime = Date()
+                debugLog(location: "TaskCardView:handleTaskCompletion", message: "Inside async save task", data: ["taskId": task.id, "thread": Thread.isMainThread] as [String: Any], hypothesisId: "A")
+                // #endregion
+                
                 // Final verification before save
                 guard !task.id.isEmpty else {
+                    // #region agent log
+                    debugLog(location: "TaskCardView:handleTaskCompletion", message: "ERROR: Task ID became empty in async context, aborting save", data: [:], hypothesisId: "A")
+                    // #endregion
                     print("ERROR: Task ID became empty in async context, aborting save")
                     return
                 }
+                
+                // #region agent log
+                debugLog(location: "TaskCardView:handleTaskCompletion", message: "About to call modelContext.save()", data: ["taskId": task.id] as [String: Any], hypothesisId: "A")
+                // #endregion
+                
                 do {
                     try modelContext.save()
+                    // #region agent log
+                    let saveDuration = Date().timeIntervalSince(saveStartTime)
+                    debugLog(location: "TaskCardView:handleTaskCompletion", message: "modelContext.save() SUCCEEDED", data: ["taskId": task.id, "duration": saveDuration] as [String: Any], hypothesisId: "A")
+                    // #endregion
                 } catch {
+                    // #region agent log
+                    let saveDuration = Date().timeIntervalSince(saveStartTime)
+                    debugLog(location: "TaskCardView:handleTaskCompletion", message: "modelContext.save() FAILED", data: ["taskId": task.id, "error": error.localizedDescription, "errorType": String(describing: type(of: error)), "duration": saveDuration] as [String: Any], hypothesisId: "A")
+                    // #endregion
                     print("Failed to save task completion: \(error)")
                 }
+                
+                // #region agent log
+                let totalDuration = Date().timeIntervalSince(completionStartTime)
+                debugLog(location: "TaskCardView:handleTaskCompletion", message: "handleTaskCompletion completed", data: ["taskId": task.id, "totalDuration": totalDuration] as [String: Any], hypothesisId: "F")
+                // #endregion
             }
         }
         
@@ -2531,13 +3126,13 @@ struct CategoryChangeView: View {
     struct MoveTaskCalendarView: View {
         let task: Task; let onDateSelected: (Date) -> Void; let onCancel: () -> Void; @State private var targetDate: Date
         init(task: Task, onDateSelected: @escaping (Date) -> Void, onCancel: @escaping () -> Void) { self.task = task; self.onDateSelected = onDateSelected; self.onCancel = onCancel; self._targetDate = State(initialValue: task.startTime) }
-        var body: some View { NavigationStack { MonthCalendarView(selectedDate: Binding(get: { targetDate }, set: { targetDate = $0; onDateSelected($0) })).navigationTitle("Move Task").toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Cancel") { onCancel() } } } } }
+        var body: some View { NavigationStack { MonthCalendarView(selectedDate: Binding(get: { targetDate }, set: { targetDate = $0; onDateSelected($0) })).navigationTitle("Move Task").navigationBarTitleDisplayMode(.inline).toolbarBackground(.hidden, for: .navigationBar).toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Cancel") { onCancel() } } } } }
     }
 
     struct MoveTaskBlockCalendarView: View {
         let taskBlock: [Task]; let onDateSelected: (Date) -> Void; let onCancel: () -> Void; @State private var targetDate: Date
         init(taskBlock: [Task], onDateSelected: @escaping (Date) -> Void, onCancel: @escaping () -> Void) { self.taskBlock = taskBlock; self.onDateSelected = onDateSelected; self.onCancel = onCancel; self._targetDate = State(initialValue: taskBlock.first?.startTime ?? Date()) }
-        var body: some View { NavigationStack { MonthCalendarView(selectedDate: Binding(get: { targetDate }, set: { targetDate = $0; onDateSelected($0) })).navigationTitle("Move Task Block").toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Cancel") { onCancel() } } } } }
+        var body: some View { NavigationStack { MonthCalendarView(selectedDate: Binding(get: { targetDate }, set: { targetDate = $0; onDateSelected($0) })).navigationTitle("Move Task Block").navigationBarTitleDisplayMode(.inline).toolbarBackground(.hidden, for: .navigationBar).toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Cancel") { onCancel() } } } } }
 }
 
 #Preview {

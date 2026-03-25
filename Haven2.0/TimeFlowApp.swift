@@ -1,6 +1,6 @@
 //
 //  TimeFlowApp.swift
-//  TimeFlow
+//  Haven
 //
 //  Created by John Uja on 2025-10-18.
 //
@@ -19,11 +19,14 @@ struct TimeFlowApp: App {
     @StateObject private var calendarManager = CalendarManager()
     @StateObject private var onboardingService = OnboardingService.shared
     
-    var sharedModelContainer: ModelContainer = createModelContainer()
+    var sharedModelContainer: ModelContainer = TimeFlowApp.createModelContainer()
     
     init() {
         // Initialize Firebase FIRST, before anything else
-        FirebaseApp.configure()
+        // Guard against double configuration (can crash if called twice)
+        if FirebaseApp.app() == nil {
+            FirebaseApp.configure()
+        }
         
         // Initialize authService AFTER Firebase is configured
         _authService = State(initialValue: FirebaseAuthService.shared)
@@ -73,15 +76,19 @@ struct TimeFlowApp: App {
             GoalMilestone.self,
             Theme.self,
             DailyRoutine.self,
-            FeedReaction.self,
-            FeedComment.self,
+            // Feed and leaderboard are deferred until the v2 11cope is revisited.
+            // FeedReaction.self,
+            // FeedComment.self,
             MoodEntry.self,
             GoalReflection.self,
         ])
         
+        // Use explicit store URL to ensure we delete the correct file
+        let storeURL = URL.applicationSupportDirectory.appending(path: "Haven.store")
+        
         do {
-            // Store data persistently on disk
-            let modelConfiguration = ModelConfiguration(schema: schema)
+            // Store data persistently on disk with explicit URL
+            let modelConfiguration = ModelConfiguration(schema: schema, url: storeURL)
             let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
             return container
         } catch {
@@ -89,22 +96,33 @@ struct TimeFlowApp: App {
             print("SwiftData Error: \(error)")
             print("Clearing old database and creating fresh one...")
             
-            // Delete the old database file
-            let url = URL.applicationSupportDirectory.appending(path: "default.store")
-            try? FileManager.default.removeItem(at: url)
+            // Delete the explicit store file (works for both file and directory)
+            try? FileManager.default.removeItem(at: storeURL)
+            
+            // Also try to delete legacy "default.store" if it exists
+            let legacyURL = URL.applicationSupportDirectory.appending(path: "default.store")
+            try? FileManager.default.removeItem(at: legacyURL)
             
             // Try again with fresh database
             do {
-                let modelConfiguration = ModelConfiguration(schema: schema)
+                let modelConfiguration = ModelConfiguration(schema: schema, url: storeURL)
                 return try ModelContainer(for: schema, configurations: [modelConfiguration])
             } catch {
-                // Last resort: in-memory
-                print("Failed to create persistent container, using in-memory")
+                // Last resort: in-memory (but log error instead of fatalError for production)
+                print("ERROR: Failed to create persistent container, using in-memory")
+                print("Error details: \(error.localizedDescription)")
                 let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
                 do {
                     return try ModelContainer(for: schema, configurations: [modelConfiguration])
                 } catch {
+                    // In production, log and use in-memory; fatalError only in debug
+                    #if DEBUG
                     fatalError("Could not create even in-memory ModelContainer: \(error)")
+                    #else
+                    print("CRITICAL: Could not create ModelContainer. App may not function correctly.")
+                    // Return in-memory container as last resort (data will be lost on app close)
+                    return try! ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+                    #endif
                 }
             }
         }
@@ -140,11 +158,11 @@ struct TimeFlowApp: App {
                 GIDSignIn.sharedInstance.handle(url)
             }
             .onChange(of: authService.isAuthenticated) { _, isAuthenticated in
-                print("TimeFlowApp: Auth state changed - authenticated: \(isAuthenticated)")
+                print("Haven: Auth state changed - authenticated: \(isAuthenticated)")
             }
             .onChange(of: onboardingService.isOnboardingComplete) { _, isComplete in
                 if isComplete {
-                    print("TimeFlowApp: Onboarding completed, switching to MainTabView")
+                    print("Haven: Onboarding completed, switching to MainTabView")
                 }
             }
         }

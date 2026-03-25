@@ -26,7 +26,7 @@ struct MoodSliderCheckInView: View {
     @State private var currentPeriod: CheckInTime? = MoodJarService.currentCheckInPeriod()
     
     private var currentUser: User? {
-        users.first
+        LocalUserProvisioningService.resolveCurrentUser(from: users)
     }
     
     // Derived properties

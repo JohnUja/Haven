@@ -25,12 +25,12 @@ struct ProfileView: View {
     @State private var showingWeeklyScoreInfoPopup = false
     @State private var showingMomentum = false
     @State private var showingThemeShop = false
-    @State private var showingFeedSettings = false
     @State private var showingPaywall = false
     @State private var showingDataVisualization = false
+    @State private var showingDocuments = false
     
     private var currentUser: User? {
-        users.first
+        LocalUserProvisioningService.resolveCurrentUser(from: users)
     }
     
     private var ownedThemes: [Theme] {
@@ -100,10 +100,12 @@ struct ProfileView: View {
                         .environment(themeManager)
                         .environment(\.modelContext, modelContext)
                 }
-                .sheet(isPresented: $showingFeedSettings) {
-                    FeedSettingsView()
-                        .environment(themeManager)
-                        .environment(\.modelContext, modelContext)
+                .sheet(isPresented: $showingDocuments) {
+                    NavigationStack {
+                        Text("Documents")
+                            .navigationTitle("Documents")
+                    }
+                    .environment(\.modelContext, modelContext)
                 }
                 .sheet(isPresented: $showingDataVisualization) {
                     DataVisualizationView()
@@ -216,53 +218,22 @@ struct ProfileView: View {
                             .foregroundColor(themeManager.currentTheme.textPrimary.opacity(0.8))
                     }
                     
-                    // Level text with same styling as time crystals (reduced outline)
-                    ZStack {
-                        // Outline layer (dark, reduced - only -1, 0, 1 offsets)
-                        ForEach([-1, 0, 1], id: \.self) { x in
-                            ForEach([-1, 0, 1], id: \.self) { y in
-                                if x != 0 || y != 0 {
-                                    Text("Level \(user.level)")
-                                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                                        .foregroundColor(.black.opacity(0.7))
-                                        .offset(x: CGFloat(x), y: CGFloat(y))
-                                }
-                            }
-                        }
-                        // Main text layer (white, on top)
-                        Text("Level \(user.level)")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                    }
+                    Text("Level \(user.level)")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundColor(themeManager.currentTheme.textSecondary)
         }
                 }
                 
     // ⭐️ FIX: Extracted time crystals into its own view
     @ViewBuilder
     private func timeCrystalsView(user: User) -> some View {
-        // Time Crystals - Playful handwriting font, white with dark outline (Clash Royale style)
         HStack(spacing: 12) {
             Text("✨")
                 .font(.system(size: 20))
             
-            // Time Crystals number with dark outline effect (Clash Royale style)
-            ZStack {
-                // Outline layer (dark, slightly larger) - multiple offsets for thick outline
-                ForEach([-2, -1, 0, 1, 2], id: \.self) { x in
-                    ForEach([-2, -1, 0, 1, 2], id: \.self) { y in
-                        if x != 0 || y != 0 {
-                            Text("\(user.gamificationCurrency)")
-                                .font(.system(size: 18, weight: .bold, design: .rounded))
-                                .foregroundColor(.black.opacity(0.9))
-                                .offset(x: CGFloat(x), y: CGFloat(y))
-                        }
-                    }
-                }
-                // Main text layer (white, on top) - playful handwriting style
-                Text("\(user.gamificationCurrency)")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-            }
+            Text("\(user.gamificationCurrency)")
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundColor(themeManager.currentTheme.textPrimary)
             
             Text("Time Crystals")
                 .font(.system(size: 14, weight: .regular, design: .default))
@@ -291,6 +262,12 @@ struct ProfileView: View {
             }
             .buttonStyle(PlainButtonStyle())
             
+            Button("Edit Profile") {
+                showingEditProfile = true
+            }
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .foregroundColor(themeManager.currentTheme.accentColor)
+            
             // User Info
             userInfoView(user: user)
             
@@ -311,9 +288,9 @@ struct ProfileView: View {
         // MARK: - YOUR JOURNEY Section
     var yourJourneySection: some View {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Your Journey") // Not capitalized
+                Text("Your Journey")
                     .font(.system(size: 14, weight: .semibold, design: .default))
-                    .foregroundColor(themeManager.currentTheme.id == "light" ? .black : themeManager.currentTheme.textPrimary) // Black for light theme
+                    .foregroundColor(themeManager.currentTheme.textPrimary)
                     .padding(.horizontal, 4)
                 
             // Talkative box at top of journey section
@@ -331,16 +308,7 @@ struct ProfileView: View {
                             title: "XP",
                             value: "\(user.currentXP)",
                             icon: "star.fill",
-                            color: .yellow,
-                            destination: AnyView(
-                                VStack {
-                                    Text("XP Details")
-                                        .appTextStyle(.sectionHeader, theme: themeManager.currentTheme)
-                                    Text("Total XP: \(user.currentXP)")
-                                        .font(AppStyleSheet.font(for: .title))
-                                }
-                                    .padding()
-                            )
+                            color: .yellow
                         )
                         
                         // Time Crystals Block
@@ -348,16 +316,7 @@ struct ProfileView: View {
                             title: "Time Crystals",
                             value: "✨ \(user.gamificationCurrency)",
                             icon: "sparkles",
-                            color: .orange,
-                            destination: AnyView(
-                                VStack {
-                                    Text("Time Crystals")
-                                        .appTextStyle(.sectionHeader, theme: themeManager.currentTheme)
-                                    Text("✨ \(user.gamificationCurrency)")
-                                        .appTextStyle(.pageHeader, theme: themeManager.currentTheme)
-                                }
-                                    .padding()
-                            )
+                            color: .orange
                         )
                         
                     // Momentum Block - Viewable in tab, not navigable
@@ -371,13 +330,11 @@ struct ProfileView: View {
                         )
                         
                         
-                    // Weekly Score Block - Navigates to Leaderboard
-                        journeyBlock(
+                    journeyBlock(
                             title: "Weekly Score",
                             value: "\(user.weeklyProductivityScore)",
                             icon: "chart.line.uptrend.xyaxis",
-                            color: .purple,
-                        destination: AnyView(LeaderboardView())
+                            color: .purple
                         )
                     }
                 }
@@ -397,45 +354,34 @@ struct ProfileView: View {
                     .foregroundColor(.white)
             }
             
-            Text("Track your journey! Complete tasks to earn XP and level up. Your momentum streak multiplies rewards. Weekly Score resets every Monday - compete in leaderboards!")
+            Text("Track your journey! Complete tasks to earn XP, build momentum, and raise your weekly score. Your weekly score resets every Monday and helps you spot consistency over time.")
                 .font(.system(size: 12, weight: .regular, design: .rounded))
-                .foregroundColor(.white.opacity(0.9))
+                .foregroundColor(themeManager.currentTheme.textPrimary.opacity(0.9))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(.ultraThinMaterial)
+                .fill(themeManager.currentTheme.glassBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                        .stroke(themeManager.currentTheme.glassBorder, lineWidth: themeManager.currentTheme.cardBorderWidth)
                 )
         )
         }
         
         // MARK: - Journey Block
-    func journeyBlock(title: String, value: String, icon: String, color: Color, destination: AnyView) -> some View {
-        // For Weekly Score, navigate to leaderboard. For others, show popup
-        if title == "Weekly Score" {
-            return AnyView(
-            NavigationLink(destination: destination) {
-                    journeyBlockContent(title: title, value: value, icon: icon, color: color)
-                }
-            )
-        } else {
-            // Show popup for XP and Time Crystals
-            return AnyView(
-                Button(action: {
-                    // Show popup based on title
-                    if title == "XP" {
-                        showingXPInfoPopup = true
-                    } else if title == "Time Crystals" {
-                        showingTimeCrystalsInfoPopup = true
-                    }
-                }) {
-                    journeyBlockContent(title: title, value: value, icon: icon, color: color)
-                }
-            )
+    func journeyBlock(title: String, value: String, icon: String, color: Color) -> some View {
+        Button(action: {
+            if title == "XP" {
+                showingXPInfoPopup = true
+            } else if title == "Time Crystals" {
+                showingTimeCrystalsInfoPopup = true
+            } else if title == "Weekly Score" {
+                showingWeeklyScoreInfoPopup = true
+            }
+        }) {
+            journeyBlockContent(title: title, value: value, icon: icon, color: color)
         }
     }
     
@@ -445,45 +391,29 @@ struct ProfileView: View {
         
         return VStack(spacing: 12) {
             ZStack {
-                // 3D effect: Color-filled box with shadow outline
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(color.opacity(0.9))
+                    .fill(theme.glassBackground.opacity(0.95))
                     .frame(width: 60, height: 60)
-                    .shadow(color: color.opacity(0.5), radius: 8, x: 0, y: 4)
+                    .shadow(color: color.opacity(0.18), radius: 8, x: 0, y: 4)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.black.opacity(0.2), lineWidth: 1)
+                            .stroke(color.opacity(0.35), lineWidth: 1.5)
                     )
                 
                 if icon == "sparkles" {
                     Text("✨")
-                        .font(.system(size: 28))
+                        .font(.system(size: 24))
                 } else {
                     Image(systemName: icon)
-                        .font(.system(size: 28, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white)
+                        .font(.system(size: 24, weight: .semibold, design: .rounded))
+                        .foregroundColor(color)
                 }
             }
             
             VStack(spacing: 4) {
-                // Value with same styling as time crystals (reduced outline)
-                ZStack {
-                    // Outline layer (dark, reduced - only -1, 0, 1 offsets)
-                    ForEach([-1, 0, 1], id: \.self) { x in
-                        ForEach([-1, 0, 1], id: \.self) { y in
-                            if x != 0 || y != 0 {
-                                Text(value)
-                                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                                    .foregroundColor(.black.opacity(0.7))
-                                    .offset(x: CGFloat(x), y: CGFloat(y))
-                            }
-                        }
-                    }
-                    // Main text layer (white, on top)
-                    Text(value)
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                }
+                Text(value)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundColor(theme.textPrimary)
                 
                 Text(title)
                     .font(.system(size: 12, weight: .regular, design: .default))
@@ -514,38 +444,23 @@ struct ProfileView: View {
                 ZStack {
                     // 3D effect: Color-filled box with shadow outline
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(color.opacity(0.9))
+                        .fill(theme.glassBackground.opacity(0.95))
                         .frame(width: 60, height: 60)
-                        .shadow(color: color.opacity(0.5), radius: 8, x: 0, y: 4)
+                        .shadow(color: color.opacity(0.18), radius: 8, x: 0, y: 4)
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.black.opacity(0.2), lineWidth: 1)
+                                .stroke(color.opacity(0.35), lineWidth: 1.5)
                         )
                     
                     Image(systemName: icon)
                         .font(.system(size: 28, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white)
+                        .foregroundColor(color)
                 }
                 
                 VStack(spacing: 4) {
-                    // Value with same styling as time crystals (reduced outline)
-                    ZStack {
-                        // Outline layer (dark, reduced - only -1, 0, 1 offsets)
-                        ForEach([-1, 0, 1], id: \.self) { x in
-                            ForEach([-1, 0, 1], id: \.self) { y in
-                                if x != 0 || y != 0 {
-                                    Text(value)
-                                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                                        .foregroundColor(.black.opacity(0.7))
-                                        .offset(x: CGFloat(x), y: CGFloat(y))
-                                }
-                            }
-                        }
-                        // Main text layer (white, on top)
-                        Text(value)
-                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                    }
+                    Text(value)
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(theme.textPrimary)
                     
                     Text(title)
                         .font(.system(size: 12, weight: .regular, design: .default))
@@ -715,9 +630,9 @@ struct ProfileView: View {
     var settingsSection: some View {
         let theme = themeManager.currentTheme
         return VStack(alignment: .leading, spacing: 16) {
-            Text("SETTINGS")
-                .appTextStyle(.sectionHeader, theme: theme)
-                .textCase(.uppercase)
+            Text("Settings")
+                .font(.system(size: 14, weight: .semibold, design: .default))
+                .foregroundColor(theme.textPrimary)
                 .padding(.horizontal, 4)
             
             VStack(spacing: 12) {
@@ -725,7 +640,9 @@ struct ProfileView: View {
                 if currentUser != nil {
                     profileSettingsButton(
                         title: "Momentum & Progression",
+                        subtitle: "Streaks, bonuses, and milestone rewards",
                         icon: "flame.fill",
+                        color: .orange,
                         action: { showingMomentum = true }
                     )
                 }
@@ -733,68 +650,94 @@ struct ProfileView: View {
                 // Theme Shop
                 profileSettingsButton(
                     title: "Theme Shop",
+                    subtitle: "Switch themes and browse unlockables",
                     icon: "storefront",
+                    color: .purple,
                     action: { showingThemeShop = true }
                 )
                 
                 // Data Visualization & Export
                 profileSettingsButton(
                     title: "Data & Export",
+                    subtitle: "Review patterns and export your data",
                     icon: "chart.bar.fill",
+                    color: .blue,
                     action: { showingDataVisualization = true }
                 )
                 
-                // Feed Settings
+                // Documents
                 profileSettingsButton(
-                    title: "Feed Settings",
-                    icon: "slider.horizontal.3",
-                    action: { showingFeedSettings = true }
+                    title: "Documents",
+                    subtitle: "Reference docs and saved resources",
+                    icon: "doc.text.fill",
+                    color: .indigo,
+                    action: { showingDocuments = true }
                 )
                 
                 // Account
                 NavigationLink(destination: ProfileEditView().environment(authService)) {
-                    profileSettingsButtonView(title: "Account", icon: "person.circle")
+                    profileSettingsButtonView(
+                        title: "Account",
+                        subtitle: "Profile details, password, and account actions",
+                        icon: "person.circle",
+                        color: .teal
+                    )
                 }
                 
                 // Upgrade Plan (Paywall)
                 Button(action: {
                     showingPaywall = true
                 }) {
-                    profileSettingsButtonView(title: "Upgrade Plan", icon: "crown.fill")
+                    profileSettingsButtonView(
+                        title: "Upgrade Plan",
+                        subtitle: "Manage Haven+ and premium limits",
+                        icon: "crown.fill",
+                        color: .yellow
+                    )
                 }
                 
                 // Help & Feedback
                 Button(action: {
                     // Navigate to help/feedback
                 }) {
-                    profileSettingsButtonView(title: "Help & Feedback", icon: "questionmark.circle")
+                    profileSettingsButtonView(
+                        title: "Help & Feedback",
+                        subtitle: "Support, questions, and future bug reports",
+                        icon: "questionmark.circle",
+                        color: .pink
+                    )
                 }
             }
         }
     }
     
     // MARK: - Profile Settings Helper Functions
-    private func profileSettingsButton(title: String, icon: String, action: @escaping () -> Void) -> some View {
+    private func profileSettingsButton(title: String, subtitle: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            profileSettingsButtonView(title: title, icon: icon)
+            profileSettingsButtonView(title: title, subtitle: subtitle, icon: icon, color: color)
         }
     }
     
-    private func profileSettingsButtonView(title: String, icon: String) -> some View {
+    private func profileSettingsButtonView(title: String, subtitle: String, icon: String, color: Color) -> some View {
         let theme = themeManager.currentTheme
         return HStack(spacing: 16) {
             ZStack {
                 Circle()
-                    .fill(theme.accentColor.opacity(theme.iconBackgroundOpacity))
+                    .fill(color.opacity(0.16))
                     .frame(width: theme.iconCircleSize, height: theme.iconCircleSize)
                 
                 Image(systemName: icon)
                     .font(.system(size: 16, weight: .regular, design: .default))
-                    .foregroundColor(theme.accentColor)
+                    .foregroundColor(color)
             }
             
-            Text(title)
-                .appTextStyle(.settingsText, theme: theme)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .appTextStyle(.settingsText, theme: theme)
+                Text(subtitle)
+                    .font(.system(size: 12, weight: .regular, design: .default))
+                    .foregroundColor(theme.textSecondary)
+            }
             
             Spacer()
             
@@ -951,10 +894,10 @@ struct ProfileView: View {
         .padding(20)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color.black.opacity(0.9))
+                .fill(themeManager.currentTheme.glassBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                        .stroke(themeManager.currentTheme.glassBorder, lineWidth: themeManager.currentTheme.cardBorderWidth)
                 )
         )
         .frame(width: 320)
@@ -1013,10 +956,10 @@ struct ProfileView: View {
         .padding(20)
         .background(
             RoundedRectangle(cornerRadius: themeManager.currentTheme.cardCornerRadius)
-                .fill(Color.black.opacity(0.9)) // Back to black background
+                .fill(themeManager.currentTheme.glassBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: themeManager.currentTheme.cardCornerRadius)
-                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                        .stroke(themeManager.currentTheme.glassBorder, lineWidth: themeManager.currentTheme.cardBorderWidth)
                 )
         )
         .frame(width: 320)
@@ -1075,10 +1018,10 @@ struct ProfileView: View {
             .padding(20)
             .background(
                 RoundedRectangle(cornerRadius: themeManager.currentTheme.cardCornerRadius)
-                    .fill(Color.black.opacity(0.9))
+                    .fill(themeManager.currentTheme.glassBackground)
                     .overlay(
                         RoundedRectangle(cornerRadius: themeManager.currentTheme.cardCornerRadius)
-                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                            .stroke(themeManager.currentTheme.glassBorder, lineWidth: themeManager.currentTheme.cardBorderWidth)
                     )
             )
             .frame(width: 320)
@@ -1102,12 +1045,12 @@ struct ProfileView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Weekly Score")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
+                        .foregroundColor(themeManager.currentTheme.textPrimary)
                     
                     if let user = currentUser {
                         Text("\(user.weeklyProductivityScore)")
                             .font(.system(size: 24, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
+                            .foregroundColor(themeManager.currentTheme.textPrimary)
                     }
                 }
                 
@@ -1119,9 +1062,9 @@ struct ProfileView: View {
                     .font(AppStyleSheet.font(for: .body))
                     .foregroundColor(.white)
                 
-                Text("Your Weekly Score measures your productivity each week. It's calculated from completed tasks, goal progress, consistency, and quality. Compete in leaderboards and advance through leagues! Resets every Monday.")
+                Text("Your Weekly Score measures your productivity each week. It is based on completed tasks, goal progress, consistency, and quality. It resets every Monday so you can track each week as its own cycle.")
                     .font(.system(size: 12, weight: .regular, design: .rounded))
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(themeManager.currentTheme.textPrimary.opacity(0.8))
                     .fixedSize(horizontal: false, vertical: true)
             }
             
@@ -1212,7 +1155,7 @@ struct ProfileView: View {
         ]
         
         private var currentUser: User? {
-            users.first
+            LocalUserProvisioningService.resolveCurrentUser(from: users)
         }
         
         // Group themes by unlock method for proper ordering
@@ -1310,7 +1253,7 @@ struct ProfileView: View {
         @Query private var users: [User]
         
         private var currentUser: User? {
-            users.first
+            LocalUserProvisioningService.resolveCurrentUser(from: users)
         }
         
         private var isOwned: Bool {

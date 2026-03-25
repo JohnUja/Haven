@@ -10,17 +10,30 @@ import SwiftData
 import EventKit
 import AudioToolbox
 
+// Freeze-investigation logging was intentionally disabled after the audit cleanup.
+@inline(__always)
+fileprivate func debugLog(location: String, message: String, data: [String: Any] = [:], hypothesisId: String = "") {}
+
 struct TimelineView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(ThemeManager.self) private var themeManager
     @EnvironmentObject private var timeSettings: TimeSettingsManager
     @EnvironmentObject private var calendarManager: CalendarManager
     
-    // REVERTED TO ORIGINAL: Simple @Query approach that was working
-    @Query private var tasks: [Task]
-    @Query private var taskBlocks: [TaskBlock]
-    @Query private var goals: [Goal]
-    @Query private var users: [User]
+    // PERFORMANCE FIX: Day-scoped data instead of @Query (prevents filtering entire database)
+    @Query private var goals: [Goal]  // Keep @Query for goals (used for filtering paused goals)
+    @Query private var users: [User]   // Keep @Query for users (small dataset)
+    @State private var dayTasks: [Task] = []           // Only tasks for selected date
+    @State private var dayTaskBlocks: [TaskBlock] = [] // Only blocks for selected date
+    @State private var workGroups: [[Task]] = []       // Precomputed work task groups (off main thread)
+    @State private var personalGroups: [[Task]] = []   // Precomputed personal task groups (off main thread)
+    // PERFORMANCE FIX: Pre-convert groups to TimelineItem to avoid conversion during render
+    @State private var workItemGroups: [[TimelineItem]] = []
+    @State private var personalItemGroups: [[TimelineItem]] = []
+
+    private var currentUser: User? {
+        LocalUserProvisioningService.resolveCurrentUser(from: users)
+    }
     @State private var selectedDate = Date()
     @State private var scrollOffset: CGFloat = 0
     @State private var timer: Timer?
@@ -40,16 +53,21 @@ struct TimelineView: View {
     @State private var showingCollisionAlert = false
     @State private var collisionData: (draggedTask: Task?, newStart: Date, newEnd: Date, overlappingTasks: [Task])? = nil
     
-    // REVERTED TO ORIGINAL: Simple computed property - no caching complexity
+    // PERFORMANCE FIX: Use pre-fetched dayTasks instead of filtering entire database
     private var selectedDateTasks: [Task] {
-        let calendar = Calendar.current
-        let filteredTasks = tasks.filter { task in
-            calendar.isDate(task.startTime, inSameDayAs: selectedDate) &&
-            // Filter out tasks from paused goals
+        // #region agent log
+        let selectedStartTime = Date()
+        debugLog(location: "TimelineView.swift:selectedDateTasks", message: "selectedDateTasks computed property START - may access @Query via task.goal", data: ["dayTasksCount": dayTasks.count, "timestamp": Int(selectedStartTime.timeIntervalSince1970 * 1000)] as [String: Any], hypothesisId: "B")
+        // #endregion
+        // Filter out tasks from paused goals (dayTasks already filtered by date)
+        let result = dayTasks.filter { task in
             !(task.goal != nil && task.goal?.status == .paused)
-        }.sorted { $0.startTime < $1.startTime }
-        
-        return filteredTasks
+        }
+        // #region agent log
+        let selectedDuration = Date().timeIntervalSince(selectedStartTime)
+        debugLog(location: "TimelineView.swift:selectedDateTasks", message: "selectedDateTasks computed property COMPLETE", data: ["resultCount": result.count, "duration": selectedDuration] as [String: Any], hypothesisId: "B")
+        // #endregion
+        return result
     }
     
     // Helper to get adjusted display times for a task on the selected date
@@ -94,19 +112,178 @@ struct TimelineView: View {
         Calendar.current.component(.minute, from: currentTime)
     }
     
+    // MARK: - Data Refresh (Performance Fix)
+    /// Fetches only tasks/blocks for selected date - prevents filtering entire database
+    private func refreshForSelectedDate() {
+        // #region agent log
+        let funcStartTime = Date()
+        debugLog(location: "TimelineView.swift:97", message: "refreshForSelectedDate entry", data: ["selectedDate": selectedDate.description] as [String: Any], hypothesisId: "B")
+        // #endregion
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: selectedDate)
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? selectedDate
+        guard let currentUserID = currentUser?.id else {
+            dayTasks = []
+            dayTaskBlocks = []
+            return
+        }
+        
+        // Fetch tasks that overlap with selected date (database-level filtering)
+        let taskPredicate = #Predicate<Task> { task in
+            task.userID == currentUserID && task.startTime < endOfDay && task.endTime >= startOfDay
+        }
+        
+        // #region agent log
+        let fetchStartTime = Date()
+        debugLog(location: "TimelineView.swift:108", message: "Database fetch started", data: [:], hypothesisId: "B")
+        // #endregion
+        do {
+            let taskDescriptor = FetchDescriptor<Task>(
+                predicate: taskPredicate,
+                sortBy: [SortDescriptor(\Task.startTime, order: .forward)]
+            )
+            dayTasks = try modelContext.fetch(taskDescriptor)
+            // #region agent log
+            let fetchDuration = Date().timeIntervalSince(fetchStartTime)
+            debugLog(location: "TimelineView.swift:108", message: "Database fetch completed", data: ["taskCount": dayTasks.count, "duration": fetchDuration] as [String: Any], hypothesisId: "B")
+            // #endregion
+        } catch {
+            // #region agent log
+            debugLog(location: "TimelineView.swift:114", message: "Database fetch failed", data: ["error": error.localizedDescription] as [String: Any], hypothesisId: "B")
+            // #endregion
+            print("TimelineView: Failed to fetch tasks: \(error)")
+            dayTasks = []
+        }
+        
+        // Fetch task blocks for selected date
+        let blockPredicate = #Predicate<TaskBlock> { block in
+            block.userID == currentUserID && block.createdDate >= startOfDay && block.createdDate < endOfDay
+        }
+        
+        do {
+            let blockDescriptor = FetchDescriptor<TaskBlock>(predicate: blockPredicate)
+            dayTaskBlocks = try modelContext.fetch(blockDescriptor)
+        } catch {
+            print("TimelineView: Failed to fetch task blocks: \(error)")
+            dayTaskBlocks = []
+        }
+        
+        // PERFORMANCE FIX: Precompute groups off main thread (prevents O(N²) during render)
+        // #region agent log
+        let filterStartTime = Date()
+        debugLog(location: "TimelineView.swift:132", message: "Task filtering started", data: ["taskCount": dayTasks.count] as [String: Any], hypothesisId: "B")
+        // #endregion
+        let filteredTasks = dayTasks.filter { task in
+            !(task.goal != nil && task.goal?.status == .paused)
+        }
+        // #region agent log
+        let filterDuration = Date().timeIntervalSince(filterStartTime)
+        debugLog(location: "TimelineView.swift:132", message: "Task filtering completed", data: ["filteredCount": filteredTasks.count, "duration": filterDuration] as [String: Any], hypothesisId: "B")
+        // #endregion
+        
+        // Capture tasks for background processing
+        let tasksToProcess = filteredTasks
+        
+        // #region agent log
+        debugLog(location: "TimelineView.swift:139", message: "Background task started", data: ["taskCount": tasksToProcess.count] as [String: Any], hypothesisId: "B")
+        // #endregion
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            // #region agent log
+            let groupStartTime = Date()
+            debugLog(location: "TimelineView.swift:141", message: "Group computation started", data: [:], hypothesisId: "B")
+            // #endregion
+            // Compute groups in background
+            let workTasks = tasksToProcess.filter { task in
+                task.taskBlock == nil &&
+                (task.category == .work || task.category == .fixed ||
+                 task.category == .growth || task.category == .reading)
+            }
+            
+            let personalTasks = tasksToProcess.filter { task in
+                task.taskBlock == nil &&
+                (task.category == .personal || task.category == .flexible ||
+                 task.category == .hobbies || task.category == .selfCare ||
+                 task.category == .leisure || task.category == .skinCare)
+            }
+            
+            let workGroups = TimelineView.groupOverlappingTasks(workTasks)
+            let personalGroups = TimelineView.groupOverlappingTasks(personalTasks)
+            // #region agent log
+            let groupDuration = Date().timeIntervalSince(groupStartTime)
+            debugLog(location: "TimelineView.swift:141", message: "Group computation completed", data: ["workGroups": workGroups.count, "personalGroups": personalGroups.count, "duration": groupDuration] as [String: Any], hypothesisId: "B")
+            // #endregion
+            
+            // Update UI on main thread
+            await MainActor.run {
+                // #region agent log
+                debugLog(location: "TimelineView.swift:158", message: "Updating UI state on main thread", data: [:], hypothesisId: "B")
+                // #endregion
+                self.workGroups = workGroups
+                self.personalGroups = personalGroups
+                // PERFORMANCE FIX: Pre-convert to TimelineItem here (not during render)
+                self.workItemGroups = workGroups.map { group in
+                    group.map { TimelineItem.task($0) }
+                }
+                self.personalItemGroups = personalGroups.map { group in
+                    group.map { TimelineItem.task($0) }
+                }
+                // #region agent log
+                debugLog(location: "TimelineView.swift:158", message: "Groups converted to TimelineItem", data: ["workItemGroupsCount": self.workItemGroups.count, "personalItemGroupsCount": self.personalItemGroups.count] as [String: Any], hypothesisId: "H")
+                // #endregion
+            }
+        }
+        // #region agent log
+        let funcDuration = Date().timeIntervalSince(funcStartTime)
+        debugLog(location: "TimelineView.swift:97", message: "refreshForSelectedDate exit", data: ["duration": funcDuration] as [String: Any], hypothesisId: "B")
+        // #endregion
+    }
+    
+    /// Groups overlapping tasks - static function for background processing
+    private static func groupOverlappingTasks(_ tasks: [Task]) -> [[Task]] {
+        var groups: [[Task]] = []
+        var processed: Set<String> = []
+        
+        for task in tasks {
+            if processed.contains(task.id) { continue }
+            
+            var group = [task]
+            processed.insert(task.id)
+            
+            for otherTask in tasks {
+                if processed.contains(otherTask.id) { continue }
+                
+                // Check if tasks overlap
+                if task.startTime < otherTask.endTime && task.endTime > otherTask.startTime {
+                    group.append(otherTask)
+                    processed.insert(otherTask.id)
+                }
+            }
+            
+            if !group.isEmpty {
+                groups.append(group)
+            }
+        }
+        
+        return groups
+    }
+    
     // MARK: - Helper Functions
     // Removed isFromInactiveRoutine - now handled in ViewModel
     
     // MARK: - Drag and Drop Functions
-    // REVERTED TO ORIGINAL: Simple save without async wrapping
+    // PERFORMANCE FIX: Save in async, refresh data in background
     private func updateTaskTime(_ task: Task, _ newStartTime: Date, _ newEndTime: Date) {
         task.startTime = newStartTime
         task.endTime = newEndTime
         
-        do {
-            try modelContext.save()
-        } catch {
-            print("Failed to update task time: \(error)")
+        _Concurrency.Task { @MainActor in
+            do {
+                try modelContext.save()
+                // Refresh data after save (runs in background)
+                refreshForSelectedDate()
+            } catch {
+                print("Failed to update task time: \(error)")
+            }
         }
     }
     
@@ -143,17 +320,21 @@ struct TimelineView: View {
             // Otherwise keep original personal-side category
         }
         
-        // REVERTED TO ORIGINAL: Simple save
-        do {
-            try modelContext.save()
-        } catch {
-            print("Failed to update task side: \(error)")
+        // PERFORMANCE FIX: Save in async, refresh data in background
+        _Concurrency.Task { @MainActor in
+            do {
+                try modelContext.save()
+                // Refresh data after save (runs in background)
+                refreshForSelectedDate()
+            } catch {
+                print("Failed to update task side: \(error)")
+            }
         }
     }
     
     private func updateTaskBlockTime(_ taskBlock: TaskBlock, _ newStartTime: Date, _ newEndTime: Date) {
-        // REVERTED TO ORIGINAL: Simple approach using relationship
-        let tasksInBlock = tasks.filter { $0.taskBlock?.id == taskBlock.id }
+        // PERFORMANCE FIX: Use dayTasks instead of filtering entire database
+        let tasksInBlock = dayTasks.filter { $0.taskBlock?.id == taskBlock.id }
         let duration = newEndTime.timeIntervalSince(newStartTime)
         let taskDuration = duration / Double(tasksInBlock.count)
         
@@ -165,28 +346,36 @@ struct TimelineView: View {
             task.endTime = taskEndTime
         }
         
-        // REVERTED TO ORIGINAL: Simple save
-        do {
-            try modelContext.save()
-        } catch {
-            print("Failed to update task block time: \(error)")
+        // PERFORMANCE FIX: Save in async, refresh data in background
+        _Concurrency.Task { @MainActor in
+            do {
+                try modelContext.save()
+                // Refresh data after save (runs in background)
+                refreshForSelectedDate()
+            } catch {
+                print("Failed to update task block time: \(error)")
+            }
         }
     }
     
     private func updateTaskBlockSide(_ taskBlock: TaskBlock, _ newSide: TaskTimelineBlock.TimelineSide) {
-        // REVERTED TO ORIGINAL: Simple approach using relationship
-        let tasksInBlock = tasks.filter { $0.taskBlock?.id == taskBlock.id }
+        // PERFORMANCE FIX: Use dayTasks instead of filtering entire database
+        let tasksInBlock = dayTasks.filter { $0.taskBlock?.id == taskBlock.id }
         let newCategory = newSide == .left ? TaskCategory.work : TaskCategory.personal
         
         for task in tasksInBlock {
             task.category = newCategory
         }
         
-        // REVERTED TO ORIGINAL: Simple save
-        do {
-            try modelContext.save()
-        } catch {
-            print("Failed to update task block side: \(error)")
+        // PERFORMANCE FIX: Save in async, refresh data in background
+        _Concurrency.Task { @MainActor in
+            do {
+                try modelContext.save()
+                // Refresh data after save (runs in background)
+                refreshForSelectedDate()
+            } catch {
+                print("Failed to update task block side: \(error)")
+            }
         }
     }
     
@@ -227,7 +416,7 @@ struct TimelineView: View {
             // ⭐️ FIX: Swapped 'color' and 'priority' to match the initializer order
             let newBlock = TaskBlock(
                 id: UUID().uuidString,
-                userID: users.first?.id ?? "",
+                userID: currentUser?.id ?? "",
                 title: blockTitle,
                 color: draggedTask.category.rawValue, // Use dragged task's category color
                 priority: draggedTask.priority // Use dragged task's priority
@@ -249,17 +438,21 @@ struct TimelineView: View {
             draggedTask.endTime = data.newEnd
             draggedTask.taskBlock = newBlock
             
-            // REVERTED TO ORIGINAL: Simple save
-            try? modelContext.save()
-            showingCollisionAlert = false
-            collisionData = nil
+            // PERFORMANCE FIX: Save in async, refresh data in background
+            _Concurrency.Task { @MainActor in
+                try? modelContext.save()
+                // Refresh data after save (runs in background)
+                refreshForSelectedDate()
+                showingCollisionAlert = false
+                collisionData = nil
+            }
         }
     
     private func cancelCollision() {
         // User cancelled - just clear the collision data
         // The task time update was already prevented in updateTaskTime
-        showingCollisionAlert = false
-        collisionData = nil
+        self.showingCollisionAlert = false
+        self.collisionData = nil
     }
     
     private var scrollBasedTime: String {
@@ -319,100 +512,142 @@ struct TimelineView: View {
     }
     
     var body: some View {
-        let theme = themeManager.currentTheme // Cache theme to prevent multiple accesses
-        
-        return GeometryReader { geometry in
-            ZStack(alignment: .topTrailing) {
-                // Timeline background - matching home screen style
-                theme.primaryGradient
-                    .ignoresSafeArea()
+        // #region agent log
+        let bodyStartTime = Date()
+        debugLog(location: "TimelineView.swift:body", message: "TimelineView body computation START", data: ["timestamp": Int(bodyStartTime.timeIntervalSince1970 * 1000)] as [String: Any], hypothesisId: "B")
+        // #endregion
+        return timelineContent
+    }
+    
+    @ViewBuilder
+    private var timelineContent: some View {
+        ZStack(alignment: .topTrailing) {
+            // Timeline background - matching home screen style
+            themeManager.currentTheme.primaryGradient
+                .ignoresSafeArea()
+            
+            // Main Content
+            VStack(spacing: 0) {
+                // Header (Today button is now in headerView)
+                headerView(theme: themeManager.currentTheme)
                 
-                // Main Content
-                VStack(spacing: 0) {
-                    // Header (Today button is now in headerView)
-                    headerView(theme: theme)
-                    
-                    // Timeline Content
-                    ScrollView {
-                        ContinuousTimelineView(
-                            tasks: selectedDateTasks,
-                            taskBlocks: taskBlocks.filter { block in
-                                Calendar.current.isDate(block.createdDate, inSameDayAs: selectedDate)
-                            },
-                            calendarEvents: calendarManager.getEventsForDate(selectedDate),
-                            selectedDate: selectedDate,
-                            currentTime: currentTime,
-                            workItemGroups: nil, // REVERTED: Compute in ContinuousTimelineView (simpler)
-                            personalItemGroups: nil, // REVERTED: Compute in ContinuousTimelineView (simpler)
-                            getTasksForBlock: getTasksForBlock,
-                            getAllTasksForBlock: getAllTasksForBlock,
-                            getOverlappingTasks: getOverlappingTasks,
-                            updateTaskTime: updateTaskTime,
-                            updateTaskSide: updateTaskSide,
-                            updateTaskBlockTime: updateTaskBlockTime,
-                            updateTaskBlockSide: updateTaskBlockSide,
-                            handleTaskCollision: { task, newStart, newEnd in
-                                handleTaskCollision(task: task, newStartTime: newStart, newEndTime: newEnd)
-                            },
-                            viewMode: .fullView // Always use full view (collapsible removed)
-                        )
-                        .frame(height: 24 * 120) // Full height
-                                .background(
-                            GeometryReader { proxy in
-                                Color.clear
-                                    .preference(key: ScrollOffsetPreferenceKey.self, value: proxy.frame(in: .named("timelineScroll")).minY)
-                            }
-                        )
-                        .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-                            // CRITICAL FIX: Infinite Loop Prevention - only update if change is significant
-                            // Scroll offset tracking (does NOT trigger task recalculation)
-                            // This is for timeline scroll, not day scroller
-                            // Today button visibility is handled by isSelectedDateToday
-                            if abs(scrollOffset - value) > 2.0 {
-                            scrollOffset = value
+                // Timeline Content
+                ScrollView {
+                    // PERFORMANCE FIX: Use pre-converted groups (conversion happens in background, not during render)
+                    ContinuousTimelineView(
+                        tasks: selectedDateTasks,
+                        taskBlocks: dayTaskBlocks,
+                        calendarEvents: calendarManager.getEventsForDate(selectedDate),
+                        selectedDate: selectedDate,
+                        currentTime: currentTime,
+                        workItemGroups: workItemGroups, // ✅ Pre-converted in background (not during render)
+                        personalItemGroups: personalItemGroups, // ✅ Pre-converted in background (not during render)
+                        getTasksForBlock: getTasksForBlock,
+                        getAllTasksForBlock: getAllTasksForBlock,
+                        getOverlappingTasks: getOverlappingTasks,
+                        updateTaskTime: updateTaskTime,
+                        updateTaskSide: updateTaskSide,
+                        updateTaskBlockTime: updateTaskBlockTime,
+                        updateTaskBlockSide: updateTaskBlockSide,
+                        handleTaskCollision: { task, newStart, newEnd in
+                            handleTaskCollision(task: task, newStartTime: newStart, newEndTime: newEnd)
+                        },
+                        viewMode: .fullView // Always use full view (collapsible removed)
+                    )
+                    .frame(height: 24 * 120) // Full height
+                    .onAppear {
+                        // #region agent log
+                        debugLog(location: "TimelineView.swift:ContinuousTimelineView", message: "Passing pre-computed groups to ContinuousTimelineView", data: ["workGroupsCount": workGroups.count, "personalGroupsCount": personalGroups.count, "workItemGroupsCount": workItemGroups.count, "personalItemGroupsCount": personalItemGroups.count] as [String: Any], hypothesisId: "H")
+                        // #endregion
+                    }
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear
+                                .preference(key: ScrollOffsetPreferenceKey.self, value: proxy.frame(in: .named("timelineScroll")).minY)
+                        }
+                    )
+                    .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+                        // PERFORMANCE FIX: Debounced scroll offset update - prevents feedback loops
+                        // Scroll offset is purely visual, does NOT trigger data refresh or layout recalculation
+                        let threshold: CGFloat = 5.0 // Only update if change is significant
+                        if abs(scrollOffset - value) > threshold {
+                            // Debounce to prevent rapid updates during fast scrolling
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                if abs(self.scrollOffset - value) > threshold {
+                                    self.scrollOffset = value
+                                }
                             }
                         }
                     }
-                    .coordinateSpace(name: "timelineScroll")
                 }
-            }
-            .navigationBarHidden(true)
-            .alert("Schedule Overlap", isPresented: $showingCollisionAlert) {
-                Button("Cancel", role: .cancel) {
-                    cancelCollision()
-                }
-                Button("Group Tasks", role: .none) {
-                    createTaskBlockFromCollision()
-                }
-            } message: {
-                if let data = collisionData {
-                    let taskCount = data.overlappingTasks.count + 1 // +1 for the dragged task
-                    Text("There is a schedule overlap. Would you like to group these \(taskCount) tasks into a task block?")
-                } else {
-                    Text("There is a schedule overlap. Would you like to group these tasks into a task block?")
-                }
-            }
-            // Calendar system removed - will be reimplemented with theme
-            .sheet(isPresented: $showingAddTask) {
-                AddTaskView(selectedDate: selectedDate)
-                    .environment(themeManager)
-                    .environment(\.modelContext, modelContext)
-            }
-            .sheet(isPresented: $showingAddTaskBlock) {
-                AddBlockView(selectedDate: selectedDate)
-                    .presentationDetents([.medium])
-                    .environment(themeManager)
-                    .environment(\.modelContext, modelContext)
-            }
-            .onAppear {
-                startTimer()
-            }
-                .onDisappear {
-                    stopTimer()
+                .coordinateSpace(name: "timelineScroll")
             }
         }
+        .navigationBarHidden(true)
+        .alert("Schedule Overlap", isPresented: $showingCollisionAlert) {
+            Button("Cancel", role: .cancel) {
+                cancelCollision()
+            }
+            Button("Group Tasks", role: .none) {
+                createTaskBlockFromCollision()
+            }
+        } message: {
+            if let data = collisionData {
+                let taskCount = data.overlappingTasks.count + 1 // +1 for the dragged task
+                Text("There is a schedule overlap. Would you like to group these \(taskCount) tasks into a task block?")
+            } else {
+                Text("There is a schedule overlap. Would you like to group these tasks into a task block?")
+            }
+        }
+        // Calendar system removed - will be reimplemented with theme
+        .sheet(isPresented: $showingAddTask) {
+            AddTaskView(selectedDate: selectedDate)
+                .environment(themeManager)
+                .environment(\.modelContext, modelContext)
+        }
+        .sheet(isPresented: $showingAddTaskBlock) {
+            AddBlockView(selectedDate: selectedDate)
+                .presentationDetents([.medium])
+                .environment(themeManager)
+                .environment(\.modelContext, modelContext)
+        }
+        .onAppear {
+            // #region agent log
+            debugLog(location: "TimelineView.swift:530", message: "onAppear started", data: [:], hypothesisId: "B")
+            // #endregion
+            // #region agent log
+            let refreshStartTime = Date()
+            debugLog(location: "TimelineView.swift:532", message: "refreshForSelectedDate called", data: [:], hypothesisId: "B")
+            // #endregion
+            startTimer()
+            refreshForSelectedDate()
+            // #region agent log
+            let refreshDuration = Date().timeIntervalSince(refreshStartTime)
+            debugLog(location: "TimelineView.swift:532", message: "refreshForSelectedDate completed", data: ["duration": refreshDuration] as [String: Any], hypothesisId: "B")
+            // #endregion
+            // #region agent log
+            debugLog(location: "TimelineView.swift:530", message: "onAppear completed", data: [:], hypothesisId: "B")
+            // #endregion
+        }
+        .onDisappear {
+            // #region agent log
+            let disappearStartTime = Date()
+            debugLog(location: "TimelineView.swift:onDisappear", message: "TimelineView onDisappear started", data: ["timestamp": Int(disappearStartTime.timeIntervalSince1970 * 1000)] as [String: Any], hypothesisId: "E")
+            // #endregion
+            stopTimer()
+            // #region agent log
+            let disappearDuration = Date().timeIntervalSince(disappearStartTime)
+            debugLog(location: "TimelineView.swift:onDisappear", message: "TimelineView onDisappear completed", data: ["duration": disappearDuration] as [String: Any], hypothesisId: "E")
+            // #endregion
+        }
+        .onChange(of: selectedDate) { _, _ in
+            refreshForSelectedDate()
+        }
+        // REMOVED: onReceive(NSManagedObjectContextDidSave) - causes refresh storms and freezes
+        // SwiftData doesn't use Core Data's notification system, and this was triggering
+        // multiple refreshes during view transitions, causing freezes
     }
-    
+    
     // MARK: - Calendar Modal View - REMOVED (will be reimplemented with theme)
     
     // MARK: - Helper Functions
@@ -506,7 +741,7 @@ struct TimelineView: View {
                 HStack {
                     // Work label on left edge - Purple gradient background
                     Text("Work")
-                        .font(theme.bodyFont) // Use theme bodyFont (10pt, regular)
+                                          .font(theme.bodyFont) // Use theme bodyFont (10pt, regular)
                         .fontWeight(.bold)
                         .foregroundColor(theme.textPrimary)
                         .padding(.horizontal, 12)
@@ -610,9 +845,9 @@ struct TimelineView: View {
         }
     }
     
-    // REVERTED TO ORIGINAL: Check if any task in this block falls within the selected date
+    // PERFORMANCE FIX: Use pre-fetched dayTaskBlocks instead of filtering entire database
     private var taskBlocksForSelectedDate: [TaskBlock] {
-        taskBlocks.filter { taskBlock in
+        dayTaskBlocks.filter { taskBlock in
             let blockTasks = selectedDateTasks.filter { $0.taskBlock?.id == taskBlock.id }
             return !blockTasks.isEmpty
         }

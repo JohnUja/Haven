@@ -9,12 +9,14 @@ import SwiftUI
 
 struct MonthCalendarView: View {
     @Binding var selectedDate: Date
+    @Environment(ThemeManager.self) private var themeManager
     @State private var currentMonth: Date = Date()
     
     private let calendar = Calendar.current
     private let dateFormatter = DateFormatter()
     
     var body: some View {
+        let theme = themeManager.currentTheme
         VStack(spacing: 0) {
             // Month/Year Navigation Header - Fixed height
             HStack {
@@ -26,7 +28,7 @@ struct MonthCalendarView: View {
                 }) {
                     Image(systemName: "chevron.left")
                         .font(.title3)
-                        .foregroundColor(.white)
+                        .foregroundColor(theme.textPrimary)
                         .padding(8)
                 }
                 
@@ -49,7 +51,7 @@ struct MonthCalendarView: View {
                     } label: {
                         Text(calendar.component(.year, from: currentMonth).description)
                             .font(.system(size: 12, weight: .regular, design: .rounded))
-                            .foregroundColor(.white)
+                            .foregroundColor(theme.textPrimary)
                     }
                     
                     // Month picker (tap to change month)
@@ -66,7 +68,7 @@ struct MonthCalendarView: View {
                     } label: {
                         Text(monthName(for: calendar.component(.month, from: currentMonth)))
                             .font(.system(size: 12, weight: .regular, design: .rounded))
-                            .foregroundColor(.white)
+                            .foregroundColor(theme.textPrimary)
                     }
                 }
                 
@@ -80,7 +82,7 @@ struct MonthCalendarView: View {
                 }) {
                     Image(systemName: "chevron.right")
                         .font(.title3)
-                        .foregroundColor(.white)
+                        .foregroundColor(theme.textPrimary)
                         .padding(8)
                 }
             }
@@ -94,7 +96,7 @@ struct MonthCalendarView: View {
                 ForEach(dayOfWeekHeaders, id: \.self) { day in
                     Text(day)
                         .font(.system(size: 12, weight: .regular, design: .rounded))
-                        .foregroundColor(.white.opacity(0.8))
+                        .foregroundColor(theme.textSecondary)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -126,6 +128,9 @@ struct MonthCalendarView: View {
             .padding(.bottom)
             .frame(height: 240) // Fixed height for grid (6 rows * 40px)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.top, 8)
+        .background(themeManager.currentTheme.primaryGradient.ignoresSafeArea())
         .onAppear {
             // Sync calendar month with selected date only once on appear
             if !calendar.isDate(currentMonth, equalTo: selectedDate, toGranularity: .month) {
@@ -175,26 +180,26 @@ struct MonthCalendarView: View {
     }
     
     private func textColor(for date: Date) -> Color {
+        let theme = themeManager.currentTheme
         if calendar.isDate(date, inSameDayAs: selectedDate) {
-            return .white
+            return theme.textPrimary
         } else if calendar.isDate(date, equalTo: currentMonth, toGranularity: .month) {
-            return .white
+            return theme.textPrimary
         } else {
-            return .white.opacity(0.5)
+            return theme.textSecondary
         }
     }
     
     @ViewBuilder
     private func backgroundForDate(_ date: Date) -> some View {
+        let theme = themeManager.currentTheme
         if calendar.isDate(date, inSameDayAs: selectedDate) {
-            // Selected date: green outline (on purple theme) or theme's day scroller selection color
             Circle()
-                .stroke(Color.green, lineWidth: 2)
+                .stroke(theme.accentColor, lineWidth: 2)
                 .background(Circle().fill(Color.clear))
         } else if calendar.isDate(date, inSameDayAs: Date()) {
-            // Today: subtle indicator
             Circle()
-                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                .stroke(theme.glassBorder.opacity(0.8), lineWidth: 1)
                 .background(Circle().fill(Color.clear))
         } else {
             Circle()

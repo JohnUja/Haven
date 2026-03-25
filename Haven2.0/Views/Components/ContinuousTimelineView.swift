@@ -51,10 +51,11 @@ struct ContinuousTimelineView: View {
     let selectedDate: Date
     let currentTime: Date
     
-    // OPTIMIZED: Pre-computed groups (optional - if provided, avoids O(N²) computation during render)
+    // PERFORMANCE FIX: Pre-computed groups (REQUIRED - forces pre-computation, avoids O(N²) during render)
     // Note: Using TimelineItem from TimelineViewModel (shared enum)
-    let workItemGroups: [[TimelineItem]]?
-    let personalItemGroups: [[TimelineItem]]?
+    // Groups MUST be pre-computed in background and passed here - no fallback computation allowed
+    let workItemGroups: [[TimelineItem]]
+    let personalItemGroups: [[TimelineItem]]
     
     // Closures
     let getTasksForBlock: (TaskBlock, Int) -> [Task]
@@ -105,6 +106,9 @@ struct ContinuousTimelineView: View {
                             // 3. Background Lines
                             timelineBackground
                             
+                            // 3b. Hour markers to anchor each time block visually
+                            timelineHourMarkers(width: geometry.size.width)
+                            
                             // 4. Dynamic Ticks
                             if isAnyTaskDragging {
                                 dynamicTickMarks
@@ -112,7 +116,7 @@ struct ContinuousTimelineView: View {
                                     .position(x: geometry.size.width / 2, y: totalHeight / 2)
                             }
                             
-                            // 5. Optimized Task Layer
+                            // 5. Optimized Task Layer (with pre-computed groups)
                             TimelineTaskLayer(
                                 tasks: tasks,
                                 taskBlocks: taskBlocks,
@@ -123,8 +127,8 @@ struct ContinuousTimelineView: View {
                                 showingTaskDetails: $showingTaskDetails,
                                 showingTaskBlockDetails: $showingTaskBlockDetails,
                                 scrollProxy: scrollProxy,
-                                workItemGroups: workItemGroups,
-                                personalItemGroups: personalItemGroups,
+                                workItemGroups: workItemGroups, // ✅ Pass pre-computed groups
+                                personalItemGroups: personalItemGroups, // ✅ Pass pre-computed groups
                                 getAllTasksForBlock: getAllTasksForBlock,
                                 updateTaskTime: updateTaskTime,
                                 updateTaskSide: updateTaskSide,
@@ -217,6 +221,26 @@ struct ContinuousTimelineView: View {
         }
     }
     
+    private func timelineHourMarkers(width: CGFloat) -> some View {
+        let theme = themeManager.currentTheme
+        return ZStack(alignment: .topLeading) {
+            ForEach(0..<24, id: \.self) { hour in
+                let y = CGFloat(hour) * pointsPerHour + 10
+                
+                Capsule()
+                    .fill(theme.textSecondary.opacity(0.28))
+                    .frame(width: 18, height: 2)
+                    .position(x: 20, y: y)
+                
+                Capsule()
+                    .fill(theme.textSecondary.opacity(0.28))
+                    .frame(width: 18, height: 2)
+                    .position(x: width - 20, y: y)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+    
     private var centralTimelineColumn: some View {
         ZStack(alignment: .top) {
             ForEach(0..<24, id: \.self) { hour in
@@ -268,9 +292,9 @@ struct TimelineTaskLayer: View, Equatable {
     @Binding var showingTaskBlockDetails: TaskBlock?
     let scrollProxy: ScrollViewProxy?
     
-    // OPTIMIZED: Pre-computed groups (optional - if provided, avoids O(N²) computation during render)
-    let workItemGroups: [[TimelineItem]]?
-    let personalItemGroups: [[TimelineItem]]?
+    // PERFORMANCE FIX: Pre-computed groups (REQUIRED - forces pre-computation, avoids O(N²) during render)
+    let workItemGroups: [[TimelineItem]]
+    let personalItemGroups: [[TimelineItem]]
     
     let getAllTasksForBlock: (TaskBlock) -> [Task]
     let updateTaskTime: (Task, Date, Date) -> Void
@@ -330,17 +354,17 @@ struct TimelineTaskLayer: View, Equatable {
     
     @ViewBuilder
     private func renderTasks(for side: TaskTimelineBlock.TimelineSide, width: CGFloat) -> some View {
-        // OPTIMIZED: Use pre-computed groups if available, otherwise compute (backward compatible)
-        // Compute groups outside @ViewBuilder context
-        let groups: [[TimelineItem]] = {
-            if let precomputedGroups = side == .left ? workItemGroups : personalItemGroups {
-                return precomputedGroups
-            } else {
-                // Fallback: compute groups (for backward compatibility)
-                let items = getItems(for: side)
-                return groupOverlappingItems(items)
-            }
+        // PERFORMANCE FIX: Use pre-computed groups directly - NO fallback computation
+        // Groups are now REQUIRED (non-optional) and must be pre-computed in background
+        let groups: [[TimelineItem]] = side == .left ? workItemGroups : personalItemGroups
+        
+        // #region agent log
+        // Debug: Verify we're using pre-computed groups (not recomputing)
+        let _ = {
+            // Note: Can't use debugLog here (would cause recursion), but this confirms groups are passed
+            // If you see this in logs, groups are being used correctly
         }()
+        // #endregion
         
         ZStack(alignment: .topLeading) {
             ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
@@ -722,106 +746,155 @@ struct TimelineTaskDetailView: View {
     }
     
     var body: some View {
+        let theme = themeManager.currentTheme
         NavigationStack {
-            List {
-                Section("Task Info") {
-                    let theme = themeManager.currentTheme
-                    
-                    HStack {
-                        Text("Title").foregroundColor(theme.textSecondary)
-                        Spacer()
-                        Text(task.title).foregroundColor(theme.textPrimary)
-                    }
-                    
-                    HStack {
-                        Text("Time").foregroundColor(theme.textSecondary)
-                        Spacer()
-                        Text("\(timeSettings.formatTime(task.startTime)) - \(timeSettings.formatTime(task.endTime))")
-                            .foregroundColor(theme.textPrimary)
-                    }
-                    
-                    HStack {
-                        Text("Category").foregroundColor(theme.textSecondary)
-                        Spacer()
-                        HStack {
-                            Image(systemName: task.category.icon).foregroundColor(task.category.color())
-                            Text(task.category.displayName).foregroundColor(theme.textPrimary)
-                        }
-                    }
-                    
-                    HStack {
-                        Text("Priority").foregroundColor(theme.textSecondary)
-                        Spacer()
-                        Text(task.priority.rawValue.capitalized).foregroundColor(theme.textSecondary)
-                    }
-                    
-                    HStack {
-                        Image(systemName: task.isLocked ? "lock.fill" : "lock.open.fill")
-                            .foregroundColor(task.isLocked ? .orange : .green)
-                        Text(task.isLocked ? "Task is Locked" : "Task is Unlocked")
-                            .foregroundColor(theme.textSecondary)
-                        Spacer()
-                        Button(action: {
-                            // FIX: Ensure modelContext.save() happens on MainActor (SwiftData requirement)
-                            task.isLocked.toggle()
-                            _Concurrency.Task { @MainActor in
-                                try? modelContext.save()
-                            }
-                        }) {
-                            Text(task.isLocked ? "Unlock" : "Lock").foregroundColor(theme.accentColor)
-                        }
-                    }
-                }
+            ZStack {
+                theme.primaryGradient
+                    .ignoresSafeArea()
                 
-                Section("Notes") {
-                    // Assuming transparentTextEditor exists elsewhere in your project
-                    TextEditor(text: $notes)
-                        .frame(minHeight: 150)
-                }
-                
-                Section("Calendar") {
-                    Button(action: {
-                        calendarManager.addTaskToCalendar(task: task)
-                    }) {
-                        HStack {
-                            Image(systemName: "calendar.badge.plus")
-                            Text("Add to Calendar")
-                        }
-                    }
-                    
-                    if calendarManager.isAuthorized {
-                        Button(action: {
-                            calendarManager.syncTaskWithCalendar(task: task)
-                        }) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        detailSection(title: "Task Info", theme: theme) {
+                            detailRow("Title", value: task.title, theme: theme)
+                            detailRow(
+                                "Time",
+                                value: "\(timeSettings.formatTime(task.startTime)) - \(timeSettings.formatTime(task.endTime))",
+                                theme: theme
+                            )
                             HStack {
-                                Image(systemName: "arrow.triangle.2.circlepath")
-                                Text("Sync with Calendar")
+                                Text("Category")
+                                    .foregroundColor(theme.textSecondary)
+                                Spacer()
+                                HStack(spacing: 8) {
+                                    Image(systemName: task.category.icon)
+                                        .foregroundColor(task.category.color())
+                                    Text(task.category.displayName)
+                                        .foregroundColor(theme.textPrimary)
+                                }
+                            }
+                            detailRow("Priority", value: task.priority.rawValue.capitalized, theme: theme)
+                            HStack {
+                                Label(task.isLocked ? "Task is Locked" : "Task is Unlocked", systemImage: task.isLocked ? "lock.fill" : "lock.open.fill")
+                                    .foregroundColor(task.isLocked ? .orange : theme.textSecondary)
+                                Spacer()
+                                Button(task.isLocked ? "Unlock" : "Lock") {
+                                    task.isLocked.toggle()
+                                    _Concurrency.Task { @MainActor in
+                                        try? modelContext.save()
+                                    }
+                                }
+                                .foregroundColor(theme.accentColor)
                             }
                         }
-                    } else {
-                        Button(action: {
-                            calendarManager.requestAccess()
-                        }) {
-                            HStack {
-                                Image(systemName: "lock.fill")
-                                Text("Enable Calendar Access")
+                        
+                        detailSection(title: "Notes", theme: theme) {
+                            TextEditor(text: $notes)
+                                .scrollContentBackground(.hidden)
+                                .foregroundColor(theme.textPrimary)
+                                .padding(12)
+                                .frame(minHeight: 160)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .fill(theme.glassBackground.opacity(0.7))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 14)
+                                                .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                                        )
+                                )
+                        }
+                        
+                        detailSection(title: "Calendar", theme: theme) {
+                            Button {
+                                calendarManager.addTaskToCalendar(task: task)
+                            } label: {
+                                detailActionLabel(title: "Add to Calendar", systemImage: "calendar.badge.plus", theme: theme)
+                            }
+                            
+                            if calendarManager.isAuthorized {
+                                Button {
+                                    calendarManager.syncTaskWithCalendar(task: task)
+                                } label: {
+                                    detailActionLabel(title: "Sync with Calendar", systemImage: "arrow.triangle.2.circlepath", theme: theme)
+                                }
+                            } else {
+                                Button {
+                                    calendarManager.requestAccess()
+                                } label: {
+                                    detailActionLabel(title: "Enable Calendar Access", systemImage: "lock.fill", theme: theme)
+                                }
                             }
                         }
                     }
+                    .padding(20)
                 }
             }
+            .toolbarBackground(.hidden, for: .navigationBar)
             .navigationTitle("Task Details")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { onCancel() }
+                        .foregroundColor(theme.textPrimary)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") { onSave(notes) }
                         .fontWeight(.semibold)
+                        .foregroundColor(theme.accentColor)
                 }
             }
         }
+    }
+    
+    private func detailSection<Content: View>(title: String, theme: any AppTheme, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(theme.textSecondary)
+                .textCase(.uppercase)
+            
+            VStack(spacing: 12) {
+                content()
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(theme.glassBackground.opacity(0.82))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18)
+                            .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                    )
+            )
+        }
+    }
+    
+    private func detailRow(_ label: String, value: String, theme: any AppTheme) -> some View {
+        HStack(alignment: .top) {
+            Text(label)
+                .foregroundColor(theme.textSecondary)
+            Spacer()
+            Text(value)
+                .multilineTextAlignment(.trailing)
+                .foregroundColor(theme.textPrimary)
+        }
+    }
+    
+    private func detailActionLabel(title: String, systemImage: String, theme: any AppTheme) -> some View {
+        HStack {
+            Image(systemName: systemImage)
+            Text(title)
+            Spacer()
+        }
+        .foregroundColor(theme.textPrimary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(theme.glassBackground.opacity(0.55))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                )
+        )
     }
 }
 
@@ -843,61 +916,114 @@ struct TimelineTaskBlockDetailView: View {
     }
 
     var body: some View {
+        let theme = themeManager.currentTheme
         NavigationStack {
-            List {
-                Section("Block") {
-                    let theme = themeManager.currentTheme
-                    let isDarkMode = theme.id == "dark" || theme.id == "purple"
-                    
-                    HStack {
-                        Text("Title").foregroundColor(isDarkMode ? theme.textSecondary : .secondary)
-                        Spacer()
-                        Text(taskBlock.title).foregroundColor(isDarkMode ? theme.textPrimary : .primary)
-                    }
-                    HStack {
-                        Text("Priority").foregroundColor(isDarkMode ? theme.textSecondary : .secondary)
-                        Spacer()
-                        Text(taskBlock.priority.rawValue.capitalized)
-                            .foregroundColor(isDarkMode ? theme.textSecondary : blockPriorityColor)
-                    }
-                    HStack {
-                        Text("Tasks in Block").foregroundColor(isDarkMode ? theme.textSecondary : .secondary)
-                        Spacer()
-                        Text("\(tasks.count)").foregroundColor(isDarkMode ? theme.textPrimary : .primary)
-                    }
-                }
-
-                Section("Notes") {
-                    TextEditor(text: $notes)
-                        .frame(minHeight: 150)
-                }
-
-                Section("Tasks") {
-                    let theme = themeManager.currentTheme
-                    let isDarkMode = theme.id == "dark" || theme.id == "purple"
-                    
-                    ForEach(tasks, id: \.id) { task in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(task.title)
-                                .foregroundColor(isDarkMode ? theme.textPrimary : .primary)
-                            Text("\(timeSettings.formatTime(task.startTime)) - \(timeSettings.formatTime(task.endTime))")
-                                .font(.caption)
-                                .foregroundColor(isDarkMode ? theme.textSecondary : .secondary)
+            ZStack {
+                theme.primaryGradient
+                    .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        detailSection(title: "Block", theme: theme) {
+                            detailRow("Title", value: taskBlock.title, theme: theme)
+                            detailRow("Priority", value: taskBlock.priority.rawValue.capitalized, theme: theme)
+                            detailRow("Tasks in Block", value: "\(tasks.count)", theme: theme)
+                        }
+                        
+                        detailSection(title: "Notes", theme: theme) {
+                            TextEditor(text: $notes)
+                                .scrollContentBackground(.hidden)
+                                .foregroundColor(theme.textPrimary)
+                                .padding(12)
+                                .frame(minHeight: 160)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .fill(theme.glassBackground.opacity(0.7))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 14)
+                                                .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                                        )
+                                )
+                        }
+                        
+                        detailSection(title: "Tasks", theme: theme) {
+                            ForEach(tasks, id: \.id) { task in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(task.title)
+                                        .foregroundColor(theme.textPrimary)
+                                    Text("\(timeSettings.formatTime(task.startTime)) - \(timeSettings.formatTime(task.endTime))")
+                                        .font(.caption)
+                                        .foregroundColor(theme.textSecondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .fill(theme.glassBackground.opacity(0.55))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 14)
+                                                .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                                        )
+                                )
+                            }
                         }
                     }
+                    .padding(20)
                 }
             }
+            .toolbarBackground(.hidden, for: .navigationBar)
             .navigationTitle("Task Block")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") {
+                        onDismiss()
+                    }
+                    .foregroundColor(theme.textPrimary)
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
                         taskBlock.blockDescription = notes.isEmpty ? nil : notes
                         try? modelContext.save()
                         onDismiss()
                     }
+                    .foregroundColor(theme.accentColor)
                 }
             }
+        }
+    }
+
+    private func detailSection<Content: View>(title: String, theme: any AppTheme, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(theme.textSecondary)
+                .textCase(.uppercase)
+            
+            VStack(spacing: 12) {
+                content()
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(theme.glassBackground.opacity(0.82))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18)
+                            .stroke(theme.glassBorder, lineWidth: theme.cardBorderWidth)
+                    )
+            )
+        }
+    }
+    
+    private func detailRow(_ label: String, value: String, theme: any AppTheme) -> some View {
+        HStack(alignment: .top) {
+            Text(label)
+                .foregroundColor(theme.textSecondary)
+            Spacer()
+            Text(value)
+                .multilineTextAlignment(.trailing)
+                .foregroundColor(theme.textPrimary)
         }
     }
 

@@ -6,13 +6,18 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct PaywallView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @Environment(ThemeManager.self) private var themeManager
+    @Query private var users: [User]
     let triggerReason: PaywallTrigger
     @State private var billingPeriod: BillingPeriod = .yearly
     @State private var selectedPlan: SubscriptionPlan = .havenPlus
+    @State private var purchaseMessage = ""
+    @State private var showingPurchaseMessage = false
     
     enum PaywallTrigger {
         case taskLimit
@@ -91,6 +96,10 @@ struct PaywallView: View {
             case .havenForever: return [.orange, .red]
             }
         }
+    }
+
+    private var currentUser: User? {
+        LocalUserProvisioningService.resolveCurrentUser(from: users)
     }
     
     var body: some View {
@@ -174,11 +183,9 @@ struct PaywallView: View {
                         
                         // CTA Button for Selected Plan
                         Button(action: {
-                            // TODO: Implement purchase flow
-                            let price = selectedPlan == .havenForever ? selectedPlan.yearlyPrice : (billingPeriod == .monthly ? selectedPlan.monthlyPrice : selectedPlan.yearlyPrice)
-                            print("Purchase \(selectedPlan.rawValue) - \(billingPeriod.rawValue) - \(price)")
+                            activateSelectedPlan()
                         }) {
-                            Text(selectedPlan == .havenForever ? "Purchase Forever" : "Upgrade to \(selectedPlan.rawValue)")
+                            Text(selectedPlan == .havenForever ? "Activate \(selectedPlan.rawValue)" : "Activate \(selectedPlan.rawValue)")
                                 .font(.system(size: 18, weight: .semibold, design: .rounded))
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
@@ -194,6 +201,11 @@ struct PaywallView: View {
                         }
                             .padding(.horizontal, 20)
                         .padding(.top, 16)
+                        Text("Billing is not connected yet. Choosing a plan currently activates that tier on this device so premium flows can be used and tested.")
+                            .font(.system(size: 12, weight: .regular, design: .rounded))
+                            .foregroundColor(themeManager.currentTheme.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
                             .padding(.bottom, 20)
                     }
                 }
@@ -208,6 +220,13 @@ struct PaywallView: View {
             )
             .frame(maxWidth: 500)
             .padding(.horizontal, 20)
+        }
+        .alert("Plan Updated", isPresented: $showingPurchaseMessage) {
+            Button("OK") {
+                dismiss()
+            }
+        } message: {
+            Text(purchaseMessage)
         }
     }
     
@@ -564,11 +583,12 @@ struct PaywallView: View {
             
             // CTA Button
             Button(action: {
-                // TODO: Implement purchase flow
-                let selectedPrice = isOneTime ? yearlyPrice : (billingPeriod == .monthly ? monthlyPrice ?? yearlyPrice : yearlyPrice)
-                print("Purchase \(tier) - \(billingPeriod.rawValue) - \(selectedPrice)")
+                if let plan = SubscriptionPlan(rawValue: tier) {
+                    selectedPlan = plan
+                    activateSelectedPlan()
+                }
             }) {
-                Text(isOneTime ? "Purchase Forever" : "Upgrade to \(tier)")
+                Text(isOneTime ? "Activate Forever" : "Activate \(tier)")
                     .font(.system(size: 16, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
@@ -635,7 +655,6 @@ struct PaywallView: View {
     private var ctaButtonsView: some View {
         VStack(spacing: 12) {
             Button(action: {
-                // TODO: Implement purchase flow
                 dismiss()
             }) {
                 Text("Maybe Later")
@@ -650,6 +669,36 @@ struct PaywallView: View {
             Text("All plans include a 7-day free trial")
                 .font(.system(size: 12, weight: .regular, design: .rounded))
                 .foregroundColor(themeManager.currentTheme.textSecondary)
+        }
+    }
+
+    private func activateSelectedPlan() {
+        guard let currentUser else {
+            purchaseMessage = "No local user was found. Please sign in again and try once more."
+            showingPurchaseMessage = true
+            return
+        }
+
+        let tier = subscriptionTier(for: selectedPlan)
+        _Concurrency.Task { @MainActor in
+            do {
+                try await SubscriptionService.shared.setSubscriptionTier(tier, for: currentUser, in: modelContext)
+                purchaseMessage = "\(selectedPlan.rawValue) is now active on this device. Billing is still pending, but premium gates will now use your selected tier."
+            } catch {
+                purchaseMessage = "Failed to update your plan: \(error.localizedDescription)"
+            }
+            showingPurchaseMessage = true
+        }
+    }
+
+    private func subscriptionTier(for plan: SubscriptionPlan) -> SubscriptionTier {
+        switch plan {
+        case .havenPlus:
+            return .plus
+        case .havenPro:
+            return .pro
+        case .havenForever:
+            return .lifetime
         }
     }
 }

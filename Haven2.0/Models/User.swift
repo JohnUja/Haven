@@ -19,6 +19,7 @@ final class User {
     var gamificationCurrency: Int // "Time Crystals"
     var ownedThemeIDs: [String]
     var activeThemeID: String
+    var subscriptionTierRaw: String
     var calendarSyncToken: String?
     
     // Gamification additions
@@ -42,6 +43,7 @@ final class User {
          gamificationCurrency: Int = 0, 
          ownedThemeIDs: [String] = ["default"], 
          activeThemeID: String = "default", 
+         subscriptionTierRaw: String = "free",
          calendarSyncToken: String? = nil,
          weeklyProductivityScore: Int = 0,
          weeklyResetDate: Date? = nil,
@@ -58,6 +60,7 @@ final class User {
         self.gamificationCurrency = gamificationCurrency
         self.ownedThemeIDs = ownedThemeIDs
         self.activeThemeID = activeThemeID
+        self.subscriptionTierRaw = subscriptionTierRaw
         self.calendarSyncToken = calendarSyncToken
         self.weeklyProductivityScore = weeklyProductivityScore
         self.weeklyResetDate = weeklyResetDate

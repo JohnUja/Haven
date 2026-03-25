@@ -26,6 +26,7 @@ struct DailySummaryView: View {
     let summary: DailySummary
     @Binding var isPresented: Bool
     @Environment(\.dismiss) private var dismiss
+    @Environment(ThemeManager.self) private var themeManager
     
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
@@ -43,19 +44,20 @@ struct DailySummaryView: View {
                             .font(.system(size: 60))
                             .foregroundStyle(
                                 LinearGradient(
-                                    colors: [.green, .mint],
+                                    colors: [themeManager.currentTheme.accentColor, themeManager.currentTheme.accentColor.opacity(0.65)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
                             )
-                            .shadow(color: .green.opacity(0.5), radius: 10)
+                            .shadow(color: themeManager.currentTheme.accentColor.opacity(0.35), radius: 10)
                         
                         Text("Day Complete!")
                             .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .foregroundColor(themeManager.currentTheme.textPrimary)
                         
                         Text(dateFormatter.string(from: summary.date))
                             .font(.system(size: 18, weight: .semibold, design: .rounded))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(themeManager.currentTheme.textSecondary)
                     }
                     .padding(.top, 20)
                     
@@ -90,7 +92,7 @@ struct DailySummaryView: View {
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack {
                                     Image(systemName: "gift.fill")
-                                        .foregroundColor(.orange)
+                                        .foregroundColor(themeManager.currentTheme.accentColor)
                                     Text("Bonuses Applied")
                                         .font(.headline)
                                         .fontWeight(.semibold)
@@ -111,10 +113,10 @@ struct DailySummaryView: View {
                             .padding()
                             .background(
                                 RoundedRectangle(cornerRadius: 16)
-                                    .fill(Color.orange.opacity(0.1))
+                                    .fill(themeManager.currentTheme.glassBackground)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 16)
-                                            .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                                            .stroke(themeManager.currentTheme.glassBorder, lineWidth: themeManager.currentTheme.cardBorderWidth)
                                     )
                             )
                         }
@@ -124,7 +126,7 @@ struct DailySummaryView: View {
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack {
                                     Image(systemName: "face.smiling.fill")
-                                        .foregroundColor(.pink)
+                                        .foregroundColor(themeManager.currentTheme.accentColor)
                                     Text("Moods Recorded")
                                         .font(.headline)
                                         .fontWeight(.semibold)
@@ -137,12 +139,12 @@ struct DailySummaryView: View {
                                                 .font(.title2)
                                             Text(mood.displayName)
                                                 .font(.caption2)
-                                                .foregroundColor(.secondary)
+                                                .foregroundColor(themeManager.currentTheme.textSecondary)
                                         }
                                         .padding(8)
                                         .background(
                                             Circle()
-                                                .fill(Color.pink.opacity(0.1))
+                                                .fill(themeManager.currentTheme.glassBackground)
                                         )
                                     }
                                 }
@@ -151,10 +153,10 @@ struct DailySummaryView: View {
                             .padding()
                             .background(
                                 RoundedRectangle(cornerRadius: 16)
-                                    .fill(Color.pink.opacity(0.1))
+                                    .fill(themeManager.currentTheme.glassBackground)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 16)
-                                            .stroke(Color.pink.opacity(0.3), lineWidth: 1)
+                                            .stroke(themeManager.currentTheme.glassBorder, lineWidth: themeManager.currentTheme.cardBorderWidth)
                                     )
                             )
                         }
@@ -164,15 +166,7 @@ struct DailySummaryView: View {
                 .padding(.vertical)
             }
             .background(
-                LinearGradient(
-                    colors: [
-                        Color.purple.opacity(0.1),
-                        Color.pink.opacity(0.1),
-                        Color.blue.opacity(0.1)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                themeManager.currentTheme.primaryGradient
                 .ignoresSafeArea()
             )
             .navigationTitle("Daily Summary")
@@ -195,6 +189,7 @@ struct SummaryCard: View {
     let value: String
     let color: Color
     var useCrystalIcon: Bool = false
+    @Environment(ThemeManager.self) private var themeManager
     
     var body: some View {
         HStack(spacing: 16) {
@@ -216,11 +211,11 @@ struct SummaryCard: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(themeManager.currentTheme.textSecondary)
                 
             Text(value)
                 .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
+                    .foregroundColor(themeManager.currentTheme.textPrimary)
             }
             
             Spacer()
@@ -228,10 +223,10 @@ struct SummaryCard: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial)
+                .fill(themeManager.currentTheme.glassBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(color.opacity(0.3), lineWidth: 1)
+                        .stroke(themeManager.currentTheme.glassBorder, lineWidth: themeManager.currentTheme.cardBorderWidth)
                 )
         )
     }

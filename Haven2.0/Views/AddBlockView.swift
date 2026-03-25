@@ -22,7 +22,7 @@ struct AddBlockView: View {
     @State private var selectedPriority: PriorityType = .normal
     @State private var isLocked = false
     @State private var isRecurring = false
-    @State private var subtasks = ["Task 1", "Task 2", "Task 3"]
+    @State private var subtasks = [""]
     @State private var startTime = Date()
     @State private var endTime = Date().addingTimeInterval(3600) // 1 hour later
     @State private var recurrenceType: RecurrenceType = .daily
@@ -34,7 +34,7 @@ struct AddBlockView: View {
     private let availableColors = ["red", "orange", "yellow", "green", "blue", "purple", "pink", "mint", "cyan", "indigo", "brown"]
     
     private var currentUser: User? {
-        users.first
+        LocalUserProvisioningService.resolveCurrentUser(from: users)
     }
     
     var body: some View {
@@ -47,18 +47,10 @@ struct AddBlockView: View {
                     .ignoresSafeArea()
                 
                 ScrollView {
-                    VStack(spacing: 24) {
-                        // "Add Block" title at center - white text
-                        Text("Add Block")
-                            .font(theme.titleFont)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .padding(.top, 20)
-                            .padding(.bottom, 8)
-                        
+                    VStack(spacing: 18) {
                         // Block Details Section
-                        sectionView(title: "BLOCK DETAILS", theme: theme) {
-                            VStack(spacing: 16) {
+                        sectionView(title: "Block Details", theme: theme) {
+                            VStack(spacing: 12) {
                                 transparentTextField(
                                     placeholder: "Block name (e.g., Go to Work)",
                                     text: $blockTitle,
@@ -76,7 +68,7 @@ struct AddBlockView: View {
                         }
                         
                         // Time Section
-                        sectionView(title: "TIME", theme: theme) {
+                        sectionView(title: "Time", theme: theme) {
                             VStack(spacing: 16) {
                                 NumericTimeInput(time: $startTime, title: "Start time")
                                 NumericTimeInput(time: $endTime, title: "End time")
@@ -88,7 +80,7 @@ struct AddBlockView: View {
                         }
                         
                         // Color Section
-                        sectionView(title: "COLOR", theme: theme) {
+                        sectionView(title: "Color", theme: theme) {
                             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
                                 ForEach(availableColors, id: \.self) { color in
                                     Button(action: { selectedColor = color }) {
@@ -114,7 +106,7 @@ struct AddBlockView: View {
                         }
                         
                         // Priority & Settings Section
-                        sectionView(title: "PRIORITY & SETTINGS", theme: theme) {
+                        sectionView(title: "Priority & Settings", theme: theme) {
                             VStack(spacing: 16) {
                                 Picker("Priority", selection: $selectedPriority) {
                                     ForEach(PriorityType.allCases, id: \.self) { p in
@@ -144,7 +136,7 @@ struct AddBlockView: View {
                         }
 
                         // Recurrence Section
-                        sectionView(title: "RECURRENCE", theme: theme) {
+                        sectionView(title: "Recurrence", theme: theme) {
                             VStack(spacing: 16) {
                                 Toggle("Make this a recurring block", isOn: $isRecurring)
                                     .foregroundColor(theme.textPrimary)
@@ -171,7 +163,7 @@ struct AddBlockView: View {
                         }
                         
                         // Subtasks Section
-                        sectionView(title: "SUBTASKS", theme: theme) {
+                        sectionView(title: "Subtasks", theme: theme) {
                             VStack(spacing: 12) {
                                 ForEach(0..<subtasks.count, id: \.self) { index in
                                     HStack {
@@ -211,7 +203,7 @@ struct AddBlockView: View {
                         }
                     }
                     .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, 18)
                 }
             }
             .navigationTitle("")
@@ -410,8 +402,7 @@ struct AddBlockView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
                 .font(.system(size: 12, weight: .semibold, design: .default))
-                .foregroundColor(theme.textPrimary.opacity(0.7))
-                .textCase(.uppercase)
+                .foregroundColor(theme.textPrimary.opacity(0.62))
             
             content()
         }

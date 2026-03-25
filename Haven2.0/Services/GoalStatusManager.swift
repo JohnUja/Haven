@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import SwiftData
 
 enum GoalRiskSeverity {
     case ahead
